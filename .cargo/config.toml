@@ -1,0 +1,5 @@
+[alias]
+lint = "clippy --all-targets -- -D warnings"
+lint-fix = "clippy --all-targets --fix"
+unit-test = "test --lib"
+sort-deps = "sort --check --workspace --grouped"
