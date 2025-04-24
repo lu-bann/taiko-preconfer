@@ -4,7 +4,14 @@ on:
   workflow_call:
   push:
     branches: [main]
+    paths-ignore:
+      - '.gitignore'
+      - 'scripts/**'
+
   pull_request:
+    paths-ignore:
+      - '.gitignore'
+      - 'scripts/**'
 
 jobs:
   build-rust:
@@ -18,13 +25,20 @@ jobs:
           components: clippy,rustfmt
       - uses: taiki-e/install-action@v2
         with:
-          tool: cargo-sort,cargo-machete
+          tool: cargo-sort, cargo-machete
       - name: Setup Rust cache
         uses: Swatinem/rust-cache@v2
         with:
           cache-on-failure: false
-      - name: Cargo check
+      - name: Formatting
+        run: cargo +nightly fmt --all -- --check
+      - name: Cargo.toml formatting
+        run: cargo sort-deps
+      - name: Unused dependencies
+        run: cargo-machete
+      - name: Linter
+        run: cargo lint
+      - name: Compilation
         run: cargo check
-      - name: Lint check
-        run: |
-          make lint
+      - name: Unit tests
+        run: cargo unit-test
