@@ -9,7 +9,7 @@ on:
 jobs:
   build-rust:
     name: Rust Project
-    runs-on: ubuntu-latest-m
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - name: Setup Rust toolchain (stable)
