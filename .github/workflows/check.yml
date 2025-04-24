@@ -1,0 +1,30 @@
+name: CI
+
+on:
+  workflow_call:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build-rust:
+    name: Rust Project
+    runs-on: ubuntu-latest-m
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust toolchain (stable)
+        uses: dtolnay/rust-toolchain@nightly
+        with:
+          components: clippy,rustfmt
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-sort,cargo-machete
+      - name: Setup Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          cache-on-failure: false
+      - name: Cargo check
+        run: cargo check
+      - name: Lint check
+        run: |
+          make lint

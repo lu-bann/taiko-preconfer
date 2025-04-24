@@ -1,0 +1,12 @@
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+
+[workspace]
+members = ["bin", 
+    "crates/primitives",
+    "crates/tx_pool"
+]
+resolver = "2"
+
+[workspace.dependencies]
