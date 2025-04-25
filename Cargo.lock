@@ -3,13 +3,9 @@
 version = 4
 
 [[package]]
-name = "primitives"
+name = "dummy"
 version = "0.1.0"
 
 [[package]]
 name = "taiko-preconfer"
-version = "0.1.0"
-
-[[package]]
-name = "tx_pool"
 version = "0.1.0"
