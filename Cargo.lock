@@ -3,11 +3,11 @@
 version = 4
 
 [[package]]
-name = "bin"
+name = "primitives"
 version = "0.1.0"
 
 [[package]]
-name = "primitives"
+name = "taiko-preconfer"
 version = "0.1.0"
 
 [[package]]

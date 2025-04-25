@@ -3,10 +3,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace]
-members = ["bin", 
-    "crates/primitives",
-    "crates/tx_pool"
-]
+members = ["crates/*", "taiko-preconfer"]
 resolver = "2"
 
 [workspace.dependencies]
