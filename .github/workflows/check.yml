@@ -6,11 +6,13 @@ on:
     branches: [main]
     paths-ignore:
       - '.gitignore'
+      - 'README.md'
       - 'scripts/**'
 
   pull_request:
     paths-ignore:
       - '.gitignore'
+      - 'README.md'
       - 'scripts/**'
 
 jobs:
