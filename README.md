@@ -1,3 +1,6 @@
+[![CI](https://github.com/lu-bann/taiko-preconfer/actions/workflows/check.yml/badge.svg)](https://github.com/lu-bann/taiko-preconfer/actions/workflows/check.yml)
+[![Dependabot Updates](https://github.com/lu-bann/taiko-preconfer/actions/workflows/dependabot/dependabot-updates/badge.svg)](https://github.com/lu-bann/taiko-preconfer/actions/workflows/dependabot/dependabot-updates)
+
 # Taiko Preconfer
 ## Overview
 The following diagram illustrates the interaction of a preconfer with the taiko network and the underlying L1.
