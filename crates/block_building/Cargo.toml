@@ -1,0 +1,11 @@
+[package]
+name = "block-building"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+alloy-primitives = { workspace = true }
+alloy-signer = { workspace = true }
+
+[dev-dependencies]
+alloy-signer-local = { workspace = true }
