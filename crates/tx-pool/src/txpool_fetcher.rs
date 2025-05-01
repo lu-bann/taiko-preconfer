@@ -1,4 +1,4 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use alloy_consensus::{Signed, TxEip1559, TxEip2930, TxEnvelope, TxLegacy};
 use alloy_eips::eip2930::AccessList;
@@ -60,10 +60,7 @@ impl TxPoolFetcher for TaikoAuthClient {
         let rpc_call = self.inner.request("taikoAuth_txPoolContent", params);
         let response: Vec<PreBuiltTxList> = rpc_call.await?;
 
-        Ok(response
-            .into_iter()
-            .flat_map(|prebuilt_tx_list| prebuilt_tx_list.into_tx_lists())
-            .collect())
+        Ok(response.into_iter().map(|prebuilt_tx_list| prebuilt_tx_list.into()).collect())
     }
 }
 
@@ -76,22 +73,14 @@ pub struct PreBuiltTxList {
     pub bytes_length: u64,
 }
 
-impl PreBuiltTxList {
-    pub fn into_tx_lists(self) -> Vec<TxList> {
-        let mut signer_map: HashMap<Address, Vec<TxEnvelope>> = HashMap::new();
-
-        for (i, tx) in self.tx_list.into_iter().enumerate() {
-            let envelope = to_alloy_tx(&tx);
-            let signer = envelope
-                .clone()
-                .into_signed()
-                .recover_signer()
-                .unwrap_or_else(|_| panic!("Failed to recover signer from tx at index {}", i));
-
-            signer_map.entry(signer).or_default().push(envelope);
+impl From<PreBuiltTxList> for TxList {
+    fn from(value: PreBuiltTxList) -> Self {
+        let mut txs = Vec::with_capacity(value.tx_list.len());
+        for tx in value.tx_list {
+            let alloy_tx = to_alloy_tx(&tx);
+            txs.push(alloy_tx);
         }
-
-        signer_map.into_iter().map(|(account, txs)| TxList { account, txs: txs.into() }).collect()
+        TxList { txs }
     }
 }
 
@@ -256,7 +245,7 @@ mod tests {
         let mempool_txs: Vec<TxList> = rpc_response
             .result
             .into_iter()
-            .flat_map(|prebuilt_tx_list| prebuilt_tx_list.into_tx_lists())
+            .map(|prebuilt_tx_list| prebuilt_tx_list.into())
             .collect();
         let elapsed = instant.elapsed().as_millis();
         println!("Mempool Transactions: {:?}", mempool_txs);
