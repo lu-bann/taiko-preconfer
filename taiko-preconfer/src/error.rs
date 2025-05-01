@@ -15,3 +15,5 @@ pub enum PreconferError {
     #[error("RPC request {method} with {params} failed.")]
     FailedRPCRequest { method: String, params: JsonValue },
 }
+
+pub type PreconferResult<T> = Result<T, PreconferError>;
