@@ -9,6 +9,7 @@ use alloy_transport_http::{
     AuthLayer, Http, HyperClient,
     hyper_util::{client::legacy::Client, rt::TokioExecutor},
 };
+use async_trait::async_trait;
 use http_body_util::Full;
 use reqwest::Url;
 use serde::{Deserialize, Deserializer, Serialize};
@@ -17,9 +18,15 @@ use tower::ServiceBuilder;
 
 use crate::pool::TxList;
 
+#[async_trait]
+pub trait TxPoolFetcher: Send + Sync {
+    /// Fetches mempool transactions through the `taikoAuth_txPoolContent` RPC method.
+    async fn fetch_mempool_txs(&self, params: TxPoolContentParams) -> eyre::Result<Vec<TxList>>;
+}
+
 /// The [`TaikoAuthClient`] is responsible for interacting with the taikoAuth API via HTTP.
 /// The inner transport uses a JWT [AuthLayer] to authenticate requests.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct TaikoAuthClient {
     pub inner: RpcClient,
 }
@@ -38,12 +45,9 @@ impl TaikoAuthClient {
     }
 }
 
-impl TaikoAuthClient {
-    /// Fetches mempool transactions thourgh the `taikoAuth_txPoolContent` RPC method.
-    pub async fn fetch_mempool_txs(
-        &self,
-        params: TxPoolContentParams,
-    ) -> eyre::Result<Vec<TxList>> {
+#[async_trait]
+impl TxPoolFetcher for TaikoAuthClient {
+    async fn fetch_mempool_txs(&self, params: TxPoolContentParams) -> eyre::Result<Vec<TxList>> {
         let params = vec![
             json!(params.beneficiary),
             json!(params.base_fee),
@@ -58,7 +62,7 @@ impl TaikoAuthClient {
 
         Ok(response
             .into_iter()
-            .flat_map(|prebuilt_tx_list| prebuilt_tx_list.into_tx_lists_by_signer())
+            .flat_map(|prebuilt_tx_list| prebuilt_tx_list.into_tx_lists())
             .collect())
     }
 }
@@ -73,7 +77,7 @@ pub struct PreBuiltTxList {
 }
 
 impl PreBuiltTxList {
-    pub fn into_tx_lists_by_signer(self) -> Vec<TxList> {
+    pub fn into_tx_lists(self) -> Vec<TxList> {
         let mut signer_map: HashMap<Address, Vec<TxEnvelope>> = HashMap::new();
 
         for (i, tx) in self.tx_list.into_iter().enumerate() {
@@ -229,31 +233,36 @@ where
 
 #[cfg(test)]
 mod tests {
+
     use serde::de::{IntoDeserializer, value::Error as DeError};
 
     use super::*;
 
+    #[allow(dead_code)]
+    #[derive(Debug, Deserialize)]
+    struct JsonRpcResponse<T> {
+        jsonrpc: String,
+        id: u64,
+        result: T,
+    }
+
     #[tokio::test]
     async fn test_get_mempool_txs() -> eyre::Result<()> {
         let instant = std::time::Instant::now();
-        let url = Url::parse("http://37.27.222.77:28551")?;
-        let jwt_secret = JwtSecret::from_hex(
-            "654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432",
-        )?;
-        let client = TaikoAuthClient::new(url, jwt_secret)?;
-        let params = TxPoolContentParams {
-            beneficiary: Address::from_str("0xA6f54d514592187F0aE517867466bfd2CCfde4B0").unwrap(),
-            base_fee: 10000,
-            block_max_gas_limit: 241000000,
-            max_bytes_per_tx_list: 10000,
-            locals: vec![],
-            max_transactions_lists: 10000,
-            min_tip: None,
-        };
-        let mempool_txs = client.fetch_mempool_txs(params).await?;
+
+        let json_str = std::fs::read_to_string("../../tests/data/txpool_content.json")?;
+        let rpc_response: JsonRpcResponse<Vec<PreBuiltTxList>> = serde_json::from_str(&json_str)?;
+
+        let mempool_txs: Vec<TxList> = rpc_response
+            .result
+            .into_iter()
+            .flat_map(|prebuilt_tx_list| prebuilt_tx_list.into_tx_lists())
+            .collect();
         let elapsed = instant.elapsed().as_millis();
         println!("Mempool Transactions: {:?}", mempool_txs);
         println!("Elapsed time: {:?}ms", elapsed);
+        let total_txs: usize = mempool_txs.iter().map(|tx_list| tx_list.txs.len()).sum();
+        println!("Total transactions: {}", total_txs);
         Ok(())
     }
 

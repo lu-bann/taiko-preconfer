@@ -3378,6 +3378,7 @@ dependencies = [
  "alloy-rpc-client",
  "alloy-rpc-types-engine",
  "alloy-transport-http",
+ "async-trait",
  "eyre",
  "http-body-util",
  "parking_lot",
@@ -3386,7 +3387,6 @@ dependencies = [
  "serde_json",
  "tokio",
  "tower",
- "url",
 ]
 
 [[package]]
