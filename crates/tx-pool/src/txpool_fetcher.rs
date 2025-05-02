@@ -77,7 +77,7 @@ impl From<PreBuiltTxList> for TxList {
 }
 
 /// Parameters for the `taikoAuth_txPoolContent` & `taikoAuth_txPoolContentWithMinTip` RPC methods.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Default, Clone, Serialize, Deserialize)]
 pub struct TxPoolContentParams {
     /// Coinbase address
     pub beneficiary: Address,
