@@ -1,8 +1,5 @@
-use std::str::FromStr;
-
-use alloy_consensus::{Signed, TxEip1559, TxEip2930, TxEnvelope, TxLegacy};
-use alloy_eips::eip2930::AccessList;
-use alloy_primitives::{Address, B256, Bytes, ChainId, U256, hex};
+use alloy_consensus::TxEnvelope;
+use alloy_primitives::{Address, Bytes};
 use alloy_rpc_client::RpcClient;
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_transport_http::{
@@ -12,7 +9,7 @@ use alloy_transport_http::{
 use async_trait::async_trait;
 use http_body_util::Full;
 use reqwest::Url;
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
 
@@ -68,50 +65,15 @@ impl TxPoolFetcher for TaikoAuthClient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PreBuiltTxList {
-    pub tx_list: Vec<TaikoTx>,
+    pub tx_list: Vec<TxEnvelope>,
     pub estimated_gas_used: u64,
     pub bytes_length: u64,
 }
 
 impl From<PreBuiltTxList> for TxList {
     fn from(value: PreBuiltTxList) -> Self {
-        let mut txs = Vec::with_capacity(value.tx_list.len());
-        for tx in value.tx_list {
-            let alloy_tx = to_alloy_tx(&tx);
-            txs.push(alloy_tx);
-        }
-        TxList { txs }
+        TxList { txs: value.tx_list }
     }
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TaikoTx {
-    #[serde(rename = "type")]
-    pub tx_type: String,
-    #[serde(deserialize_with = "hex_to_u64")]
-    pub chain_id: u64,
-    #[serde(deserialize_with = "hex_to_u64")]
-    pub nonce: u64,
-    pub to: String,
-    #[serde(deserialize_with = "hex_to_u64")]
-    pub gas: u64,
-    #[serde(deserialize_with = "hex_to_u128_opt")]
-    pub gas_price: Option<u128>,
-    #[serde(deserialize_with = "hex_to_u128_opt")]
-    pub max_priority_fee_per_gas: Option<u128>,
-    #[serde(deserialize_with = "hex_to_u128_opt")]
-    pub max_fee_per_gas: Option<u128>,
-    pub value: U256,
-    pub input: String,
-    #[serde(default)]
-    pub access_list: Vec<String>,
-    pub v: String,
-    pub r: U256,
-    pub s: U256,
-    #[serde(default, deserialize_with = "hex_str_to_bool")]
-    pub y_parity: bool,
-    pub hash: B256,
 }
 
 /// Parameters for the `taikoAuth_txPoolContent` & `taikoAuth_txPoolContentWithMinTip` RPC methods.
@@ -134,97 +96,8 @@ pub struct TxPoolContentParams {
     pub min_tip: Option<u64>,
 }
 
-fn to_alloy_tx(tx: &TaikoTx) -> TxEnvelope {
-    match tx.tx_type.as_str() {
-        "0x0" => {
-            let transaction = TxLegacy {
-                chain_id: Some(tx.chain_id),
-                nonce: tx.nonce,
-                to: alloy_primitives::TxKind::Call(Address::from_str(&tx.to).unwrap()),
-                gas_limit: tx.gas,
-                gas_price: tx.gas_price.unwrap(),
-                value: tx.value,
-                input: hex::decode(tx.input.clone()).unwrap().into(),
-            };
-            let signature = alloy_primitives::Signature::new(tx.r, tx.s, tx.y_parity);
-            let signed_tx = Signed::new_unchecked(transaction, signature, tx.hash);
-            TxEnvelope::Legacy(signed_tx)
-        }
-        "0x1" => {
-            let transaction = TxEip2930 {
-                chain_id: ChainId::from(tx.chain_id),
-                nonce: tx.nonce,
-                gas_limit: tx.gas,
-                gas_price: tx.gas_price.unwrap(),
-                to: alloy_primitives::TxKind::Call(Address::from_str(&tx.to).unwrap()),
-                value: tx.value,
-                access_list: AccessList::default(),
-                input: hex::decode(tx.input.clone()).unwrap().into(),
-            };
-            let signature = alloy_primitives::Signature::new(tx.r, tx.s, tx.y_parity);
-            let signed_tx = Signed::new_unchecked(transaction, signature, tx.hash);
-            TxEnvelope::Eip2930(signed_tx)
-        }
-        "0x2" => {
-            let transaction = TxEip1559 {
-                chain_id: ChainId::from(tx.chain_id),
-                nonce: tx.nonce,
-                gas_limit: tx.gas,
-                max_fee_per_gas: tx.max_fee_per_gas.unwrap(),
-                max_priority_fee_per_gas: tx.max_priority_fee_per_gas.unwrap(),
-                to: alloy_primitives::TxKind::Call(Address::from_str(&tx.to).unwrap()),
-                value: tx.value,
-                access_list: AccessList::default(),
-                input: hex::decode(tx.input.clone()).unwrap().into(),
-            };
-            let signature = alloy_primitives::Signature::new(tx.r, tx.s, tx.y_parity);
-            let signed_tx = Signed::new_unchecked(transaction, signature, tx.hash);
-            TxEnvelope::Eip1559(signed_tx)
-        }
-        _ => todo!(),
-    }
-}
-
-fn hex_to_u64<'de, D>(deserializer: D) -> Result<u64, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let hex_str: String = Deserialize::deserialize(deserializer)?;
-    let hex = hex_str.strip_prefix("0x").unwrap_or(&hex_str);
-    u64::from_str_radix(hex, 16).map_err(serde::de::Error::custom)
-}
-
-fn hex_to_u128_opt<'de, D>(deserializer: D) -> Result<Option<u128>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt: Option<String> = Option::deserialize(deserializer)?;
-    match opt {
-        Some(s) => {
-            let hex = s.strip_prefix("0x").unwrap_or(&s);
-            u128::from_str_radix(hex, 16).map(Some).map_err(serde::de::Error::custom)
-        }
-        None => Ok(None),
-    }
-}
-
-fn hex_str_to_bool<'de, D>(deserializer: D) -> Result<bool, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let s: String = Deserialize::deserialize(deserializer)?;
-    match s.strip_prefix("0x").unwrap_or(&s) {
-        "0" => Ok(false),
-        "1" => Ok(true),
-        other => Err(serde::de::Error::custom(format!("Invalid y_parity value: {other}"))),
-    }
-}
-
 #[cfg(test)]
 mod tests {
-
-    use serde::de::{IntoDeserializer, value::Error as DeError};
-
     use super::*;
 
     #[allow(dead_code)]
@@ -242,30 +115,12 @@ mod tests {
         let json_str = std::fs::read_to_string("../../tests/data/txpool_content.json")?;
         let rpc_response: JsonRpcResponse<Vec<PreBuiltTxList>> = serde_json::from_str(&json_str)?;
 
-        let mempool_txs: Vec<TxList> = rpc_response
-            .result
-            .into_iter()
-            .map(|prebuilt_tx_list| prebuilt_tx_list.into())
-            .collect();
+        let mempool_txs: Vec<PreBuiltTxList> = rpc_response.result.into_iter().collect();
         let elapsed = instant.elapsed().as_millis();
         println!("Mempool Transactions: {:?}", mempool_txs);
         println!("Elapsed time: {:?}ms", elapsed);
-        let total_txs: usize = mempool_txs.iter().map(|tx_list| tx_list.txs.len()).sum();
+        let total_txs: usize = mempool_txs.iter().map(|tx_list| tx_list.tx_list.len()).sum();
         println!("Total transactions: {}", total_txs);
         Ok(())
-    }
-
-    #[test]
-    fn test_hex_to_u64_valid() {
-        let value: serde::de::value::StrDeserializer<DeError> = "0x1f".into_deserializer();
-        let result = hex_to_u64(value).unwrap();
-        assert_eq!(result, 31);
-    }
-
-    #[test]
-    fn test_hex_to_u64_invalid() {
-        let value: serde::de::value::StrDeserializer<DeError> = "not-a-hex".into_deserializer();
-        let result = hex_to_u64(value);
-        assert!(result.is_err());
     }
 }
