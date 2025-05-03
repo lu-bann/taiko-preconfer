@@ -1,3 +1,4 @@
+use alloy_consensus::Header;
 use alloy_primitives::{Address, B256, Bloom, Bytes};
 use serde::{Deserialize, Serialize};
 
@@ -32,4 +33,9 @@ pub struct ExecutableData {
     pub transactions: Bytes,
     pub extra_data: Bytes,
     pub base_fee_per_gas: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PreconfBlockResponseBody {
+    block_header: Header,
 }

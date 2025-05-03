@@ -764,6 +764,7 @@ dependencies = [
 name = "block-building"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "alloy-primitives",
  "alloy-signer",
  "alloy-signer-local",

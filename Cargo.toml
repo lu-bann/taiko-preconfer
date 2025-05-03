@@ -15,6 +15,7 @@ alloy-signer = "0.15"
 alloy-signer-local = "0.15"
 alloy-transport = "0.15"
 alloy-transport-http = "0.15"
+alloy-consensus = "0.15"
 
 alloy-primitives = { version = "1.0.0", default-features = false, features = ["map-foldhash", "getrandom"] }
 
