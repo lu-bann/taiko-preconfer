@@ -178,9 +178,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-primitives"
-version = "1.0.0"
+version = "1.1.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "70b98b99c1dcfbe74d7f0b31433ff215e7d1555e367d90e62db904f3c9d4ff53"
+checksum = "6a12fe11d0b8118e551c29e1a67ccb6d01cc07ef08086df30f07487146de6fa1"
 dependencies = [
  "alloy-rlp",
  "bytes",
@@ -253,9 +253,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types"
-version = "0.15.6"
+version = "0.15.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "30890a9856721a376e989283a17b2698acc3e1a612415abbca980aa4d29d7367"
+checksum = "815e430440eadcf61d7ea90dab5642bcf72056a8eacaffb97820d3a41fcdc0da"
 dependencies = [
  "alloy-primitives",
  "alloy-rpc-types-engine",
@@ -326,9 +326,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-signer"
-version = "0.15.6"
+version = "0.15.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "44eaf520bbb527ba90a3dd963aadf0c339595932169fb10f7330fe779336436e"
+checksum = "c37f6e07803121bd9597058f83726f7dc316fc630a0dad61c3c7a1fb784303c5"
 dependencies = [
  "alloy-primitives",
  "async-trait",
@@ -341,9 +341,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-signer-local"
-version = "0.15.6"
+version = "0.15.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "1f8d1f2edc446b52985a5af71cdbce86e8646865b889e38410594eea97804380"
+checksum = "c7ae7b607365e02bd879679dd295809d73391510ab21b917973317fb8b90228b"
 dependencies = [
  "alloy-consensus",
  "alloy-network",
@@ -428,11 +428,12 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport"
-version = "0.15.6"
+version = "0.15.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "609f69c9153df716e7e6ef002cba69f94b7635eb2c603fff69b664aa6acea93a"
+checksum = "c30aa026c88924cfa89ddfa77ad77aec05d2153c6838422dcdaf559a6e9e3175"
 dependencies = [
  "alloy-json-rpc",
+ "alloy-primitives",
  "base64",
  "derive_more",
  "futures",
@@ -1174,7 +1175,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "976dd42dc7e85965fe702eb8164f21f450704bdde31faefd6471dba214cb594e"
 dependencies = [
  "libc",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -2634,7 +2635,7 @@ dependencies = [
  "errno",
  "libc",
  "linux-raw-sys",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]
@@ -3119,7 +3120,7 @@ dependencies = [
  "getrandom 0.3.2",
  "once_cell",
  "rustix",
- "windows-sys 0.59.0",
+ "windows-sys 0.52.0",
 ]
 
 [[package]]

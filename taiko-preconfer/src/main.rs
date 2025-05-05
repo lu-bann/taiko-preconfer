@@ -5,18 +5,18 @@ use serde_json::json;
 use url::Url;
 
 mod error;
-use crate::error::PreconferError;
+use crate::error::{PreconferError, PreconferResult};
 
 const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
 
 const GET_LATEST_BLOCK: &str = "eth_getBlockByNumber";
 
-fn get_client(url: &str) -> Result<RpcClient, PreconferError> {
+fn get_client(url: &str) -> PreconferResult<RpcClient> {
     let transport = Http::new(Url::parse(url)?);
     Ok(RpcClient::new(transport, false))
 }
 
-async fn get_latest_block(client: RpcClient) -> Result<Block, PreconferError> {
+async fn get_latest_block(client: RpcClient) -> PreconferResult<Block> {
     let request_full_tx_objects = false;
     let params = json!([BlockNumberOrTag::Latest, request_full_tx_objects]);
 
@@ -28,7 +28,7 @@ async fn get_latest_block(client: RpcClient) -> Result<Block, PreconferError> {
 }
 
 #[tokio::main]
-async fn main() -> Result<(), PreconferError> {
+async fn main() -> PreconferResult<()> {
     let client = get_client(HEKLA_URL)?;
     let block = get_latest_block(client).await?;
 
