@@ -13,8 +13,6 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
 
-use crate::pool::TxList;
-
 #[async_trait]
 pub trait TxPoolFetcher: Send + Sync {
     /// Fetches mempool transactions through the `taikoAuth_txPoolContent` RPC method.
@@ -74,6 +72,12 @@ impl From<PreBuiltTxList> for TxList {
     fn from(value: PreBuiltTxList) -> Self {
         TxList { txs: value.tx_list }
     }
+}
+
+#[derive(Debug, Clone)]
+pub struct TxList {
+    /// List of transactions
+    pub txs: Vec<TxEnvelope>,
 }
 
 /// Parameters for the `taikoAuth_txPoolContent` & `taikoAuth_txPoolContentWithMinTip` RPC methods.

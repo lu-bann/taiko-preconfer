@@ -2,10 +2,7 @@ use alloy_consensus::TxEnvelope;
 use alloy_eips::Decodable2718;
 use async_trait::async_trait;
 
-use crate::{
-    pool::TxList,
-    txpool_fetcher::{TxPoolContentParams, TxPoolFetcher},
-};
+use crate::txpool_fetcher::{TxList, TxPoolContentParams, TxPoolFetcher};
 pub struct MockTxPoolFetcher;
 
 #[async_trait]

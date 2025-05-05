@@ -3382,7 +3382,6 @@ dependencies = [
  "async-trait",
  "eyre",
  "http-body-util",
- "parking_lot",
  "reqwest",
  "serde",
  "serde_json",
