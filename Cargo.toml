@@ -17,8 +17,13 @@ alloy-transport = "0.15.9"
 alloy-transport-http = "0.15.6"
 alloy-consensus = "0.15.6"
 alloy-rpc-types-engine = "0.15.6"
+alloy-provider = { version = "0.15.6", features = [
+    "reqwest",
+], default-features = false }
+alloy-contract = "0.15.6"
 
 alloy-primitives = { version = "1.1.0", default-features = false, features = ["map-foldhash", "getrandom"] }
+alloy-sol-types = { version = "1.1.0" }
 
 serde_json = "1.0.140"
 serde = "1.0.219"

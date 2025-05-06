@@ -5,7 +5,15 @@ edition = "2024"
 
 [dependencies]
 alloy-primitives = { workspace = true }
+alloy-eips = { workspace = true }
 alloy-signer = { workspace = true }
+alloy-provider = { workspace = true }
+alloy-contract = { workspace = true }
+alloy-sol-types = { workspace = true }
+alloy-rpc-client = { workspace = true }
+
+eyre = { workspace = true }
+tokio = { workspace = true }
 
 [dev-dependencies]
 alloy-signer-local = { workspace = true }
