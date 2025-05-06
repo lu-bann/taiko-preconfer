@@ -104,27 +104,36 @@ pub struct TxPoolContentParams {
 mod tests {
     use super::*;
 
-    #[allow(dead_code)]
-    #[derive(Debug, Deserialize)]
-    struct JsonRpcResponse<T> {
-        jsonrpc: String,
-        id: u64,
-        result: T,
-    }
+    #[test]
+    fn test_get_mempool_txs() {
+        let json_str = r#"
+        [
+            {
+                "TxList": [
+                    {
+                        "type": "0x0",
+                        "chainId": "0x28c61",
+                        "nonce": "0x8",
+                        "to": "0x0011e559da84dde3f841e22dc33f3adbf184d84a",
+                        "gas": "0xe51ec90",
+                        "gasPrice": "0x59682f01",
+                        "maxPriorityFeePerGas": null,
+                        "maxFeePerGas": null,
+                        "value": "0x0",
+                        "input": "0xa9059cbb00000000000000000000000097d4677accc7b656b5eb8afcdafe6406c1f5597f000000000000000000000000000000000000000000000000000000000010545a",
+                        "v": "0x518e5",
+                        "r": "0x6564a46a92d69d11bd873b901fced6e9238824cc9ffc01aafa2c8f2391ef089",
+                        "s": "0x55c8c647086fe59b314e45c5770e61375a4dc7f5a41a70bc8c919efa893dfcea",
+                        "hash": "0x3f89cf8247391294cffa25a38517cdb000ea7eb80d66a491bb3bfd37fa96b708"
+                    }
+                ],
+                "EstimatedGasUsed": 0,
+                "BytesLength": 162
+            }
+        ]"#;
 
-    #[tokio::test]
-    async fn test_get_mempool_txs() -> eyre::Result<()> {
-        let instant = std::time::Instant::now();
-
-        let json_str = std::fs::read_to_string("../../tests/data/txpool_content.json")?;
-        let rpc_response: JsonRpcResponse<Vec<PreBuiltTxList>> = serde_json::from_str(&json_str)?;
-
-        let mempool_txs: Vec<PreBuiltTxList> = rpc_response.result.into_iter().collect();
-        let elapsed = instant.elapsed().as_millis();
-        println!("Mempool Transactions: {:?}", mempool_txs);
-        println!("Elapsed time: {:?}ms", elapsed);
+        let mempool_txs: Vec<PreBuiltTxList> = serde_json::from_str(json_str).unwrap();
         let total_txs: usize = mempool_txs.iter().map(|tx_list| tx_list.tx_list.len()).sum();
-        println!("Total transactions: {}", total_txs);
-        Ok(())
+        assert_eq!(total_txs, 1);
     }
 }
