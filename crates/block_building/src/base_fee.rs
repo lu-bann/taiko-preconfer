@@ -7,7 +7,7 @@ use crate::L2_BLOCK_TIME_MS;
 
 sol!(
     #[sol(rpc)]
-    contract TaikoAnkor {
+    contract TaikoAnchor {
         #[derive(Debug)]
         struct BaseFeeConfig {
             uint8 adjustmentQuotient;
@@ -29,7 +29,7 @@ sol!(
     }
 );
 
-/// Calculates the base fee for next block using the TaikoAnkor contract.
+/// Calculates the base fee for next block using the TaikoAnchor contract.
 pub async fn calculate_next_block_base_fee(
     rpc_url: &str,
     contract_address: Address,
@@ -40,14 +40,14 @@ pub async fn calculate_next_block_base_fee(
     let block_timestamp = parent_block.header.timestamp + (L2_BLOCK_TIME_MS / 1000);
 
     // Values taken from https://github.com/taikoxyz/taiko-mono/blob/main/packages/protocol/contracts/layer1/hekla/HeklaInbox.sol#L94
-    let base_fee_config = TaikoAnkor::BaseFeeConfig {
+    let base_fee_config = TaikoAnchor::BaseFeeConfig {
         adjustmentQuotient: 8,
         sharingPctg: 50,
         gasIssuancePerSecond: 5_000_000,
         minGasExcess: 1_344_899_430,
         maxGasIssuancePerBlock: 600_000_000,
     };
-    let basefee = TaikoAnkor::TaikoAnkorInstance::new(contract_address, provider)
+    let basefee = TaikoAnchor::TaikoAnchorInstance::new(contract_address, provider)
         .getBasefeeV2(parent_gas_used, block_timestamp, base_fee_config)
         .call()
         .await?;
