@@ -53,21 +53,3 @@ pub async fn calculate_next_block_base_fee(
         .await?;
     Ok(basefee.basefee_)
 }
-
-#[cfg(test)]
-mod tests {
-    use std::str::FromStr;
-
-    use super::*;
-
-    #[tokio::test]
-    async fn test_calculate_next_block_base_fee_hekla() {
-        let rpc_url = "https://rpc.hekla.taiko.xyz";
-        let contract_address =
-            Address::from_str("0x1670090000000000000000000000000000010001").unwrap();
-
-        let basefee = calculate_next_block_base_fee(rpc_url, contract_address).await.unwrap();
-
-        println!("Base fee: {}", basefee);
-    }
-}

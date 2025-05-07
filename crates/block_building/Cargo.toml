@@ -12,7 +12,6 @@ alloy-signer = { workspace = true }
 alloy-sol-types = { workspace = true }
 
 eyre = { workspace = true }
-tokio = { workspace = true }
 
 [dev-dependencies]
 alloy-signer-local = { workspace = true }

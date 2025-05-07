@@ -880,7 +880,6 @@ dependencies = [
  "alloy-signer-local",
  "alloy-sol-types",
  "eyre",
- "tokio",
 ]
 
 [[package]]
