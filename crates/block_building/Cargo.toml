@@ -4,14 +4,15 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+alloy-consensus = { workspace = true }
 alloy-contract = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-sol-types = { workspace = true }
-
 eyre = { workspace = true }
+hex = { workspace = true }
 
 [dev-dependencies]
 alloy-signer-local = { workspace = true }
