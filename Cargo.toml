@@ -16,7 +16,7 @@ alloy-rpc-types = "0.15.6"
 alloy-rpc-types-engine = "0.15.6"
 alloy-signer = "0.15.9"
 alloy-signer-local = "0.15.6"
-alloy-transport = "0.15.9"
+alloy-transport = "0.15.10"
 alloy-transport-http = "0.15.6"
 alloy-provider = { version = "0.15.6", features = [
     "reqwest",
