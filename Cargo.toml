@@ -9,7 +9,7 @@ resolver = "2"
 [workspace.dependencies]
 alloy-consensus = "0.15.6"
 alloy-contract = "0.15.9"
-alloy-json-rpc = "0.15.6"
+alloy-json-rpc = "0.15.10"
 alloy-rpc-client = "0.15.6"
 alloy-eips = "0.15.6"
 alloy-rpc-types = "0.15.6"
