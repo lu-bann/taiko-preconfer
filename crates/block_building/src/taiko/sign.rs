@@ -37,14 +37,11 @@ mod tests {
 
     use super::*;
     use crate::{
-        encode_util::hex_decode,
+        BASE_FEE_CONFIG_HEKLA,
         taiko::{
-            contracts::TaikoAnchor,
-            hekla::{
-                addresses::{get_golden_touch_signing_key, get_taiko_anchor_address},
-                get_basefee_config_v2,
-            },
+            GOLDEN_TOUCH_SIGNING_KEY_HEKLA, TAIKO_ANCHOR_ADDRESS_HEKLA, contracts::TaikoAnchor,
         },
+        util::hex_decode,
     };
 
     fn get_test_transaction() -> TypedTransaction {
@@ -53,7 +50,7 @@ mod tests {
             nonce: 0u64,
             gas_price: 0u128,
             gas_limit: 0u64,
-            to: TxKind::Call(get_taiko_anchor_address()),
+            to: TxKind::Call(*TAIKO_ANCHOR_ADDRESS_HEKLA),
             value: U256::default(),
             input: Bytes::default(),
         })
@@ -67,7 +64,7 @@ mod tests {
                     .unwrap(),
             ),
             _parentGasUsed: 5676556u32,
-            _baseFeeConfig: get_basefee_config_v2(),
+            _baseFeeConfig: BASE_FEE_CONFIG_HEKLA,
             _signalSlots: vec![],
         };
         TypedTransaction::from(TxEip1559 {
@@ -76,7 +73,7 @@ mod tests {
             gas_limit: 1_000_000u64,
             max_fee_per_gas: 10_000_000u128,
             max_priority_fee_per_gas: 0u128,
-            to: TxKind::Call(get_taiko_anchor_address()),
+            to: TxKind::Call(*TAIKO_ANCHOR_ADDRESS_HEKLA),
             value: U256::ZERO,
             access_list: AccessList::default(),
             input: Bytes::copy_from_slice(&anchor_call.abi_encode()),
@@ -100,7 +97,7 @@ mod tests {
     #[test]
     fn signature_with_k_1() {
         let tx = get_test_transaction();
-        let signing_key = get_golden_touch_signing_key();
+        let signing_key = &GOLDEN_TOUCH_SIGNING_KEY_HEKLA;
         let k = 1u64;
         let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
         let r = nonzero_scalar_to_biguint(&signature.r());
@@ -118,7 +115,7 @@ mod tests {
     #[test]
     fn normalized_signature_with_k_1() {
         let tx = get_high_s_test_transaction();
-        let signing_key = get_golden_touch_signing_key();
+        let signing_key = &GOLDEN_TOUCH_SIGNING_KEY_HEKLA;
         let k = 1u64;
         let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
         let r = nonzero_scalar_to_biguint(&signature.r());
@@ -136,7 +133,7 @@ mod tests {
     #[test]
     fn signature_with_k_2() {
         let tx = get_test_transaction();
-        let signing_key = get_golden_touch_signing_key();
+        let signing_key = &GOLDEN_TOUCH_SIGNING_KEY_HEKLA;
         let k = 2u64;
         let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
 

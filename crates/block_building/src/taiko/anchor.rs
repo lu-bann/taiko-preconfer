@@ -33,15 +33,13 @@ mod tests {
 
     use super::*;
     use crate::{
-        encode_util::hex_decode,
-        taiko::hekla::{
-            CHAIN_ID as hekla_id, addresses::get_taiko_anchor_address, get_basefee_config_v2,
-        },
+        BASE_FEE_CONFIG_HEKLA,
+        taiko::{CHAIN_ID_HEKLA, TAIKO_ANCHOR_ADDRESS_HEKLA},
+        util::hex_decode,
     };
 
     #[test]
     fn test_create_anchor_transaction() {
-        let taiko_anchor_address = get_taiko_anchor_address();
         let my_anchor_call = TaikoAnchor::anchorV3Call {
             _anchorBlockId: 3794466,
             _anchorStateRoot: FixedBytes::from_slice(
@@ -49,7 +47,7 @@ mod tests {
                     .unwrap(),
             ),
             _parentGasUsed: 181596,
-            _baseFeeConfig: get_basefee_config_v2(),
+            _baseFeeConfig: BASE_FEE_CONFIG_HEKLA,
             _signalSlots: vec![],
         };
 
@@ -58,18 +56,21 @@ mod tests {
         let max_fee_per_gas: u128 = 10_000_000u128;
         let max_priority_fee_per_gas = 0u128;
         let anchor_transaction = create_anchor_transaction(
-            hekla_id,
+            CHAIN_ID_HEKLA,
             nonce,
             gas_limit,
             max_fee_per_gas,
             max_priority_fee_per_gas,
-            taiko_anchor_address,
+            *TAIKO_ANCHOR_ADDRESS_HEKLA,
             my_anchor_call,
         );
 
         let expected_hex_str = "0x48080a45000000000000000000000000000000000000000000000000000000000039e622f9c88fc529e27024f8b37ae1633931cc1bb0f772f13f912ae77d6771603b16cb000000000000000000000000000000000000000000000000000000000002c55c0000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000003200000000000000000000000000000000000000000000000000000000004c4b4000000000000000000000000000000000000000000000000000000000502989660000000000000000000000000000000000000000000000000000000023c3460000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000";
         let expected_input = Bytes::copy_from_slice(&hex_decode(expected_hex_str).unwrap());
         assert_eq!(*anchor_transaction.input(), expected_input);
-        assert_eq!(anchor_transaction.eip1559().unwrap().to, TxKind::Call(taiko_anchor_address))
+        assert_eq!(
+            anchor_transaction.eip1559().unwrap().to,
+            TxKind::Call(*TAIKO_ANCHOR_ADDRESS_HEKLA)
+        )
     }
 }

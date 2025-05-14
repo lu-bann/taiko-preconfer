@@ -6,29 +6,24 @@ use alloy_transport_http::{
     AuthLayer, Http, HyperClient,
     hyper_util::{client::legacy::Client, rt::TokioExecutor},
 };
-use async_trait::async_trait;
 use http_body_util::Full;
 use reqwest::Url;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
 
-#[async_trait]
-pub trait TxPoolFetcher: Send + Sync {
-    /// Fetches mempool transactions through the `taikoAuth_txPoolContent` RPC method.
-    async fn fetch_mempool_txs(&self, params: TxPoolContentParams) -> eyre::Result<Vec<TxList>>;
-}
+use crate::constants::{TX_POOL_CONTENT_METHOD, TX_POOL_CONTENT_WITH_MIN_TIP_METHOD};
 
 /// The [`TaikoAuthClient`] is responsible for interacting with the taikoAuth API via HTTP.
 /// The inner transport uses a JWT [AuthLayer] to authenticate requests.
 #[derive(Clone)]
 pub struct TaikoAuthClient {
-    pub inner: RpcClient,
+    inner: RpcClient,
 }
 
 impl TaikoAuthClient {
     /// Creates a new [`TaikoAuthClient`] from the provided [Url] and [JwtSecret].
-    pub fn new(url: Url, jwt_secret: JwtSecret) -> eyre::Result<Self> {
+    pub fn new(url: Url, jwt_secret: JwtSecret) -> Self {
         let hyper_client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
         let auth_layer = AuthLayer::new(jwt_secret);
         let service = ServiceBuilder::new().layer(auth_layer).service(hyper_client);
@@ -36,26 +31,60 @@ impl TaikoAuthClient {
         let layer_transport = HyperClient::with_service(service);
         let http_hyper = Http::with_client(layer_transport, url);
 
-        Ok(Self { inner: RpcClient::new(http_hyper, true) })
+        Self { inner: RpcClient::new(http_hyper, true) }
     }
-}
 
-#[async_trait]
-impl TxPoolFetcher for TaikoAuthClient {
-    async fn fetch_mempool_txs(&self, params: TxPoolContentParams) -> eyre::Result<Vec<TxList>> {
+    #[allow(unused)]
+    async fn fetch_mempool_txs(
+        &self,
+        beneficiary: Address,
+        base_fee: u64,
+        block_max_gas_limit: u64,
+        max_bytes_per_tx_list: u64,
+        locals: Vec<Address>,
+        max_transactions_lists: u64,
+    ) -> eyre::Result<Vec<Vec<TxEnvelope>>> {
         let params = vec![
-            json!(params.beneficiary),
-            json!(params.base_fee),
-            json!(params.block_max_gas_limit),
-            json!(params.max_bytes_per_tx_list),
-            json!(params.locals),
-            json!(params.max_transactions_lists),
+            json!(beneficiary),
+            json!(base_fee),
+            json!(block_max_gas_limit),
+            json!(max_bytes_per_tx_list),
+            json!(locals),
+            json!(max_transactions_lists),
         ];
 
-        let rpc_call = self.inner.request("taikoAuth_txPoolContent", params);
+        let rpc_call = self.inner.request(TX_POOL_CONTENT_METHOD, params);
         let response: Vec<PreBuiltTxList> = rpc_call.await?;
 
-        Ok(response.into_iter().map(|prebuilt_tx_list| prebuilt_tx_list.into()).collect())
+        Ok(response.into_iter().map(|prebuilt_tx_list| prebuilt_tx_list.tx_list).collect())
+    }
+
+    #[allow(unused)]
+    #[allow(clippy::too_many_arguments)]
+    async fn fetch_mempool_txs_with_min_tip(
+        &self,
+        beneficiary: Address,
+        base_fee: u64,
+        block_max_gas_limit: u64,
+        max_bytes_per_tx_list: u64,
+        locals: Vec<Address>,
+        max_transactions_lists: u64,
+        min_tip: u64,
+    ) -> eyre::Result<Vec<Vec<TxEnvelope>>> {
+        let params = vec![
+            json!(beneficiary),
+            json!(base_fee),
+            json!(block_max_gas_limit),
+            json!(max_bytes_per_tx_list),
+            json!(locals),
+            json!(max_transactions_lists),
+            json!(min_tip),
+        ];
+
+        let rpc_call = self.inner.request(TX_POOL_CONTENT_WITH_MIN_TIP_METHOD, params);
+        let response: Vec<PreBuiltTxList> = rpc_call.await?;
+
+        Ok(response.into_iter().map(|prebuilt_tx_list| prebuilt_tx_list.tx_list).collect())
     }
 }
 
@@ -63,41 +92,9 @@ impl TxPoolFetcher for TaikoAuthClient {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct PreBuiltTxList {
-    pub tx_list: Vec<TxEnvelope>,
-    pub estimated_gas_used: u64,
-    pub bytes_length: u64,
-}
-
-impl From<PreBuiltTxList> for TxList {
-    fn from(value: PreBuiltTxList) -> Self {
-        TxList { txs: value.tx_list }
-    }
-}
-
-#[derive(Debug, Clone)]
-pub struct TxList {
-    /// List of transactions
-    pub txs: Vec<TxEnvelope>,
-}
-
-/// Parameters for the `taikoAuth_txPoolContent` & `taikoAuth_txPoolContentWithMinTip` RPC methods.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct TxPoolContentParams {
-    /// Coinbase address
-    pub beneficiary: Address,
-    /// Base fee
-    pub base_fee: u64,
-    /// Block max gas limit
-    pub block_max_gas_limit: u64,
-    /// Max bytes per transaction list
-    pub max_bytes_per_tx_list: u64,
-    /// List of local addresses
-    pub locals: Vec<String>,
-    /// Max transactions lists
-    pub max_transactions_lists: u64,
-    /// Minimum tip
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_tip: Option<u64>,
+    tx_list: Vec<TxEnvelope>,
+    estimated_gas_used: u64,
+    bytes_length: u64,
 }
 
 #[cfg(test)]
@@ -105,7 +102,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn test_get_mempool_txs() {
+    fn test_tx_pool_content_deserialisation() {
         let json_str = r#"
         [
             {

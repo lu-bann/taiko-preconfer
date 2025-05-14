@@ -888,7 +888,6 @@ dependencies = [
  "alloy-signer-local",
  "alloy-sol-types",
  "eyre",
- "hex",
  "k256",
  "num-bigint",
 ]
@@ -3567,7 +3566,6 @@ dependencies = [
  "alloy-rpc-client",
  "alloy-rpc-types-engine",
  "alloy-transport-http",
- "async-trait",
  "eyre",
  "http-body-util",
  "reqwest",

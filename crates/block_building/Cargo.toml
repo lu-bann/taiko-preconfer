@@ -12,7 +12,6 @@ alloy-provider = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-sol-types = { workspace = true }
 eyre = { workspace = true }
-hex = { workspace = true }
 k256 = { workspace = true }
 
 [dev-dependencies]

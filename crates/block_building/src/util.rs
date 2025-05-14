@@ -1,4 +1,4 @@
-use hex::{FromHexError, decode, encode};
+use alloy_primitives::hex::{FromHexError, decode, encode};
 
 pub fn hex_encode<T: AsRef<[u8]>>(data: T) -> String {
     format!("0x{}", encode(data))
