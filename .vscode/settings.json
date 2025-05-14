@@ -1,0 +1,30 @@
+// icons: https://code.visualstudio.com/api/references/icons-in-labels
+{
+    "VsCodeTaskButtons.showCounter": false,
+    "VsCodeTaskButtons.tasks": [
+        {
+            "label": "$(timeline-refresh) Coverage",
+            "task":  "coverage",
+            "alignment": "left",
+            "color": "default"
+        },
+        {
+            "label": "$(check) Check",
+            "task":  "check",
+            "alignment": "left",
+            "color": "default"
+        },
+        {
+            "label": "$(testing-run-icon) Test",
+            "task":  "test",
+            "alignment": "left",
+            "color": "default"
+        },
+        {
+            "label": "$(lightbulb-autofix) Fix",
+            "task":  "fix deps and lint",
+            "alignment": "left",
+            "color": "default"
+        },
+    ]
+}

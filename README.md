@@ -30,6 +30,12 @@ sequenceDiagram
 ```
 
 ## Development
+#### vscode
+There are a few tasks for common commands. These can be added as buttons to the taskbar via the extension [Task Buttons](https://marketplace.visualstudio.com/items/?itemName=SanaAjani.taskrunnercode).
+* coverage: compute code coverage (see below)
+* check: run ci checks locally
+* fix: fix formatting, sorting of dependencies and linter issues
+
 #### git hooks
 Enable git hooks through either
  - copying them from `<REPO_ROOT>/scripts/git` to `<REPO_ROOT>/.git/hooks` or

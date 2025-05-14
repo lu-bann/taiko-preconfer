@@ -1,0 +1,29 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "coverage",
+            "type": "shell",
+            "command": "zsh scripts/coverage.sh",
+            "presentation": {"echo": true, "reveal": "always", "focus": true, "panel": "shared", "showReuseMessage": true, "clear": true},
+        },
+        {
+            "label": "check",
+            "type": "shell",
+            "command": "zsh .vscode/pre_commit.sh",
+            "presentation": {"echo": true, "reveal": "always", "focus": true, "panel": "shared", "showReuseMessage": true, "clear": true},
+        },
+        {
+            "label": "test",
+            "type": "shell",
+            "command": "cargo test --workspace --all-targets --tests",
+            "presentation": {"echo": true, "reveal": "always", "focus": true, "panel": "shared", "showReuseMessage": true, "clear": true},
+        },
+        {
+            "label": "fix deps and lint",
+            "type": "shell",
+            "command": "zsh .vscode/fix_deps_and_lint.sh",
+            "presentation": {"echo": true, "reveal": "always", "focus": true, "panel": "shared", "showReuseMessage": true, "clear": true},
+        },
+    ]
+}
