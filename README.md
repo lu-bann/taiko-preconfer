@@ -37,3 +37,9 @@ Enable git hooks through either
 
 The following hooks are available:
  - post-merge: Removes branches that have been deleted on the remote
+
+#### code coverage
+To compute test coverage install `cargo-llvm-cov`.
+* Install: `cargo install cargo-llvm-cov`
+* Run from repo root: `zsh scripts/coverage.sh`
+* Display coverage in vscode: Install `Coverage Gutters` extension
