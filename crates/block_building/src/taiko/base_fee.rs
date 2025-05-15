@@ -9,7 +9,7 @@ use alloy_transport::TransportErrorKind;
 
 use crate::taiko::contracts::TaikoAnchor;
 
-type TaikoAnchorInstance = TaikoAnchor::TaikoAnchorInstance<
+pub type TaikoAnchorInstance = TaikoAnchor::TaikoAnchorInstance<
     FillProvider<
         JoinFill<
             alloy_provider::Identity,
@@ -24,7 +24,7 @@ pub async fn get_taiko_anchor_instance(
     contract_address: Address,
 ) -> Result<TaikoAnchorInstance, RpcError<TransportErrorKind>> {
     let provider = ProviderBuilder::new().connect(rpc_url).await?;
-    Ok(TaikoAnchor::TaikoAnchorInstance::new(contract_address, provider))
+    Ok(TaikoAnchor::new(contract_address, provider))
 }
 
 pub async fn get_base_fee(
