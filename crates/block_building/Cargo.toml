@@ -7,11 +7,12 @@ edition = "2024"
 alloy-consensus = { workspace = true }
 alloy-contract = { workspace = true }
 alloy-eips = { workspace = true }
+alloy-json-rpc = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-sol-types = { workspace = true }
-eyre = { workspace = true }
+alloy-transport = { workspace = true }
 hex = { workspace = true }
 k256 = { workspace = true }
 
