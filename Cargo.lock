@@ -889,6 +889,8 @@ dependencies = [
  "alloy-sol-types",
  "eyre",
  "hex",
+ "k256",
+ "num-bigint",
 ]
 
 [[package]]
@@ -2036,6 +2038,7 @@ dependencies = [
  "once_cell",
  "serdect",
  "sha2",
+ "signature",
 ]
 
 [[package]]
