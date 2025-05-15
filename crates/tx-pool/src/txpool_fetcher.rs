@@ -16,7 +16,15 @@ use tower::ServiceBuilder;
 #[async_trait]
 pub trait TxPoolFetcher: Send + Sync {
     /// Fetches mempool transactions through the `taikoAuth_txPoolContent` RPC method.
-    async fn fetch_mempool_txs(&self, params: TxPoolContentParams) -> eyre::Result<Vec<TxList>>;
+    async fn fetch_mempool_txs(
+        &self,
+        beneficiary: Address,
+        base_fee: u64,
+        block_max_gas_limit: u64,
+        max_bytes_per_tx_list: u64,
+        locals: Vec<String>,
+        max_transactions_lists: u64,
+    ) -> eyre::Result<Vec<TxList>>;
 }
 
 /// The [`TaikoAuthClient`] is responsible for interacting with the taikoAuth API via HTTP.
@@ -42,16 +50,23 @@ impl TaikoAuthClient {
 
 #[async_trait]
 impl TxPoolFetcher for TaikoAuthClient {
-    async fn fetch_mempool_txs(&self, params: TxPoolContentParams) -> eyre::Result<Vec<TxList>> {
-        let params = vec![
-            json!(params.beneficiary),
-            json!(params.base_fee),
-            json!(params.block_max_gas_limit),
-            json!(params.max_bytes_per_tx_list),
-            json!(params.locals),
-            json!(params.max_transactions_lists),
-        ];
-
+    async fn fetch_mempool_txs(
+        &self,
+        beneficiary: Address,
+        base_fee: u64,
+        block_max_gas_limit: u64,
+        max_bytes_per_tx_list: u64,
+        locals: Vec<String>,
+        max_transactions_lists: u64,
+    ) -> eyre::Result<Vec<TxList>> {
+        let params = json!([
+            beneficiary,
+            base_fee,
+            block_max_gas_limit,
+            max_bytes_per_tx_list,
+            locals,
+            max_transactions_lists
+        ]);
         let rpc_call = self.inner.request("taikoAuth_txPoolContent", params);
         let response: Vec<PreBuiltTxList> = rpc_call.await?;
 
@@ -78,26 +93,6 @@ impl From<PreBuiltTxList> for TxList {
 pub struct TxList {
     /// List of transactions
     pub txs: Vec<TxEnvelope>,
-}
-
-/// Parameters for the `taikoAuth_txPoolContent` & `taikoAuth_txPoolContentWithMinTip` RPC methods.
-#[derive(Debug, Default, Clone, Serialize, Deserialize)]
-pub struct TxPoolContentParams {
-    /// Coinbase address
-    pub beneficiary: Address,
-    /// Base fee
-    pub base_fee: u64,
-    /// Block max gas limit
-    pub block_max_gas_limit: u64,
-    /// Max bytes per transaction list
-    pub max_bytes_per_tx_list: u64,
-    /// List of local addresses
-    pub locals: Vec<String>,
-    /// Max transactions lists
-    pub max_transactions_lists: u64,
-    /// Minimum tip
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub min_tip: Option<u64>,
 }
 
 #[cfg(test)]
