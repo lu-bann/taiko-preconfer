@@ -17,7 +17,7 @@ alloy-rpc-types-engine = "0.15.10"
 alloy-signer = "0.15.11"
 alloy-signer-local = "0.15.6"
 alloy-transport = "0.15.10"
-alloy-transport-http = "0.15.6"
+alloy-transport-http = { version = "0.15.6", features = ["jwt-auth"] }
 alloy-provider = { version = "0.15.10", features = [
     "reqwest",
 ], default-features = false }
