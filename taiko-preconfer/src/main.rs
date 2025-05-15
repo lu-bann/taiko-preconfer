@@ -1,42 +1,43 @@
-use alloy_rpc_client::RpcClient;
-use alloy_rpc_types::{Block, BlockNumberOrTag};
-use alloy_transport_http::Http;
-use serde_json::json;
-use url::Url;
+use std::str::FromStr;
+
+use alloy_primitives::Address;
+use alloy_rpc_types_engine::JwtSecret;
 
 mod error;
-use crate::error::{PreconferError, PreconferResult};
+use crate::error::PreconferResult;
+
+mod rpc;
+use crate::rpc::{get_auth_client, get_client, get_latest_block, get_mempool_txs};
 
 const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
-
-const GET_LATEST_BLOCK: &str = "eth_getBlockByNumber";
-
-fn get_client(url: &str) -> PreconferResult<RpcClient> {
-    let transport = Http::new(Url::parse(url)?);
-    Ok(RpcClient::new(transport, false))
-}
-
-async fn get_latest_block(client: RpcClient) -> PreconferResult<Block> {
-    let request_full_tx_objects = false;
-    let params = json!([BlockNumberOrTag::Latest, request_full_tx_objects]);
-
-    let rpc_call = client.request(GET_LATEST_BLOCK, params.clone());
-    let method = rpc_call.method().to_string();
-    let params = rpc_call.request().params.clone();
-    let block: Option<Block> = rpc_call.await?;
-    block.ok_or(PreconferError::FailedRPCRequest { method, params })
-}
+const LOCAL_TAIKO_URL: &str = "http://37.27.222.77:28551";
 
 #[tokio::main]
 async fn main() -> PreconferResult<()> {
     let client = get_client(HEKLA_URL)?;
-    let block = get_latest_block(client).await?;
+    let block = get_latest_block(&client).await?;
 
     println!("Latest Block Header:");
     println!("Number: {:?}", block.header.number);
     println!("Hash: {:?}", block.header.hash);
     println!("Parent Hash: {:?}", block.header.parent_hash);
     println!("Timestamp: {:?}", block.header.timestamp);
+    let jwt_secret =
+        JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
+            .unwrap();
 
+    let auth_client = get_auth_client(LOCAL_TAIKO_URL, jwt_secret)?;
+    let mempool_txs = get_mempool_txs(
+        &auth_client,
+        Address::from_str("0xA6f54d514592187F0aE517867466bfd2CCfde4B0").unwrap(),
+        10000,
+        241_000_000,
+        10000,
+        vec![],
+        10000,
+    )
+    .await
+    .unwrap();
+    println!("#mempool tx lists {:?}", mempool_txs.len());
     Ok(())
 }
