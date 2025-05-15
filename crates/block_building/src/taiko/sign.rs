@@ -99,7 +99,7 @@ mod tests {
         let tx = get_test_transaction();
         let signing_key = &GOLDEN_TOUCH_SIGNING_KEY_HEKLA;
         let k = 1u64;
-        let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
+        let signature = sign_with_fixed_k(signing_key, &tx, k).unwrap();
         let r = nonzero_scalar_to_biguint(&signature.r());
         assert_eq!(
             r.to_string(),
@@ -117,7 +117,7 @@ mod tests {
         let tx = get_high_s_test_transaction();
         let signing_key = &GOLDEN_TOUCH_SIGNING_KEY_HEKLA;
         let k = 1u64;
-        let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
+        let signature = sign_with_fixed_k(signing_key, &tx, k).unwrap();
         let r = nonzero_scalar_to_biguint(&signature.r());
         assert_eq!(
             r.to_string(),
@@ -135,7 +135,7 @@ mod tests {
         let tx = get_test_transaction();
         let signing_key = &GOLDEN_TOUCH_SIGNING_KEY_HEKLA;
         let k = 2u64;
-        let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
+        let signature = sign_with_fixed_k(signing_key, &tx, k).unwrap();
 
         let r = nonzero_scalar_to_biguint(&signature.r());
         assert_eq!(
