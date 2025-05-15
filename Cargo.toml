@@ -7,18 +7,18 @@ members = ["crates/*", "taiko-preconfer"]
 resolver = "2"
 
 [workspace.dependencies]
-alloy-consensus = "0.15.6"
-alloy-contract = "0.15.9"
-alloy-json-rpc = "0.15.10"
-alloy-rpc-client = "0.15.6"
-alloy-eips = "0.15.6"
-alloy-rpc-types = "0.15.6"
-alloy-rpc-types-engine = "0.15.10"
-alloy-signer = "0.15.11"
-alloy-signer-local = "0.15.6"
-alloy-transport = "0.15.10"
-alloy-transport-http = { version = "0.15.6", features = ["jwt-auth"] }
-alloy-provider = { version = "0.15.10", features = [
+alloy-consensus = "1.0.3"
+alloy-contract = "1.0.3"
+alloy-json-rpc = "1.0.3"
+alloy-rpc-client = "1.0.3"
+alloy-eips = "1.0.3"
+alloy-rpc-types = "1.0.3"
+alloy-rpc-types-engine = "1.0.3"
+alloy-signer = "1.0.3"
+alloy-signer-local = "1.0.3"
+alloy-transport = "1.0.3"
+alloy-transport-http = { version = "1.0.3", features = ["hyper", "jwt-auth"] }
+alloy-provider = { version = "1.0.3", features = [
     "reqwest",
 ], default-features = false }
 
