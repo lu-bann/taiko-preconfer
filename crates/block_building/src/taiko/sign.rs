@@ -16,7 +16,7 @@ fn sign_with_fixed_k(
         Scalar::from(k),
         &message_hash,
     )?;
-    Ok(signature)
+    Ok(signature.normalize_s().unwrap_or(signature))
 }
 
 pub fn sign_anchor_tx(
@@ -28,13 +28,24 @@ pub fn sign_anchor_tx(
 
 #[cfg(test)]
 mod tests {
-    use alloy_consensus::TxLegacy;
-    use alloy_primitives::{Bytes, TxKind, U256};
+    use alloy_consensus::{TxEip1559, TxLegacy};
+    use alloy_eips::eip2930::AccessList;
+    use alloy_primitives::{Bytes, FixedBytes, TxKind, U256};
+    use alloy_sol_types::SolCall;
     use k256::NonZeroScalar;
     use num_bigint::BigUint;
 
     use super::*;
-    use crate::taiko::hekla::addresses::{get_golden_touch_signing_key, get_taiko_anchor_address};
+    use crate::{
+        encode_util::hex_decode,
+        taiko::{
+            contracts::TaikoAnchor,
+            hekla::{
+                addresses::{get_golden_touch_signing_key, get_taiko_anchor_address},
+                get_basefee_config_v2,
+            },
+        },
+    };
 
     fn get_test_transaction() -> TypedTransaction {
         TypedTransaction::from(TxLegacy {
@@ -45,6 +56,30 @@ mod tests {
             to: TxKind::Call(get_taiko_anchor_address()),
             value: U256::default(),
             input: Bytes::default(),
+        })
+    }
+
+    fn get_high_s_test_transaction() -> TypedTransaction {
+        let anchor_call = TaikoAnchor::anchorV3Call {
+            _anchorBlockId: 3839301u64,
+            _anchorStateRoot: FixedBytes::<32>::from_slice(
+                &hex_decode("0x0299771df8290c0d483a14071b3a1adf485be4d492b172ff76fee982e1eddebd")
+                    .unwrap(),
+            ),
+            _parentGasUsed: 5676556u32,
+            _baseFeeConfig: get_basefee_config_v2(),
+            _signalSlots: vec![],
+        };
+        TypedTransaction::from(TxEip1559 {
+            chain_id: 167009u64,
+            nonce: 1380460u64,
+            gas_limit: 1_000_000u64,
+            max_fee_per_gas: 10_000_000u128,
+            max_priority_fee_per_gas: 0u128,
+            to: TxKind::Call(get_taiko_anchor_address()),
+            value: U256::ZERO,
+            access_list: AccessList::default(),
+            input: Bytes::copy_from_slice(&anchor_call.abi_encode()),
         })
     }
 
@@ -77,6 +112,24 @@ mod tests {
         assert_eq!(
             s.to_string(),
             "55606847455169850712614713723130181997308526921030548275028061212750923145154"
+        );
+    }
+
+    #[test]
+    fn normalized_signature_with_k_1() {
+        let tx = get_high_s_test_transaction();
+        let signing_key = get_golden_touch_signing_key();
+        let k = 1u64;
+        let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
+        let r = nonzero_scalar_to_biguint(&signature.r());
+        assert_eq!(
+            r.to_string(),
+            "55066263022277343669578718895168534326250603453777594175500187360389116729240"
+        );
+        let s = nonzero_scalar_to_biguint(&signature.s());
+        assert_eq!(
+            s.to_string(),
+            "33866923707463146537069755075936353461146384527221206883437412880615995522297"
         );
     }
 
