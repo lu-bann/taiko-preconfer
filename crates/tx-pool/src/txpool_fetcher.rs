@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tower::ServiceBuilder;
 
-use crate::constants::{TX_POOL_CONTENT_METHOD, TX_POOL_CONTENT_WITH_MIN_TIP_METHOD};
+use crate::{TX_POOL_CONTENT_METHOD, TX_POOL_CONTENT_WITH_MIN_TIP_METHOD};
 
 /// The [`TaikoAuthClient`] is responsible for interacting with the taikoAuth API via HTTP.
 /// The inner transport uses a JWT [AuthLayer] to authenticate requests.
