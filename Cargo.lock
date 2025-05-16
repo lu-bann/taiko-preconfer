@@ -3195,6 +3195,7 @@ dependencies = [
  "alloy-transport",
  "alloy-transport-http",
  "http-body-util",
+ "k256",
  "serde",
  "serde_json",
  "thiserror",
