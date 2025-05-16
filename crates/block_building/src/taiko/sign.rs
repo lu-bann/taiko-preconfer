@@ -1,10 +1,12 @@
-use alloy_consensus::{SignableTransaction, TypedTransaction};
-use alloy_primitives::Signature;
+use alloy_consensus::{SignableTransaction, Signed, TypedTransaction};
+use alloy_primitives::{Signature, U256};
 use k256::{
     Scalar, Secp256k1,
     ecdsa::{Error as EcdsaError, SigningKey, hazmat::sign_prehashed},
     elliptic_curve::FieldBytes,
 };
+
+use super::hekla::addresses::get_golden_touch_signing_key;
 
 fn sign_with_fixed_k(
     signing_key: &SigningKey,
@@ -12,14 +14,16 @@ fn sign_with_fixed_k(
     k: u64,
 ) -> Result<Signature, EcdsaError> {
     let message_hash = FieldBytes::<Secp256k1>::clone_from_slice(tx.signature_hash().as_slice());
-    let (signature, recovery_id) = sign_prehashed::<Secp256k1, Scalar>(
+    let (signature, _) = sign_prehashed::<Secp256k1, Scalar>(
         signing_key.as_nonzero_scalar(),
         Scalar::from(k),
         &message_hash,
     )?;
-    let mut signature_bytes = signature.normalize_s().unwrap_or(signature).to_vec();
-    signature_bytes.push(recovery_id.to_byte());
-    Ok(Signature::try_from(signature_bytes.as_slice()).unwrap())
+    let normalized = signature.normalize_s();
+    let r = U256::from_be_slice(signature.r().as_ref().to_bytes().as_slice());
+    let s = U256::from_be_slice(normalized.unwrap_or(signature).s().as_ref().to_bytes().as_slice());
+
+    Ok(Signature::new(r, s, normalized.is_some()))
 }
 
 pub fn sign_anchor_tx(
@@ -27,6 +31,16 @@ pub fn sign_anchor_tx(
     tx: &TypedTransaction,
 ) -> Result<Signature, EcdsaError> {
     sign_with_fixed_k(signing_key, tx, 1u64).or(sign_with_fixed_k(signing_key, tx, 2u64))
+}
+
+pub fn get_signed_with_golden_touch(
+    tx: TypedTransaction,
+) -> Result<Signed<TypedTransaction>, EcdsaError> {
+    let golden_touch_signing_key = get_golden_touch_signing_key();
+    let sig = sign_anchor_tx(&golden_touch_signing_key, &tx)?;
+    let signed = tx.into_signed(sig);
+    signed.hash();
+    Ok(signed)
 }
 
 #[cfg(test)]
@@ -84,6 +98,30 @@ mod tests {
         })
     }
 
+    fn get_parity_test_transaction() -> TypedTransaction {
+        let anchor_call = TaikoAnchor::anchorV3Call {
+            _anchorBlockId: 3846273u64,
+            _anchorStateRoot: FixedBytes::<32>::from_slice(
+                &hex_decode("0x7c9e9e4307f34be89d92249504c88b32e1e1cda7a0b7da13d75c650820a70888")
+                    .unwrap(),
+            ),
+            _parentGasUsed: 5095380u32,
+            _baseFeeConfig: get_basefee_config_v2(),
+            _signalSlots: vec![],
+        };
+        TypedTransaction::from(TxEip1559 {
+            chain_id: 167009u64,
+            nonce: 1385045u64,
+            gas_limit: 1_000_000u64,
+            max_fee_per_gas: 10_000_000u128,
+            max_priority_fee_per_gas: 0u128,
+            to: TxKind::Call(get_taiko_anchor_address()),
+            value: U256::ZERO,
+            access_list: AccessList::default(),
+            input: Bytes::copy_from_slice(&anchor_call.abi_encode()),
+        })
+    }
+
     #[test]
     fn signature_with_k_1() {
         let tx = get_test_transaction();
@@ -102,6 +140,23 @@ mod tests {
     }
 
     #[test]
+    fn signature_parity_with_k_1() {
+        let tx = get_parity_test_transaction();
+        let signing_key = get_golden_touch_signing_key();
+        let k = 1u64;
+        let signature = sign_with_fixed_k(&signing_key, &tx, k).unwrap();
+        assert_eq!(
+            signature.r().to_string(),
+            "55066263022277343669578718895168534326250603453777594175500187360389116729240"
+        );
+        assert_eq!(
+            signature.s().to_string(),
+            "45230176431849899994723688416335955698750132458091034974651769824748025846760"
+        );
+        assert!(signature.v());
+    }
+
+    #[test]
     fn normalized_signature_with_k_1() {
         let tx = get_high_s_test_transaction();
         let signing_key = get_golden_touch_signing_key();
@@ -115,7 +170,7 @@ mod tests {
             signature.s().to_string(),
             "33866923707463146537069755075936353461146384527221206883437412880615995522297"
         );
-        assert!(!signature.v());
+        assert!(signature.v());
     }
 
     #[test]
