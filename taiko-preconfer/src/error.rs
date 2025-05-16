@@ -1,3 +1,4 @@
+use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
 use alloy_transport::TransportErrorKind;
 use serde_json::Value as JsonValue;
@@ -11,6 +12,9 @@ pub enum PreconferError {
 
     #[error("{0}")]
     UrlParse(#[from] ParseError),
+
+    #[error("{0}")]
+    Contract(#[from] ContractError),
 
     #[error("RPC request {method} with {params} failed.")]
     FailedRPCRequest { method: String, params: JsonValue },
