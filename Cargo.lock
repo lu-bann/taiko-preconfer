@@ -885,7 +885,6 @@ dependencies = [
  "alloy-sol-types",
  "hex",
  "k256",
- "num-bigint",
 ]
 
 [[package]]

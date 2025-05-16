@@ -3,3 +3,4 @@ node_modules
 .devcontainer
 .vscode
 lcov.info
+local
