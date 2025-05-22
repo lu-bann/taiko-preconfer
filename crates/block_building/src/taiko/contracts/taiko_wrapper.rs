@@ -16,6 +16,37 @@ sol!(
         bytes32[] signalSlots;
     }
     #[derive(Debug)]
+    struct BlobParams {
+        // The hashes of the blob. Note that if this array is not empty.  `firstBlobIndex` and
+        // `numBlobs` must be 0.
+        bytes32[] blobHashes;
+        // The index of the first blob in this batch.
+        uint8 firstBlobIndex;
+        // The number of blobs in this batch. Blobs are initially concatenated and subsequently
+        // decompressed via Zlib.
+        uint8 numBlobs;
+        // The byte offset of the blob in the batch.
+        uint32 byteOffset;
+        // The byte size of the blob.
+        uint32 byteSize;
+        // The block number when the blob was created. This value is only non-zero when
+        // `blobHashes` are non-empty.
+        uint64 createdIn;
+    }
+
+    #[derive(Debug)]
+    struct BatchParams {
+        address proposer;
+        address coinbase;
+        bytes32 parentMetaHash;
+        uint64 anchorBlockId;
+        uint64 lastBlockTimestamp;
+        bool revertIfNotFirstProposal;
+        // Specifies the number of blocks to be generated from this batch.
+        BlobParams blobParams;
+        BlockParams[] blocks;
+    }
+    #[derive(Debug)]
     struct BatchInfo {
         bytes32 txsHash;
         BlockParams[] blocks;
