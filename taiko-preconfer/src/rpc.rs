@@ -1,4 +1,6 @@
-use alloy_consensus::TxEnvelope;
+#![allow(dead_code)]
+
+use alloy_consensus::{Header, TxEnvelope};
 use alloy_json_rpc::RpcError;
 use alloy_primitives::{Address, Bytes};
 use alloy_rpc_client::RpcClient;
@@ -17,8 +19,10 @@ use url::Url;
 
 use crate::error::{PreconferError, PreconferResult};
 
-const GET_LATEST_BLOCK: &str = "eth_getBlockByNumber";
+const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
+const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
 const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
+const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
 
 pub fn get_client(url: &str) -> PreconferResult<RpcClient> {
     let transport = Http::new(Url::parse(url)?);
@@ -36,15 +40,43 @@ pub fn get_auth_client(url: &str, jwt_secret: JwtSecret) -> PreconferResult<RpcC
     Ok(RpcClient::new(http_hyper, true))
 }
 
-pub async fn get_latest_block(client: &RpcClient) -> PreconferResult<Block> {
-    let request_full_tx_objects = false;
-    let params = json!([BlockNumberOrTag::Latest, request_full_tx_objects]);
+pub async fn get_block(
+    client: &RpcClient,
+    block_number: BlockNumberOrTag,
+    full_tx: bool,
+) -> PreconferResult<Block> {
+    let params = json!([block_number, full_tx]);
 
-    let rpc_call = client.request(GET_LATEST_BLOCK, params.clone());
+    let rpc_call = client.request(GET_BLOCK_BY_NUMBER, params.clone());
     let method = rpc_call.method().to_string();
     let params = rpc_call.request().params.clone();
     let block: Option<Block> = rpc_call.await?;
     block.ok_or(PreconferError::FailedRPCRequest { method, params })
+}
+
+pub async fn get_header(
+    client: &RpcClient,
+    block_number: BlockNumberOrTag,
+) -> PreconferResult<Header> {
+    let params = json!([block_number]);
+
+    let rpc_call = client.request(GET_HEADER_BY_NUMBER, params.clone());
+    let method = rpc_call.method().to_string();
+    let params = rpc_call.request().params.clone();
+    let header: Option<Header> = rpc_call.await?;
+    header.ok_or(PreconferError::FailedRPCRequest { method, params })
+}
+
+pub async fn get_header_by_id(client: &RpcClient, id: u64) -> PreconferResult<Header> {
+    get_header(client, BlockNumberOrTag::Number(id)).await
+}
+
+pub async fn get_latest_block(client: &RpcClient, full_tx: bool) -> PreconferResult<Block> {
+    get_block(client, BlockNumberOrTag::Latest, full_tx).await
+}
+
+pub async fn get_block_by_id(client: &RpcClient, id: u64, full_tx: bool) -> PreconferResult<Block> {
+    get_block(client, BlockNumberOrTag::Number(id), full_tx).await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,4 +106,32 @@ pub async fn get_mempool_txs(
     ]);
     let rpc_call = client.request(TAIKO_TX_POOL_CONTENT, params);
     rpc_call.await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn get_mempool_tx_with_min_tip(
+    client: &RpcClient,
+    beneficiary: Address,
+    base_fee: u64,
+    block_max_gas_limit: u64,
+    max_bytes_per_tx_list: u64,
+    locals: Vec<String>,
+    max_transactions_lists: u64,
+    min_tip: u64,
+) -> Result<Vec<MempoolTxList>, RpcError<TransportErrorKind>> {
+    let params = json!([
+        beneficiary,
+        base_fee,
+        block_max_gas_limit,
+        max_bytes_per_tx_list,
+        locals,
+        max_transactions_lists,
+        min_tip
+    ]);
+    let rpc_call = client.request(TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP, params);
+    rpc_call.await
+}
+
+pub fn flatten_mempool_txs(tx_lists: Vec<MempoolTxList>) -> Vec<TxEnvelope> {
+    tx_lists.into_iter().flat_map(|tx_list| tx_list.tx_list).collect()
 }
