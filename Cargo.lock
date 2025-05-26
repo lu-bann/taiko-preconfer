@@ -519,9 +519,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-transport"
-version = "1.0.3"
+version = "1.0.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c4f91badc9371554f9f5e1c4d0731c208fcfb14cfd1583af997425005a962689"
+checksum = "ca9b645fe4f4e6582cfbb4a8d20cedcf5aa23548e92eacbdacac6278b425e023"
 dependencies = [
  "alloy-json-rpc",
  "alloy-primitives",
