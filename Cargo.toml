@@ -18,7 +18,7 @@ alloy-signer = "1.0.7"
 alloy-signer-local = "1.0.7"
 alloy-transport = "1.0.7"
 alloy-transport-http = { version = "1.0.3", features = ["hyper", "jwt-auth"] }
-alloy-provider = { version = "1.0.3", features = [
+alloy-provider = { version = "1.0.7", features = [
     "reqwest",
 ], default-features = false }
 
