@@ -8,10 +8,13 @@ alloy-consensus = { workspace = true }
 alloy-contract = { workspace = true }
 alloy-eips = { workspace = true }
 alloy-primitives = { workspace = true }
+alloy-rlp = { workspace = true }
+alloy-rpc-types = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-sol-types = { workspace = true }
 hex = { workspace = true }
 k256 = { workspace = true }
+serde = { workspace = true }
 
 [dev-dependencies]
 alloy-signer-local = { workspace = true }
