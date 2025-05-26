@@ -15,7 +15,7 @@ alloy-eips = "1.0.3"
 alloy-rpc-types = "1.0.3"
 alloy-rpc-types-engine = "1.0.3"
 alloy-signer = "1.0.3"
-alloy-signer-local = "1.0.3"
+alloy-signer-local = "1.0.7"
 alloy-transport = "1.0.3"
 alloy-transport-http = { version = "1.0.3", features = ["hyper", "jwt-auth"] }
 alloy-provider = { version = "1.0.3", features = [
