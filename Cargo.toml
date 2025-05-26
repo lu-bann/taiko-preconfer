@@ -9,20 +9,20 @@ resolver = "2"
 [workspace.dependencies]
 alloy-consensus = "1.0.3"
 alloy-contract = "1.0.3"
-alloy-json-rpc = "1.0.3"
+alloy-json-rpc = "1.0.7"
 alloy-rpc-client = "1.0.3"
 alloy-eips = "1.0.3"
 alloy-rpc-types = "1.0.3"
 alloy-rpc-types-engine = "1.0.3"
-alloy-signer = "1.0.3"
+alloy-signer = "1.0.7"
 alloy-signer-local = "1.0.7"
-alloy-transport = "1.0.3"
+alloy-transport = "1.0.7"
 alloy-transport-http = { version = "1.0.3", features = ["hyper", "jwt-auth"] }
 alloy-provider = { version = "1.0.3", features = [
     "reqwest",
 ], default-features = false }
 
-alloy-primitives = { version = "1.1.0", default-features = false, features = ["map-foldhash", "getrandom"] }
+alloy-primitives = { version = "1.1.2", default-features = false, features = ["map-foldhash", "getrandom"] }
 alloy-sol-types = "1.1.0"
 
 serde_json = "1.0.140"
