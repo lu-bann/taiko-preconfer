@@ -878,11 +878,14 @@ dependencies = [
  "alloy-contract",
  "alloy-eips",
  "alloy-primitives",
+ "alloy-rlp",
+ "alloy-rpc-types",
  "alloy-signer",
  "alloy-signer-local",
  "alloy-sol-types",
  "hex",
  "k256",
+ "serde",
 ]
 
 [[package]]
