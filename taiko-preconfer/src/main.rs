@@ -1,24 +1,25 @@
 use std::str::FromStr;
 
 use alloy_primitives::Address;
+use alloy_rpc_types::BlockNumberOrTag;
 use alloy_rpc_types_engine::JwtSecret;
 
 mod error;
 use crate::error::PreconferResult;
 
 mod rpc;
-use crate::rpc::{
-    flatten_mempool_txs, get_auth_client, get_client, get_latest_block, get_mempool_txs,
-};
+use block_building::rpc_client::{RpcClient, get_block};
+
+use crate::rpc::{flatten_mempool_txs, get_auth_client, get_client, get_mempool_txs};
 
 const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
 const LOCAL_TAIKO_URL: &str = "http://37.27.222.77:28551";
 
 #[tokio::main]
 async fn main() -> PreconferResult<()> {
-    let client = get_client(HEKLA_URL)?;
+    let client = RpcClient::new(get_client(HEKLA_URL)?);
     let full_tx = true;
-    let block = get_latest_block(&client, full_tx).await?;
+    let block = get_block(&client, BlockNumberOrTag::Latest, full_tx).await?;
 
     println!("Latest Block Header:");
     println!("Number: {:?}", block.header.number);

@@ -4,7 +4,7 @@ use alloy_consensus::{Header, TxEnvelope};
 use alloy_json_rpc::RpcError;
 use alloy_primitives::{Address, Bytes};
 use alloy_rpc_client::RpcClient;
-use alloy_rpc_types::{Block, BlockNumberOrTag};
+use alloy_rpc_types::BlockNumberOrTag;
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_transport::TransportErrorKind;
 use alloy_transport_http::{
@@ -40,20 +40,6 @@ pub fn get_auth_client(url: &str, jwt_secret: JwtSecret) -> PreconferResult<RpcC
     Ok(RpcClient::new(http_hyper, true))
 }
 
-pub async fn get_block(
-    client: &RpcClient,
-    block_number: BlockNumberOrTag,
-    full_tx: bool,
-) -> PreconferResult<Block> {
-    let params = json!([block_number, full_tx]);
-
-    let rpc_call = client.request(GET_BLOCK_BY_NUMBER, params.clone());
-    let method = rpc_call.method().to_string();
-    let params = rpc_call.request().params.clone();
-    let block: Option<Block> = rpc_call.await?;
-    block.ok_or(PreconferError::FailedRPCRequest { method, params })
-}
-
 pub async fn get_header(
     client: &RpcClient,
     block_number: BlockNumberOrTag,
@@ -69,14 +55,6 @@ pub async fn get_header(
 
 pub async fn get_header_by_id(client: &RpcClient, id: u64) -> PreconferResult<Header> {
     get_header(client, BlockNumberOrTag::Number(id)).await
-}
-
-pub async fn get_latest_block(client: &RpcClient, full_tx: bool) -> PreconferResult<Block> {
-    get_block(client, BlockNumberOrTag::Latest, full_tx).await
-}
-
-pub async fn get_block_by_id(client: &RpcClient, id: u64, full_tx: bool) -> PreconferResult<Block> {
-    get_block(client, BlockNumberOrTag::Number(id), full_tx).await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
