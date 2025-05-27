@@ -10,7 +10,7 @@ const ITERATIONS: usize = 1024;
 pub const MAX_BLOB_DATA_SIZE: usize = DATA_SIZE_PER_ITERATION * ITERATIONS - DATA_LENGTH_SIZE;
 const ENCODING_VERSION: u8 = 0;
 
-#[derive(Error, Debug)]
+#[derive(Error, Debug, PartialEq)]
 pub enum BlobEncodeError {
     #[error("Blob size of {size} bytes exceeds {MAX_BLOB_DATA_SIZE} failed.")]
     BlobSize { size: usize },
@@ -233,5 +233,13 @@ mod tests {
                     .unwrap()
             )
         );
+    }
+
+    #[test]
+    fn test_encode_blob_fails_if_blob_exceeds_max_size() {
+        let large_size = MAX_BLOB_DATA_SIZE + 1;
+        let data = vec![0; large_size];
+        let err = create_blob(&data).unwrap_err();
+        assert_eq!(err, BlobEncodeError::BlobSize { size: large_size });
     }
 }
