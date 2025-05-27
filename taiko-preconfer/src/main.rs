@@ -12,6 +12,7 @@ use crate::error::PreconferResult;
 
 mod rpc;
 use block_building::{
+    dummy_client::DummyClient,
     http_client::{
         flatten_mempool_txs, get_block, get_header, get_header_by_id, get_mempool_txs, get_nonce,
     },
@@ -23,7 +24,7 @@ use block_building::{
             addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_anchor_address},
             get_basefee_config_v2,
         },
-        preconf_blocks::create_executable_data,
+        preconf_blocks::{create_executable_data, publish_preconfirmed_transactions},
     },
 };
 mod add_anchor_transaction;
@@ -85,6 +86,12 @@ async fn main() -> PreconferResult<()> {
         my_txs.clone(),
     )?;
     println!("executable data {executable_data:?}");
+    let dummy_client = DummyClient {};
+    let end_of_sequencing = false;
+    let dummy_header =
+        publish_preconfirmed_transactions(&dummy_client, executable_data, end_of_sequencing)
+            .await?;
+    println!("header {dummy_header:?}");
 
     println!("nonce {nonce}");
 

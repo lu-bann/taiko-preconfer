@@ -13,11 +13,11 @@ use thiserror::Error;
 
 use crate::encode_util::hex_to_u64;
 
-const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
-const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
-const GET_TRANSACTION_COUNT: &str = "eth_getTransactionCount";
-const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
-const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
+pub const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
+pub const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
+pub const GET_TRANSACTION_COUNT: &str = "eth_getTransactionCount";
+pub const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
+pub const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
 
 #[derive(Error, Debug)]
 pub enum HttpError {

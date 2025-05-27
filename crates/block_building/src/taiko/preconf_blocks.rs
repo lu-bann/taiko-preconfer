@@ -11,7 +11,7 @@ use crate::{
     http_client::{HttpClient, HttpError},
 };
 
-const PRECONF_BLOCKS: &str = "preconfBlocks";
+pub const PRECONF_BLOCKS: &str = "preconfBlocks";
 
 #[derive(Debug, Serialize, RlpEncodable)]
 #[serde(rename_all = "camelCase")]
@@ -36,7 +36,7 @@ pub struct BuildPreconfBlockRequest {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildPreconfBlockResponse {
-    block_header: Header,
+    pub block_header: Header,
 }
 
 #[allow(clippy::too_many_arguments)]
