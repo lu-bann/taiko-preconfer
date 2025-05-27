@@ -18,7 +18,7 @@ impl RpcClient {
 }
 
 impl HttpClient for RpcClient {
-    async fn get<Resp: RpcRecv>(
+    async fn request<Resp: RpcRecv>(
         &self,
         method: String,
         params: serde_json::Value,
@@ -33,7 +33,8 @@ pub async fn get_block(
     full_tx: bool,
 ) -> Result<Block, HttpError> {
     let params = json!([block_number, full_tx]);
-    let block: Option<Block> = client.get(GET_BLOCK_BY_NUMBER.to_string(), params.clone()).await?;
+    let block: Option<Block> =
+        client.request(GET_BLOCK_BY_NUMBER.to_string(), params.clone()).await?;
     block.ok_or(HttpError::Rpc(alloy_json_rpc::RpcError::NullResp))
 }
 
@@ -56,7 +57,7 @@ mod tests {
         let second_hash =
             B256::from_hex("0xc2a716e6782e1efa88f8f204eb202005cebe3f4e7b6109b3bd300367545ef69a")
                 .unwrap();
-        client.expect_get::<Block>().return_once(move |_, _| {
+        client.expect_request::<Block>().return_once(move |_, _| {
             let block_transactions = vec![first_hash, second_hash];
             Box::pin(async {
                 Ok(Block::default()
@@ -66,7 +67,7 @@ mod tests {
 
         let method = GET_BLOCK_BY_NUMBER.to_string();
         let params = json!([BlockNumberOrTag::Latest, false]);
-        let block: Block = client.get(method, params).await.unwrap();
+        let block: Block = client.request(method, params).await.unwrap();
         assert_eq!(block.transactions.hashes().next().unwrap(), expected_first_hash);
         assert_eq!(block.transactions.len(), 2);
     }

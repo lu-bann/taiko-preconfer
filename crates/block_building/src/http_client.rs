@@ -14,7 +14,7 @@ pub enum HttpError {
 
 #[cfg_attr(test, automock)]
 pub trait HttpClient {
-    fn get<Resp: RpcRecv>(
+    fn request<Resp: RpcRecv>(
         &self,
         method: String,
         params: serde_json::Value,
