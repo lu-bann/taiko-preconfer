@@ -46,6 +46,13 @@ sol!(
         BlobParams blobParams;
         BlockParams[] blocks;
     }
+
+    #[derive(Debug)]
+    struct ProposeBatchParams {
+        bytes bytesX;
+        bytes bytesY;
+    }
+
     #[derive(Debug)]
     struct BatchInfo {
         bytes32 txsHash;
