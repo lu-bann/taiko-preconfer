@@ -33,7 +33,7 @@ async fn main() -> PreconferResult<()> {
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
             .unwrap();
 
-    let auth_client = get_auth_client(LOCAL_TAIKO_URL, jwt_secret)?;
+    let auth_client = RpcClient::new(get_auth_client(LOCAL_TAIKO_URL, jwt_secret)?);
     let mempool_tx_lists = get_mempool_txs(
         &auth_client,
         Address::from_str("0xA6f54d514592187F0aE517867466bfd2CCfde4B0").unwrap(),
