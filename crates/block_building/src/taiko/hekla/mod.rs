@@ -1,6 +1,7 @@
 pub mod addresses;
 
-pub const CHAIN_ID: alloy_primitives::ChainId = 167009u64;
+pub const CHAIN_ID: alloy_primitives::ChainId = 167009;
+pub const GAS_LIMIT: u64 = 241_000_000;
 
 use crate::taiko::contracts::TaikoAnchor;
 pub fn get_basefee_config_v2() -> TaikoAnchor::BaseFeeConfig {
