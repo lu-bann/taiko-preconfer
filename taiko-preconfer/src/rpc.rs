@@ -9,7 +9,10 @@ use alloy_transport_http::{
     AuthLayer, Http, HyperClient,
     hyper_util::{client::legacy::Client, rt::TokioExecutor},
 };
-use block_building::http_client::{HttpClient, HttpError};
+use block_building::{
+    encode_util::hex_to_u64,
+    http_client::{HttpClient, HttpError},
+};
 use http_body_util::Full;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -20,6 +23,7 @@ use crate::error::{PreconferError, PreconferResult};
 
 const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
 const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
+const GET_TRANSACTION_COUNT: &str = "eth_getTransactionCount";
 const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
 const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
 
@@ -37,6 +41,13 @@ pub fn get_auth_client(url: &str, jwt_secret: JwtSecret) -> PreconferResult<Allo
     let http_hyper = Http::with_client(layer_transport, Url::parse(url)?);
 
     Ok(AlloyClient::new(http_hyper, true))
+}
+
+pub async fn get_nonce<Client: HttpClient>(client: &Client, address: &str) -> PreconferResult<u64> {
+    let params = json!([address, "pending"]);
+    let transaction_count_hex_str: String =
+        client.request(GET_TRANSACTION_COUNT.to_string(), params).await?;
+    Ok(hex_to_u64(&transaction_count_hex_str)?)
 }
 
 pub async fn get_header<Client: HttpClient>(

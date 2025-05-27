@@ -8,6 +8,11 @@ pub fn hex_decode(hex_string: &str) -> Result<Vec<u8>, FromHexError> {
     decode(hex_string.trim_start_matches("0x"))
 }
 
+pub fn hex_to_u64(s: &str) -> Result<u64, std::num::ParseIntError> {
+    let s = s.trim_start_matches("0x");
+    u64::from_str_radix(s, 16)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -23,5 +28,12 @@ mod tests {
         let hex_str = "0x10";
         let decoded = hex_decode(hex_str).unwrap();
         assert_eq!(decoded, vec![16u8]);
+    }
+
+    #[test]
+    fn test_hex_to_u64() {
+        let hex_str = "0x10";
+        let decoded = hex_to_u64(hex_str).unwrap();
+        assert_eq!(decoded, 16u64);
     }
 }

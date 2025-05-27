@@ -1,5 +1,8 @@
+use std::num::ParseIntError;
+
 use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
+use alloy_primitives::ruint::FromUintError;
 use alloy_transport::TransportErrorKind;
 use block_building::http_client::HttpError;
 use k256::ecdsa::Error as EcdsaError;
@@ -23,6 +26,15 @@ pub enum PreconferError {
 
     #[error("{0}")]
     Http(#[from] HttpError),
+
+    #[error("{0}")]
+    ParseInt(#[from] ParseIntError),
+
+    #[error("{0}")]
+    FromUInt64(#[from] FromUintError<u64>),
+
+    #[error("{0}")]
+    FromUInt6128(#[from] FromUintError<u128>),
 
     #[error("RPC request {method} with {params} failed.")]
     FailedRPCRequest { method: String, params: JsonValue },
