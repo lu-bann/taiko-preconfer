@@ -48,17 +48,16 @@ mod tests {
     #[tokio::test]
     async fn test_get_block() {
         let mut client = MockHttpClient::new();
-        client.expect_get::<Block>().return_once(|_, _| {
-            let block_transactions = vec![
-                B256::from_hex(
-                    "0xb57c361f4e5fd7a2b6fc2246502c5fefd532217d0d5e7ffb75c841a7433914ad",
-                )
-                .unwrap(),
-                B256::from_hex(
-                    "0xc2a716e6782e1efa88f8f204eb202005cebe3f4e7b6109b3bd300367545ef69a",
-                )
-                .unwrap(),
-            ];
+
+        let first_hash =
+            B256::from_hex("0xb57c361f4e5fd7a2b6fc2246502c5fefd532217d0d5e7ffb75c841a7433914ad")
+                .unwrap();
+        let expected_first_hash = first_hash;
+        let second_hash =
+            B256::from_hex("0xc2a716e6782e1efa88f8f204eb202005cebe3f4e7b6109b3bd300367545ef69a")
+                .unwrap();
+        client.expect_get::<Block>().return_once(move |_, _| {
+            let block_transactions = vec![first_hash, second_hash];
             Box::pin(async {
                 Ok(Block::default()
                     .with_transactions(BlockTransactions::Hashes(block_transactions)))
@@ -68,11 +67,7 @@ mod tests {
         let method = GET_BLOCK_BY_NUMBER.to_string();
         let params = json!([BlockNumberOrTag::Latest, false]);
         let block: Block = client.get(method, params).await.unwrap();
-        assert_eq!(
-            block.transactions.hashes().next().unwrap(),
-            B256::from_hex("0xb57c361f4e5fd7a2b6fc2246502c5fefd532217d0d5e7ffb75c841a7433914ad")
-                .unwrap()
-        );
+        assert_eq!(block.transactions.hashes().next().unwrap(), expected_first_hash);
         assert_eq!(block.transactions.len(), 2);
     }
 }
