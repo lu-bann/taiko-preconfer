@@ -8,7 +8,10 @@ mod error;
 use crate::error::PreconferResult;
 
 mod rpc;
-use block_building::rpc_client::{RpcClient, get_block};
+use block_building::{
+    rpc_client::{RpcClient, get_block},
+    taiko::hekla::GAS_LIMIT,
+};
 
 use crate::rpc::{flatten_mempool_txs, get_auth_client, get_client, get_mempool_txs};
 
@@ -35,7 +38,7 @@ async fn main() -> PreconferResult<()> {
         &auth_client,
         Address::from_str("0xA6f54d514592187F0aE517867466bfd2CCfde4B0").unwrap(),
         10000,
-        241_000_000,
+        GAS_LIMIT,
         10000,
         vec![],
         10000,

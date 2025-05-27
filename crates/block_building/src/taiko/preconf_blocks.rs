@@ -1,7 +1,17 @@
-use alloy_primitives::{Address, B256, Bytes};
+use alloy_consensus::TxEnvelope;
+use alloy_primitives::{Address, B256, Bytes, FixedBytes};
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::Header;
-use serde::Serialize;
+use libdeflater::CompressionError;
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+
+use crate::{
+    compression::compress,
+    http_client::{HttpClient, HttpError},
+};
+
+const PRECONF_BLOCKS: &str = "preconfBlocks";
 
 #[derive(Debug, Serialize, RlpEncodable)]
 #[serde(rename_all = "camelCase")]
@@ -18,13 +28,69 @@ pub struct ExecutableData {
 
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BuildPreconfBlockRequestBody {
+pub struct BuildPreconfBlockRequest {
     executable_data: ExecutableData,
     end_of_sequencing: bool,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct BuildPreconfBlockResponseBody {
+pub struct BuildPreconfBlockResponse {
     block_header: Header,
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_executable_data(
+    base_fee_per_gas: u64,
+    block_number: u64,
+    sharing_percentage: u8,
+    fee_recipient: Address,
+    gas_limit: u64,
+    parent_hash: FixedBytes<32>,
+    timestamp: u64,
+    txs: Vec<TxEnvelope>,
+) -> Result<ExecutableData, CompressionError> {
+    Ok(ExecutableData {
+        base_fee_per_gas,
+        block_number,
+        extra_data: pad_left::<32>(&[sharing_percentage]),
+        fee_recipient,
+        gas_limit,
+        parent_hash,
+        timestamp,
+        transactions: Bytes::from(compress(txs)?),
+    })
+}
+
+pub async fn publish_preconfirmed_transactions<Client: HttpClient>(
+    client: &Client,
+    executable_data: ExecutableData,
+    end_of_sequencing: bool,
+) -> Result<Header, HttpError> {
+    let request_body = json!(BuildPreconfBlockRequest { executable_data, end_of_sequencing });
+    let response: BuildPreconfBlockResponse =
+        client.request(PRECONF_BLOCKS.to_string(), request_body).await?;
+    Ok(response.block_header)
+}
+
+pub fn pad_left<const N: usize>(bytes: &[u8]) -> Bytes {
+    let mut padded = [0u8; N];
+
+    let start = N - bytes.len();
+    padded[start..].copy_from_slice(bytes);
+
+    Bytes::from(padded)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_left_pad() {
+        let input: Vec<u8> = vec![3, 2, 1];
+        let padded = pad_left::<5>(&input);
+        let expected = Bytes::from([0, 0, 3, 2, 1]);
+        assert_eq!(padded, expected);
+    }
 }
