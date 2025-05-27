@@ -1,6 +1,6 @@
 use std::str::FromStr;
 
-use add_anchor_transaction::{BlockBuilder, Config};
+use add_anchor_transaction::{Config, get_anchor_id, get_timestamp, insert_anchor_transaction};
 use alloy_primitives::Address;
 use alloy_provider::ProviderBuilder;
 use alloy_rpc_types::BlockNumberOrTag;
@@ -21,7 +21,9 @@ use block_building::{
         hekla::{
             GAS_LIMIT,
             addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_anchor_address},
+            get_basefee_config_v2,
         },
+        preconf_blocks::create_executable_data,
     },
 };
 mod add_anchor_transaction;
@@ -33,6 +35,7 @@ const L1_URL: &str = "https://rpc.holesky.luban.wtf";
 
 #[tokio::main]
 async fn main() -> PreconferResult<()> {
+    let preconfer_address = Address::random();
     let client = RpcClient::new(get_client(HEKLA_URL)?);
     let l2_client = RpcClient::new(get_client(HEKLA_URL)?);
     let l1_client = RpcClient::new(get_client(L1_URL)?);
@@ -44,13 +47,46 @@ async fn main() -> PreconferResult<()> {
     let provider = ProviderBuilder::new().connect(HEKLA_URL).await?;
     let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider);
     let current_l1_header = get_header(&l1_client, BlockNumberOrTag::Latest).await?;
-    let block_builder = BlockBuilder::new(l2_client, l1_client, config.anchor_id_lag, taiko_anchor);
+    let base_fee_config = get_basefee_config_v2();
+    let anchor_block_id = get_anchor_id(current_l1_header.number, config.anchor_id_lag);
+    let anchor_header = get_header_by_id(&l1_client, anchor_block_id).await?;
+    let nonce = get_nonce(&l2_client, GOLDEN_TOUCH_ADDRESS).await?;
 
     let parent_header = get_header_by_id(&client, block.header.number - 1).await?;
-    let my_txs = block_builder.build_block(vec![], parent_header, current_l1_header).await?;
+    let parent_block =
+        get_block(&client, BlockNumberOrTag::Number(block.header.number - 1), full_tx).await?;
+    println!("{:?}", parent_block.header);
+    println!("{:?}", parent_header.hash_slow());
+    println!("{:?}", block.header);
+    let timestamp = get_timestamp();
+    let base_fee: u128 = taiko_anchor
+        .getBasefeeV2(parent_header.gas_used as u32, timestamp, base_fee_config.clone())
+        .call()
+        .await?
+        .basefee_
+        .try_into()?;
 
-    let gt_nonce = get_nonce(&client, GOLDEN_TOUCH_ADDRESS).await?;
-    println!("nonce {gt_nonce}");
+    let my_txs = insert_anchor_transaction(
+        vec![],
+        parent_header.clone(),
+        anchor_header,
+        base_fee,
+        base_fee_config.clone(),
+        nonce,
+    )?;
+    let executable_data = create_executable_data(
+        base_fee as u64,
+        parent_header.number + 1,
+        base_fee_config.sharingPctg,
+        preconfer_address,
+        GAS_LIMIT,
+        parent_header.hash_slow(),
+        timestamp,
+        my_txs.clone(),
+    )?;
+    println!("executable data {executable_data:?}");
+
+    println!("nonce {nonce}");
 
     println!("Latest Block Header:");
     println!("Number: {:?}", block.header.number);

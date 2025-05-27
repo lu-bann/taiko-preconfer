@@ -18,6 +18,7 @@ alloy-transport-http = { workspace = true }
 block-building = { workspace = true }
 http-body-util = { workspace = true }
 k256 = { workspace = true }
+libdeflater = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
 tower = { workspace = true }
