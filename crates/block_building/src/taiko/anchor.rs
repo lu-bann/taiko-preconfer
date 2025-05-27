@@ -4,10 +4,11 @@ use alloy_sol_types::SolCall;
 
 use crate::taiko::contracts::TaikoAnchor;
 
+const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
+
 pub fn create_anchor_transaction(
     chain_id: ChainId,
     nonce: u64,
-    gas_limit: u64,
     max_fee_per_gas: u128,
     max_priority_fee_per_gas: u128,
     taiko_anchor_address: Address,
@@ -16,7 +17,7 @@ pub fn create_anchor_transaction(
     TypedTransaction::from(TxEip1559 {
         chain_id,
         nonce,
-        gas_limit,
+        gas_limit: ANCHOR_GAS_LIMIT,
         max_fee_per_gas,
         max_priority_fee_per_gas,
         to: TxKind::Call(taiko_anchor_address),
@@ -54,13 +55,11 @@ mod tests {
         };
 
         let nonce = 135343764;
-        let gas_limit = 1_000_000u64;
         let max_fee_per_gas: u128 = 10_000_000u128;
         let max_priority_fee_per_gas = 0u128;
         let anchor_transaction = create_anchor_transaction(
             hekla_id,
             nonce,
-            gas_limit,
             max_fee_per_gas,
             max_priority_fee_per_gas,
             taiko_anchor_address,
