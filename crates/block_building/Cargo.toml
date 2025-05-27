@@ -17,6 +17,7 @@ alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 hex = { workspace = true }
 k256 = { workspace = true }
+libdeflater = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
