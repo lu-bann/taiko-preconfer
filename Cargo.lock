@@ -3278,6 +3278,7 @@ dependencies = [
  "block-building",
  "http-body-util",
  "k256",
+ "libdeflater",
  "thiserror",
  "tokio",
  "tower",

@@ -6,6 +6,7 @@ use alloy_primitives::ruint::FromUintError;
 use alloy_transport::TransportErrorKind;
 use block_building::http_client::HttpError;
 use k256::ecdsa::Error as EcdsaError;
+use libdeflater::CompressionError;
 use thiserror::Error;
 use url::ParseError;
 
@@ -34,6 +35,9 @@ pub enum PreconferError {
 
     #[error("{0}")]
     FromUInt128(#[from] FromUintError<u128>),
+
+    #[error("{0}")]
+    Compression(#[from] CompressionError),
 }
 
 pub type PreconferResult<T> = Result<T, PreconferError>;
