@@ -1,3 +1,4 @@
+pub mod blob;
 pub mod compression;
 pub mod encode_util;
 pub mod http_client;

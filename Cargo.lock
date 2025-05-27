@@ -892,6 +892,7 @@ dependencies = [
  "alloy-signer-local",
  "alloy-sol-types",
  "alloy-transport",
+ "c-kzg",
  "hex",
  "k256",
  "libdeflater",
