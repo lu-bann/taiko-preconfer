@@ -6,14 +6,16 @@ use alloy_provider::ProviderBuilder;
 use alloy_rpc_types::BlockNumberOrTag;
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_sol_types::SolCall;
-use rpc::{get_header, get_header_by_id, get_nonce};
 
 mod error;
 use crate::error::PreconferResult;
 
 mod rpc;
 use block_building::{
-    rpc_client::{RpcClient, get_block},
+    http_client::{
+        flatten_mempool_txs, get_block, get_header, get_header_by_id, get_mempool_txs, get_nonce,
+    },
+    rpc_client::RpcClient,
     taiko::{
         contracts::TaikoAnchor::{TaikoAnchorInstance, anchorV3Call},
         hekla::{
@@ -23,7 +25,7 @@ use block_building::{
     },
 };
 mod add_anchor_transaction;
-use crate::rpc::{flatten_mempool_txs, get_auth_client, get_client, get_mempool_txs};
+use crate::rpc::{get_auth_client, get_client};
 
 const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
 const LOCAL_TAIKO_URL: &str = "http://37.27.222.77:28551";

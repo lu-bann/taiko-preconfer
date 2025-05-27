@@ -6,7 +6,6 @@ use alloy_primitives::ruint::FromUintError;
 use alloy_transport::TransportErrorKind;
 use block_building::http_client::HttpError;
 use k256::ecdsa::Error as EcdsaError;
-use serde_json::Value as JsonValue;
 use thiserror::Error;
 use url::ParseError;
 
@@ -35,9 +34,6 @@ pub enum PreconferError {
 
     #[error("{0}")]
     FromUInt6128(#[from] FromUintError<u128>),
-
-    #[error("RPC request {method} with {params} failed.")]
-    FailedRPCRequest { method: String, params: JsonValue },
 }
 
 pub type PreconferResult<T> = Result<T, PreconferError>;
