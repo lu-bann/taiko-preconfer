@@ -33,7 +33,7 @@ pub enum PreconferError {
     FromUInt64(#[from] FromUintError<u64>),
 
     #[error("{0}")]
-    FromUInt6128(#[from] FromUintError<u128>),
+    FromUInt128(#[from] FromUintError<u128>),
 }
 
 pub type PreconferResult<T> = Result<T, PreconferError>;

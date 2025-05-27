@@ -3278,7 +3278,6 @@ dependencies = [
  "block-building",
  "http-body-util",
  "k256",
- "serde_json",
  "thiserror",
  "tokio",
  "tower",
