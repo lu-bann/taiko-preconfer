@@ -3,7 +3,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_primitives::{ChainId, FixedBytes};
 use block_building::{
-    http_client::HttpClient,
+    http_client::{HttpClient, get_header_by_id, get_nonce},
     taiko::{
         contracts::{TaikoAnchor, TaikoAnchorInstance},
         create_anchor_transaction,
@@ -16,10 +16,7 @@ use block_building::{
     },
 };
 
-use crate::{
-    error::PreconferResult,
-    rpc::{get_header_by_id, get_nonce},
-};
+use crate::error::PreconferResult;
 
 fn get_timestamp() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
