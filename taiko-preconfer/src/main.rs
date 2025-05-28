@@ -1,4 +1,3 @@
-use alloy_consensus::Header as ConsensusHeader;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionBuilder};
 use alloy_rpc_types::{Block, BlockNumberOrTag, TransactionRequest};
@@ -163,16 +162,6 @@ async fn print_mempool_txs_len(mempool_transactions: Arc<Mutex<Vec<Transaction>>
     }
 }
 
-async fn print_block_number(l1_header: Arc<Mutex<u64>>, l2_header: Arc<Mutex<Header>>) {
-    loop {
-        sleep(Duration::from_secs(5)).await;
-        let latest_l1_header = l1_header.lock().await;
-        info!("=== Latest L1 Block: {} === ", latest_l1_header);
-        let latest_l2_header = l2_header.lock().await;
-        info!("=== Latest L2 Block: {} === ", latest_l2_header.number);
-    }
-}
-
 #[allow(dead_code)]
 async fn listen_to_header_streams() {
     tracing_subscriber::fmt().init();
@@ -305,7 +294,7 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
 
         let last_l1_block_number = self.last_l1_block_number()?;
         info!(
-            "build block XXX {}, l1 {}",
+            "build block {}, l1 {}",
             parent_header.number + 1,
             last_l1_block_number
         );
@@ -346,6 +335,7 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
             "join: {} ms",
             end2.duration_since(start2).unwrap().as_millis()
         );
+        info!("#txs in mempool: {}", mempool_txs.len());
 
         let txs = insert_anchor_transaction(
             mempool_txs,
@@ -449,7 +439,6 @@ async fn run_preconfer() -> PreconferResult<()> {
         Address::random(),
     )));
     let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
-    let current_l2_header = Arc::new(Mutex::new(Header::<ConsensusHeader>::default()));
 
     let process_l1_header = {
         |header: Header, current: Arc<Mutex<u64>>| {
@@ -487,7 +476,6 @@ async fn run_preconfer() -> PreconferResult<()> {
             shared_last_l1_block_number.clone()
         ),
         stream_block_headers_with_builder(WS_HEKLA_URL, process_l2_header, block_builder),
-        print_block_number(shared_last_l1_block_number, current_l2_header),
     );
 
     Ok(())
