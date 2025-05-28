@@ -3272,6 +3272,8 @@ dependencies = [
  "alloy-rpc-client",
  "alloy-rpc-types",
  "alloy-rpc-types-engine",
+ "alloy-signer",
+ "alloy-signer-local",
  "alloy-sol-types",
  "alloy-transport",
  "alloy-transport-http",

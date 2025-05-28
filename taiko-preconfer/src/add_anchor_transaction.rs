@@ -1,7 +1,9 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use alloy_consensus::{Header, TxEnvelope};
-use alloy_primitives::{ChainId, FixedBytes};
+use alloy_consensus::{Header, SignableTransaction, TxEip1559, TxEnvelope};
+use alloy_primitives::{Address, Bytes, ChainId, FixedBytes};
+use alloy_signer::SignerSync;
+use alloy_signer_local::PrivateKeySigner;
 use block_building::taiko::{
     contracts::TaikoAnchor,
     create_anchor_transaction,
@@ -108,4 +110,31 @@ pub fn insert_anchor_transaction(
     let mut txs = txs;
     txs.insert(0, anchor_tx);
     Ok(txs)
+}
+
+pub fn get_signed_eip1559_tx(
+    to: Address,
+    input: Bytes,
+    nonce: u64,
+    gas_limit: u64,
+    max_fee_per_gas: u128,
+    max_priority_fee_per_gas: u128,
+    signer: &PrivateKeySigner,
+) -> PreconferResult<TxEnvelope> {
+    let tx = TxEip1559 {
+        chain_id: CHAIN_ID,
+        nonce,
+        gas_limit,
+        max_fee_per_gas,
+        max_priority_fee_per_gas,
+        to: to.into(),
+        input,
+        value: Default::default(),
+        access_list: Default::default(),
+    };
+
+    let sig = signer.sign_hash_sync(&tx.signature_hash())?;
+    let signed = tx.into_signed(sig);
+
+    Ok(signed.into())
 }
