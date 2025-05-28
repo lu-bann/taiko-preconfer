@@ -3,6 +3,7 @@ use alloy_rpc_client::RpcClient as AlloyClient;
 
 use crate::http_client::{HttpClient, HttpError};
 
+#[derive(Debug)]
 pub struct RpcClient {
     rpc_client: AlloyClient,
 }
