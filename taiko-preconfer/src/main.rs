@@ -1,10 +1,12 @@
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionBuilder};
-use alloy_rpc_types::Header;
 use alloy_rpc_types::{BlockNumberOrTag, TransactionRequest};
+use alloy_rpc_types::{Header, Transaction};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolCall;
+use futures::FutureExt;
+use futures::future::BoxFuture;
 
 use std::str::FromStr;
 use tokio::join;
@@ -45,7 +47,7 @@ const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
 const LOCAL_TAIKO_URL: &str = "http://37.27.222.77:28551";
 const L1_URL: &str = "https://rpc.holesky.luban.wtf";
 
-async fn stream_block_headers<T: Fn(Header) -> PreconferResult<()>>(
+async fn stream_block_headers<T: Fn(Header) -> BoxFuture<'static, PreconferResult<()>>>(
     url: &str,
     f: T,
 ) -> PreconferResult<()> {
@@ -55,7 +57,26 @@ async fn stream_block_headers<T: Fn(Header) -> PreconferResult<()>>(
     let mut stream = provider.subscribe_blocks().await?;
 
     while let Ok(header) = stream.recv().await {
-        f(header)?;
+        f(header).await?;
+    }
+    Err(error::PreconferError::WsConnectionLost {
+        url: url.to_string(),
+    })
+}
+
+async fn stream_pending_transactions<
+    T: Fn(Transaction) -> BoxFuture<'static, PreconferResult<()>>,
+>(
+    url: &str,
+    f: T,
+) -> PreconferResult<()> {
+    info!("connect to {url}");
+    let ws = WsConnect::new(url);
+    let provider = ProviderBuilder::new().connect_ws(ws).await?;
+    let mut stream = provider.subscribe_full_pending_transactions().await?;
+
+    while let Ok(tx) = stream.recv().await {
+        f(tx).await?;
     }
     Err(error::PreconferError::WsConnectionLost {
         url: url.to_string(),
@@ -69,29 +90,46 @@ async fn listen_to_header_streams() {
     let ws_l2_url = "ws://37.27.222.77:28546";
     let ws_l1_url = "wss://rpc.holesky.luban.wtf/ws";
 
-    let f = {
+    let process_l2_header = {
         |header: Header| {
-            let num = header.number;
-            let hash = header.hash;
+            async move {
+                let num = header.number;
+                let hash = header.hash;
 
-            info!("L2 🔨  #{:<10} {}", num, hash);
-            Ok(())
+                info!("L2 🔨  #{:<10} {}", num, hash);
+                Ok(())
+            }
+            .boxed()
         }
     };
 
-    let g = {
+    let process_l1_header = {
         |header: Header| {
-            let num = header.number;
-            let hash = header.hash;
+            async move {
+                let num = header.number;
+                let hash = header.hash;
 
-            info!("L1 🔨  #{:<10} {}", num, hash);
-            Ok(())
+                info!("L1 🔨  #{:<10} {}", num, hash);
+                Ok(())
+            }
+            .boxed()
+        }
+    };
+
+    let process_l2_tx = {
+        |tx: Transaction| {
+            async move {
+                info!("L2 ✉   #{:?}", tx.inner.hash());
+                Ok(())
+            }
+            .boxed()
         }
     };
 
     let _ = join!(
-        stream_block_headers(ws_l2_url, f),
-        stream_block_headers(ws_l1_url, g),
+        stream_block_headers(ws_l2_url, process_l2_header),
+        stream_block_headers(ws_l1_url, process_l1_header),
+        stream_pending_transactions(ws_l2_url, process_l2_tx),
     );
 }
 
