@@ -55,7 +55,7 @@ const L1_URL: &str = "https://rpc.holesky.luban.wtf";
 const WS_HEKLA_URL: &str = "ws://37.27.222.77:28546";
 const WS_L1_URL: &str = "wss://rpc.holesky.luban.wtf/ws";
 
-async fn stream_block_headers<T: Fn(Header) -> BoxFuture<'static, PreconferResult<()>>>(
+async fn stream_block_headers<'a, T: Fn(Header) -> BoxFuture<'a, PreconferResult<()>>>(
     url: &str,
     f: T,
 ) -> PreconferResult<()> {
@@ -73,8 +73,9 @@ async fn stream_block_headers<T: Fn(Header) -> BoxFuture<'static, PreconferResul
 }
 
 async fn stream_block_headers_with_builder<
+    'a,
     L1Client: HttpClient,
-    T: Fn(Header, Arc<Mutex<BlockBuilder<L1Client>>>) -> BoxFuture<'static, PreconferResult<()>>,
+    T: Fn(Header, Arc<Mutex<BlockBuilder<L1Client>>>) -> BoxFuture<'a, PreconferResult<()>>,
 >(
     url: &str,
     f: T,
@@ -94,7 +95,8 @@ async fn stream_block_headers_with_builder<
 }
 
 async fn stream_block_headers_into<
-    T: Fn(Header, Arc<Mutex<u64>>) -> BoxFuture<'static, PreconferResult<()>>,
+    'a,
+    T: Fn(Header, Arc<Mutex<u64>>) -> BoxFuture<'a, PreconferResult<()>>,
 >(
     url: &str,
     f: T,
@@ -113,7 +115,7 @@ async fn stream_block_headers_into<
     })
 }
 
-async fn stream_blocks<T: Fn(Block) -> BoxFuture<'static, PreconferResult<()>>>(
+async fn stream_blocks<'a, T: Fn(Block) -> BoxFuture<'a, PreconferResult<()>>>(
     url: &str,
     f: T,
 ) -> PreconferResult<()> {
@@ -135,7 +137,8 @@ async fn stream_blocks<T: Fn(Block) -> BoxFuture<'static, PreconferResult<()>>>(
 }
 
 async fn stream_pending_transactions<
-    T: FnMut(Transaction, Arc<Mutex<Vec<Transaction>>>) -> BoxFuture<'static, PreconferResult<()>>,
+    'a,
+    T: FnMut(Transaction, Arc<Mutex<Vec<Transaction>>>) -> BoxFuture<'a, PreconferResult<()>>,
 >(
     url: &str,
     f: T,
