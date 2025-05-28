@@ -38,5 +38,7 @@ pub fn create_propose_batch_params(
         bytesY: Bytes::from(BatchParams::abi_encode(&batch_params)),
     };
 
-    Bytes::from(ProposeBatchParams::abi_encode_sequence(&propose_batch_wrapper))
+    Bytes::from(ProposeBatchParams::abi_encode_sequence(
+        &propose_batch_wrapper,
+    ))
 }

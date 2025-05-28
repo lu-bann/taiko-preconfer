@@ -21,7 +21,9 @@ pub fn get_client(url: &str) -> PreconferResult<AlloyClient> {
 pub fn get_auth_client(url: &str, jwt_secret: JwtSecret) -> PreconferResult<AlloyClient> {
     let hyper_client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
     let auth_layer = AuthLayer::new(jwt_secret);
-    let service = ServiceBuilder::new().layer(auth_layer).service(hyper_client);
+    let service = ServiceBuilder::new()
+        .layer(auth_layer)
+        .service(hyper_client);
 
     let layer_transport = HyperClient::with_service(service);
     let http_hyper = Http::with_client(layer_transport, Url::parse(url)?);

@@ -12,7 +12,10 @@ use block_building::taiko::{
 use crate::error::PreconferResult;
 
 pub fn get_timestamp() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs()
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 fn create_anchor_call(
@@ -41,8 +44,12 @@ pub fn create_signed_anchor_transaction(
     max_fee_per_gas: u128,
     max_priority_fee_per_gas: u128,
 ) -> Result<TxEnvelope, k256::ecdsa::Error> {
-    let anchor_call =
-        create_anchor_call(anchor_block_id, anchor_state_root, parent_gas_used, base_fee_config);
+    let anchor_call = create_anchor_call(
+        anchor_block_id,
+        anchor_state_root,
+        parent_gas_used,
+        base_fee_config,
+    );
     let anchor_tx = create_anchor_transaction(
         chain_id,
         nonce,

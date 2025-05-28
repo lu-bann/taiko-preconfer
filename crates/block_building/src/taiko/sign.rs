@@ -21,7 +21,14 @@ fn sign_with_fixed_k(
     )?;
     let normalized = signature.normalize_s();
     let r = U256::from_be_slice(signature.r().as_ref().to_bytes().as_slice());
-    let s = U256::from_be_slice(normalized.unwrap_or(signature).s().as_ref().to_bytes().as_slice());
+    let s = U256::from_be_slice(
+        normalized
+            .unwrap_or(signature)
+            .s()
+            .as_ref()
+            .to_bytes()
+            .as_slice(),
+    );
 
     Ok(Signature::new(r, s, normalized.is_some()))
 }

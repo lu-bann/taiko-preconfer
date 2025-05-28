@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use add_anchor_transaction::{Config, get_anchor_id, get_timestamp, insert_anchor_transaction};
-use alloy_primitives::Address;
+use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::ProviderBuilder;
 use alloy_rpc_types::BlockNumberOrTag;
 use alloy_rpc_types_engine::JwtSecret;
@@ -12,19 +12,24 @@ use crate::error::PreconferResult;
 
 mod rpc;
 use block_building::{
+    compression::compress,
     dummy_client::DummyClient,
     http_client::{
         flatten_mempool_txs, get_block, get_header, get_header_by_id, get_mempool_txs, get_nonce,
     },
     rpc_client::RpcClient,
     taiko::{
-        contracts::TaikoAnchor::{TaikoAnchorInstance, anchorV3Call},
+        contracts::{
+            TaikoAnchor::{TaikoAnchorInstance, anchorV3Call},
+            taiko_wrapper::BlockParams,
+        },
         hekla::{
             GAS_LIMIT,
             addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_anchor_address},
             get_basefee_config_v2,
         },
         preconf_blocks::{create_executable_data, publish_preconfirmed_transactions},
+        propose_batch::create_propose_batch_params,
     },
 };
 mod add_anchor_transaction;
@@ -54,14 +59,22 @@ async fn main() -> PreconferResult<()> {
     let nonce = get_nonce(&l2_client, GOLDEN_TOUCH_ADDRESS).await?;
 
     let parent_header = get_header_by_id(&client, block.header.number - 1).await?;
-    let parent_block =
-        get_block(&client, BlockNumberOrTag::Number(block.header.number - 1), full_tx).await?;
+    let parent_block = get_block(
+        &client,
+        BlockNumberOrTag::Number(block.header.number - 1),
+        full_tx,
+    )
+    .await?;
     println!("{:?}", parent_block.header);
     println!("{:?}", parent_header.hash_slow());
     println!("{:?}", block.header);
     let timestamp = get_timestamp();
     let base_fee: u128 = taiko_anchor
-        .getBasefeeV2(parent_header.gas_used as u32, timestamp, base_fee_config.clone())
+        .getBasefeeV2(
+            parent_header.gas_used as u32,
+            timestamp,
+            base_fee_config.clone(),
+        )
         .call()
         .await?
         .basefee_
@@ -93,6 +106,26 @@ async fn main() -> PreconferResult<()> {
             .await?;
     println!("header {dummy_header:?}");
 
+    let number_of_blobs = 0u8;
+    let parent_meta_hash = B256::ZERO;
+    let coinbase = parent_header.beneficiary;
+    let tx_bytes = Bytes::from(compress(my_txs.clone())?);
+    let block_params = vec![BlockParams {
+        numTransactions: my_txs.len() as u16,
+        timeShift: 0,
+        signalSlots: vec![],
+    }];
+    let _propose_batch_params = create_propose_batch_params(
+        preconfer_address,
+        tx_bytes,
+        block_params,
+        parent_meta_hash,
+        anchor_block_id,
+        parent_header.timestamp,
+        coinbase,
+        number_of_blobs,
+    );
+
     println!("nonce {nonce}");
 
     println!("Latest Block Header:");
@@ -109,7 +142,12 @@ async fn main() -> PreconferResult<()> {
     let inner_call: anchorV3Call =
         <anchorV3Call as SolCall>::abi_decode(&inner.eip1559().unwrap().input).unwrap();
     let my_inner_call: anchorV3Call = <anchorV3Call as SolCall>::abi_decode(
-        &my_txs[0].clone().into_typed_transaction().eip1559().unwrap().input,
+        &my_txs[0]
+            .clone()
+            .into_typed_transaction()
+            .eip1559()
+            .unwrap()
+            .input,
     )
     .unwrap();
     println!("anchor ref: {:?}", txs[0].inner.inner());

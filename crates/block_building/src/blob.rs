@@ -19,7 +19,10 @@ pub enum BlobEncodeError {
     #[error("Invalid byte encoding {byte} & {mask} != 0.")]
     InvalidByteEncoding { byte: u8, mask: u8 },
     #[error("Failed fitting data into blob. Processed {processed_bytes} of {total_bytes}.")]
-    FailedFittingData { processed_bytes: usize, total_bytes: usize },
+    FailedFittingData {
+        processed_bytes: usize,
+        total_bytes: usize,
+    },
 }
 
 pub fn create_blob(data: &[u8]) -> Result<Blob, BlobEncodeError> {
@@ -78,7 +81,9 @@ pub fn blobs_to_sidecar(blobs: Vec<c_kzg::Blob>) -> Result<BlobTransactionSideca
 
     for blob in blobs.iter() {
         let commitment = kzg_settings.blob_to_kzg_commitment(blob)?.to_bytes();
-        let proof = kzg_settings.compute_blob_kzg_proof(blob, &commitment)?.to_bytes();
+        let proof = kzg_settings
+            .compute_blob_kzg_proof(blob, &commitment)?
+            .to_bytes();
         commitments.push(commitment);
         proofs.push(proof);
     }
@@ -95,14 +100,17 @@ fn assert_blob_size(size: usize) -> Result<(), BlobEncodeError> {
 
 fn assert_byte_offset(offset: usize, mod_expected: usize) -> Result<(), BlobEncodeError> {
     if offset % 32 != mod_expected {
-        return Err(BlobEncodeError::InvalidByteOffset { offset, mod_expected })
+        return Err(BlobEncodeError::InvalidByteOffset {
+            offset,
+            mod_expected,
+        });
     }
     Ok(())
 }
 
 fn assert_byte_encoding(byte: u8, mask: u8) -> Result<(), BlobEncodeError> {
     if byte & mask != 0 {
-        return Err(BlobEncodeError::InvalidByteEncoding { byte, mask })
+        return Err(BlobEncodeError::InvalidByteEncoding { byte, mask });
     }
     Ok(())
 }
@@ -112,7 +120,10 @@ fn assert_all_bytes_processed(
     total_bytes: usize,
 ) -> Result<(), BlobEncodeError> {
     if processed_bytes != total_bytes {
-        return Err(BlobEncodeError::FailedFittingData { processed_bytes, total_bytes });
+        return Err(BlobEncodeError::FailedFittingData {
+            processed_bytes,
+            total_bytes,
+        });
     }
     Ok(())
 }

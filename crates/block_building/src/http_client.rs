@@ -45,8 +45,9 @@ pub async fn get_nonce<Client: HttpClient>(
     address: &str,
 ) -> Result<u64, HttpError> {
     let params = json!([address, "pending"]);
-    let transaction_count_hex_str: String =
-        client.request(GET_TRANSACTION_COUNT.to_string(), params).await?;
+    let transaction_count_hex_str: String = client
+        .request(GET_TRANSACTION_COUNT.to_string(), params)
+        .await?;
     Ok(hex_to_u64(&transaction_count_hex_str)?)
 }
 
@@ -56,9 +57,13 @@ pub async fn get_header<Client: HttpClient>(
 ) -> Result<Header, HttpError> {
     let params = json!([block_number]);
 
-    let header: Option<Header> =
-        client.request(GET_HEADER_BY_NUMBER.to_string(), params.clone()).await?;
-    header.ok_or(HttpError::FailedRPCRequest { method: GET_HEADER_BY_NUMBER.to_string(), params })
+    let header: Option<Header> = client
+        .request(GET_HEADER_BY_NUMBER.to_string(), params.clone())
+        .await?;
+    header.ok_or(HttpError::FailedRPCRequest {
+        method: GET_HEADER_BY_NUMBER.to_string(),
+        params,
+    })
 }
 
 pub async fn get_header_by_id<Client: HttpClient>(
@@ -93,7 +98,9 @@ pub async fn get_mempool_txs<Client: HttpClient>(
         locals,
         max_transactions_lists
     ]);
-    client.request(TAIKO_TX_POOL_CONTENT.to_string(), params).await
+    client
+        .request(TAIKO_TX_POOL_CONTENT.to_string(), params)
+        .await
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -116,11 +123,16 @@ pub async fn get_mempool_tx_with_min_tip<Client: HttpClient>(
         max_transactions_lists,
         min_tip
     ]);
-    client.request(TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP.to_string(), params).await
+    client
+        .request(TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP.to_string(), params)
+        .await
 }
 
 pub fn flatten_mempool_txs(tx_lists: Vec<MempoolTxList>) -> Vec<TxEnvelope> {
-    tx_lists.into_iter().flat_map(|tx_list| tx_list.tx_list).collect()
+    tx_lists
+        .into_iter()
+        .flat_map(|tx_list| tx_list.tx_list)
+        .collect()
 }
 
 pub async fn get_block<Client: HttpClient>(
@@ -129,8 +141,9 @@ pub async fn get_block<Client: HttpClient>(
     full_tx: bool,
 ) -> Result<Block, HttpError> {
     let params = json!([block_number, full_tx]);
-    let block: Option<Block> =
-        client.request(GET_BLOCK_BY_NUMBER.to_string(), params.clone()).await?;
+    let block: Option<Block> = client
+        .request(GET_BLOCK_BY_NUMBER.to_string(), params.clone())
+        .await?;
     block.ok_or(HttpError::Rpc(alloy_json_rpc::RpcError::NullResp))
 }
 
@@ -164,7 +177,10 @@ mod tests {
         let method = GET_BLOCK_BY_NUMBER.to_string();
         let params = json!([BlockNumberOrTag::Latest, false]);
         let block: Block = client.request(method, params).await.unwrap();
-        assert_eq!(block.transactions.hashes().next().unwrap(), expected_first_hash);
+        assert_eq!(
+            block.transactions.hashes().next().unwrap(),
+            expected_first_hash
+        );
         assert_eq!(block.transactions.len(), 2);
     }
 }
