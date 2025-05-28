@@ -302,6 +302,33 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
         Ok(flatten_mempool_txs(mempool_tx_lists))
     }
 
+    async fn publish_preconfirmed_transactions(
+        &self,
+        base_fee: u64,
+        timestamp: u64,
+        parent_header: &Header,
+        txs: Vec<TxEnvelope>,
+    ) -> PreconferResult<()> {
+        let executable_data = create_executable_data(
+            base_fee,
+            parent_header.number + 1,
+            self.base_fee_config.sharingPctg,
+            self.address,
+            GAS_LIMIT,
+            parent_header.hash_slow(),
+            timestamp,
+            txs,
+        )?;
+        info!("executable data {executable_data:?}");
+        let dummy_client = DummyClient {};
+        let end_of_sequencing = false;
+        let dummy_header =
+            publish_preconfirmed_transactions(&dummy_client, executable_data, end_of_sequencing)
+                .await?;
+        info!("header {dummy_header:?}");
+        Ok(())
+    }
+
     pub async fn build_block(&self, parent_header: Header) -> PreconferResult<()> {
         self.wait_until_next_block(parent_header.timestamp).await?;
 
@@ -350,23 +377,13 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
             self.base_fee_config.clone(),
             golden_touch_nonce?,
         )?;
-        let executable_data = create_executable_data(
+        self.publish_preconfirmed_transactions(
             base_fee as u64,
-            parent_header.number + 1,
-            self.base_fee_config.sharingPctg,
-            self.address,
-            GAS_LIMIT,
-            parent_header.hash_slow(),
             timestamp,
+            &parent_header,
             txs.clone(),
-        )?;
-        info!("executable data {executable_data:?}");
-        let dummy_client = DummyClient {};
-        let end_of_sequencing = false;
-        let dummy_header =
-            publish_preconfirmed_transactions(&dummy_client, executable_data, end_of_sequencing)
-                .await?;
-        info!("header {dummy_header:?}");
+        )
+        .await?;
 
         let number_of_blobs = 0u8;
         let parent_meta_hash = B256::ZERO;
