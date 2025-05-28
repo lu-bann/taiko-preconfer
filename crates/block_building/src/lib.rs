@@ -6,5 +6,4 @@ pub mod http_client;
 pub mod password;
 pub mod rpc_client;
 pub mod taiko;
-pub mod trigger;
 pub mod verification;
