@@ -1,4 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use alloy_consensus::{Header, SignableTransaction, TxEip1559, TxEnvelope};
 use alloy_primitives::{Address, Bytes, ChainId, FixedBytes};
@@ -65,22 +65,22 @@ pub fn create_signed_anchor_transaction(
     Ok(TxEnvelope::from(signed_anchor_tx))
 }
 
+#[derive(Debug)]
 pub struct Config {
-    #[allow(dead_code)]
-    pub l2_block_time_ms: u64,
+    pub l2_block_time: Duration,
     #[allow(dead_code)]
     pub handover_window_slots: u32,
     #[allow(dead_code)]
-    pub handover_start_buffer_ms: u64,
+    pub handover_start_buffer: Duration,
     pub anchor_id_lag: u64,
 }
 
 impl Default for Config {
     fn default() -> Self {
         Self {
-            l2_block_time_ms: 2000,
+            l2_block_time: Duration::from_millis(12000),
             handover_window_slots: 4,
-            handover_start_buffer_ms: 6000,
+            handover_start_buffer: Duration::from_millis(6000),
             anchor_id_lag: 4,
         }
     }

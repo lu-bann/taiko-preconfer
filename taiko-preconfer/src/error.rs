@@ -1,4 +1,4 @@
-use std::num::ParseIntError;
+use std::{num::ParseIntError, time::SystemTimeError};
 
 use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
@@ -9,6 +9,7 @@ use block_building::http_client::HttpError;
 use k256::ecdsa::Error as EcdsaError;
 use libdeflater::CompressionError;
 use thiserror::Error;
+use tokio::sync::TryLockError;
 use url::ParseError;
 
 #[derive(Error, Debug)]
@@ -42,6 +43,12 @@ pub enum PreconferError {
 
     #[error("{0}")]
     Sign(#[from] SignerError),
+
+    #[error("{0}")]
+    TryLock(#[from] TryLockError),
+
+    #[error("{0}")]
+    SystemTime(#[from] SystemTimeError),
 
     #[error("Web socket connection lost at {url}.")]
     WsConnectionLost { url: String },
