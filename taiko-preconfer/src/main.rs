@@ -1,14 +1,14 @@
-use std::str::FromStr;
-
-use add_anchor_transaction::{
-    Config, get_anchor_id, get_signed_eip1559_tx, get_timestamp, insert_anchor_transaction,
-};
 use alloy_primitives::{Address, B256, Bytes};
-use alloy_provider::{Provider, ProviderBuilder, network::TransactionBuilder};
+use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionBuilder};
+use alloy_rpc_types::Header;
 use alloy_rpc_types::{BlockNumberOrTag, TransactionRequest};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolCall;
+
+use std::str::FromStr;
+use tokio::join;
+use tracing::info;
 
 mod error;
 use crate::error::PreconferResult;
@@ -37,10 +37,63 @@ use block_building::{
 };
 mod add_anchor_transaction;
 use crate::rpc::{get_auth_client, get_client};
+use add_anchor_transaction::{
+    Config, get_anchor_id, get_signed_eip1559_tx, get_timestamp, insert_anchor_transaction,
+};
 
 const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
 const LOCAL_TAIKO_URL: &str = "http://37.27.222.77:28551";
 const L1_URL: &str = "https://rpc.holesky.luban.wtf";
+
+async fn stream_block_headers<T: Fn(Header) -> PreconferResult<()>>(
+    url: &str,
+    f: T,
+) -> PreconferResult<()> {
+    info!("connect to {url}");
+    let ws = WsConnect::new(url);
+    let provider = ProviderBuilder::new().connect_ws(ws).await?;
+    let mut stream = provider.subscribe_blocks().await?;
+
+    while let Ok(header) = stream.recv().await {
+        f(header)?;
+    }
+    Err(error::PreconferError::WsConnectionLost {
+        url: url.to_string(),
+    })
+}
+
+#[allow(dead_code)]
+async fn listen_to_header_streams() {
+    tracing_subscriber::fmt().init();
+
+    let ws_l2_url = "ws://37.27.222.77:28546";
+    let ws_l1_url = "wss://rpc.holesky.luban.wtf/ws";
+
+    let f = {
+        |header: Header| {
+            let num = header.number;
+            let hash = header.hash;
+
+            info!("L2 🔨  #{:<10} {}", num, hash);
+            Ok(())
+        }
+    };
+
+    let g = {
+        |header: Header| {
+            let num = header.number;
+            let hash = header.hash;
+
+            info!("L1 🔨  #{:<10} {}", num, hash);
+            Ok(())
+        }
+    };
+
+    let _ = join!(
+        stream_block_headers(ws_l2_url, f),
+        stream_block_headers(ws_l1_url, g),
+    );
+}
 
 #[tokio::main]
 async fn main() -> PreconferResult<()> {

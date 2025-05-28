@@ -42,6 +42,9 @@ pub enum PreconferError {
 
     #[error("{0}")]
     Sign(#[from] SignerError),
+
+    #[error("Web socket connection lost at {url}.")]
+    WsConnectionLost { url: String },
 }
 
 pub type PreconferResult<T> = Result<T, PreconferError>;
