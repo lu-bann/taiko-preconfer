@@ -3421,6 +3421,7 @@ dependencies = [
  "alloy-transport",
  "alloy-transport-http",
  "block-building",
+ "futures",
  "http-body-util",
  "k256",
  "libdeflater",
