@@ -1,16 +1,19 @@
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionBuilder};
-use alloy_rpc_types::{BlockNumberOrTag, TransactionRequest};
+use alloy_rpc_types::{Block, BlockNumberOrTag, TransactionRequest};
 use alloy_rpc_types::{Header, Transaction};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolCall;
-use futures::FutureExt;
 use futures::future::BoxFuture;
+use futures::{FutureExt, StreamExt};
+use tokio::time::sleep;
 
 use std::str::FromStr;
+use std::sync::{Arc, Mutex};
+use std::time::Duration;
 use tokio::join;
-use tracing::info;
+use tracing::{error, info};
 
 mod error;
 use crate::error::PreconferResult;
@@ -46,6 +49,8 @@ use add_anchor_transaction::{
 const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
 const LOCAL_TAIKO_URL: &str = "http://37.27.222.77:28551";
 const L1_URL: &str = "https://rpc.holesky.luban.wtf";
+const WS_HEKLA_URL: &str = "ws://37.27.222.77:28546";
+const WS_L1_URL: &str = "wss://rpc.holesky.luban.wtf/ws";
 
 async fn stream_block_headers<T: Fn(Header) -> BoxFuture<'static, PreconferResult<()>>>(
     url: &str,
@@ -64,39 +69,71 @@ async fn stream_block_headers<T: Fn(Header) -> BoxFuture<'static, PreconferResul
     })
 }
 
-async fn stream_pending_transactions<
-    T: Fn(Transaction) -> BoxFuture<'static, PreconferResult<()>>,
->(
+async fn stream_blocks<T: Fn(Block) -> BoxFuture<'static, PreconferResult<()>>>(
     url: &str,
     f: T,
 ) -> PreconferResult<()> {
     info!("connect to {url}");
     let ws = WsConnect::new(url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
-    let mut stream = provider.subscribe_full_pending_transactions().await?;
+    let mut stream = provider
+        .subscribe_full_blocks()
+        .full()
+        .into_stream()
+        .await?;
 
-    while let Ok(tx) = stream.recv().await {
-        f(tx).await?;
+    while let Some(Ok(block)) = stream.next().await {
+        f(block).await?;
     }
     Err(error::PreconferError::WsConnectionLost {
         url: url.to_string(),
     })
 }
 
+async fn stream_pending_transactions<
+    T: FnMut(Transaction, Arc<Mutex<Vec<Transaction>>>) -> BoxFuture<'static, PreconferResult<()>>,
+>(
+    url: &str,
+    f: T,
+    mempool_txs: Arc<Mutex<Vec<Transaction>>>,
+) -> PreconferResult<()> {
+    let mut f = f;
+    info!("connect to {url}");
+    let ws = WsConnect::new(url);
+    let provider = ProviderBuilder::new().connect_ws(ws).await?;
+    let mut stream = provider.subscribe_full_pending_transactions().await?;
+
+    while let Ok(tx) = stream.recv().await {
+        f(tx, mempool_txs.clone()).await?;
+    }
+    Err(error::PreconferError::WsConnectionLost {
+        url: url.to_string(),
+    })
+}
+
+async fn print_mempool_txs_len(mempool_transactions: Arc<Mutex<Vec<Transaction>>>) {
+    loop {
+        sleep(Duration::from_secs(5)).await;
+        match mempool_transactions.lock() {
+            Ok(guard) => info!("=== #TX: {} === ", guard.len()),
+            Err(err) => error!("Locking failed: {:?}", err),
+        }
+    }
+}
+
 #[allow(dead_code)]
 async fn listen_to_header_streams() {
     tracing_subscriber::fmt().init();
 
-    let ws_l2_url = "ws://37.27.222.77:28546";
-    let ws_l1_url = "wss://rpc.holesky.luban.wtf/ws";
+    let mempool_transactions: Arc<Mutex<Vec<Transaction>>> = Arc::new(Mutex::new(vec![]));
 
-    let process_l2_header = {
-        |header: Header| {
+    let process_l2_block = {
+        |block: Block| {
             async move {
-                let num = header.number;
-                let hash = header.hash;
+                let num = block.header.number;
+                let hash = block.header.hash;
 
-                info!("L2 🔨  #{:<10} {}", num, hash);
+                info!("L2 🔨  #{:<10} {} {}", num, hash, block.transactions.len());
                 Ok(())
             }
             .boxed()
@@ -109,7 +146,7 @@ async fn listen_to_header_streams() {
                 let num = header.number;
                 let hash = header.hash;
 
-                info!("L1 🔨  #{:<10} {}", num, hash);
+                info!("L1 🗣 #{:<10} {}", num, hash);
                 Ok(())
             }
             .boxed()
@@ -117,9 +154,13 @@ async fn listen_to_header_streams() {
     };
 
     let process_l2_tx = {
-        |tx: Transaction| {
+        |tx: Transaction, mempool_txs: Arc<Mutex<Vec<Transaction>>>| {
             async move {
                 info!("L2 ✉   #{:?}", tx.inner.hash());
+                match mempool_txs.lock() {
+                    Ok(mut guard) => guard.push(tx),
+                    Err(err) => error!("Locking failed: {:?}", err),
+                }
                 Ok(())
             }
             .boxed()
@@ -127,14 +168,21 @@ async fn listen_to_header_streams() {
     };
 
     let _ = join!(
-        stream_block_headers(ws_l2_url, process_l2_header),
-        stream_block_headers(ws_l1_url, process_l1_header),
-        stream_pending_transactions(ws_l2_url, process_l2_tx),
+        stream_blocks(WS_HEKLA_URL, process_l2_block),
+        stream_block_headers(WS_L1_URL, process_l1_header),
+        stream_pending_transactions(WS_HEKLA_URL, process_l2_tx, mempool_transactions.clone()),
+        print_mempool_txs_len(mempool_transactions)
     );
 }
 
 #[tokio::main]
 async fn main() -> PreconferResult<()> {
+    listen_to_header_streams().await;
+    Ok(())
+}
+
+#[allow(dead_code)]
+async fn test() -> PreconferResult<()> {
     let preconfer_address = Address::random();
     let client = RpcClient::new(get_client(HEKLA_URL)?);
     let l2_client = RpcClient::new(get_client(HEKLA_URL)?);
