@@ -1,3 +1,4 @@
+use alloy_consensus::TxEnvelope;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionBuilder};
 use alloy_rpc_types::{Block, BlockNumberOrTag, TransactionRequest};
@@ -287,6 +288,20 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
         Ok(())
     }
 
+    async fn get_mempool_txs(&self, base_fee: u64) -> PreconferResult<Vec<TxEnvelope>> {
+        let mempool_tx_lists = get_mempool_txs(
+            &self.l2_clients.auth_client,
+            self.address,
+            base_fee,
+            GAS_LIMIT,
+            BYTES_PER_BLOB as u64,
+            vec![],
+            1,
+        )
+        .await?;
+        Ok(flatten_mempool_txs(mempool_tx_lists))
+    }
+
     pub async fn build_block(&self, parent_header: Header) -> PreconferResult<()> {
         self.wait_until_next_block(parent_header.timestamp).await?;
 
@@ -319,17 +334,7 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
         );
 
         let base_fee: u128 = base_fee?.basefee_.try_into()?;
-        let mempool_tx_lists = get_mempool_txs(
-            &self.l2_clients.auth_client,
-            self.address,
-            base_fee as u64,
-            GAS_LIMIT,
-            BYTES_PER_BLOB as u64,
-            vec![],
-            1,
-        )
-        .await?;
-        let mempool_txs = flatten_mempool_txs(mempool_tx_lists);
+        let mempool_txs = self.get_mempool_txs(base_fee as u64).await?;
         let end2 = SystemTime::now();
         info!(
             "join: {} ms",
