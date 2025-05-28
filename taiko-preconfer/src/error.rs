@@ -3,6 +3,7 @@ use std::num::ParseIntError;
 use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
 use alloy_primitives::ruint::FromUintError;
+use alloy_signer::Error as SignerError;
 use alloy_transport::TransportErrorKind;
 use block_building::http_client::HttpError;
 use k256::ecdsa::Error as EcdsaError;
@@ -38,6 +39,9 @@ pub enum PreconferError {
 
     #[error("{0}")]
     Compression(#[from] CompressionError),
+
+    #[error("{0}")]
+    Sign(#[from] SignerError),
 }
 
 pub type PreconferResult<T> = Result<T, PreconferError>;

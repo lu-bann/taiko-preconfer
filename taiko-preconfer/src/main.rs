@@ -1,10 +1,13 @@
 use std::str::FromStr;
 
-use add_anchor_transaction::{Config, get_anchor_id, get_timestamp, insert_anchor_transaction};
+use add_anchor_transaction::{
+    Config, get_anchor_id, get_signed_eip1559_tx, get_timestamp, insert_anchor_transaction,
+};
 use alloy_primitives::{Address, B256, Bytes};
-use alloy_provider::ProviderBuilder;
-use alloy_rpc_types::BlockNumberOrTag;
+use alloy_provider::{Provider, ProviderBuilder, network::TransactionBuilder};
+use alloy_rpc_types::{BlockNumberOrTag, TransactionRequest};
 use alloy_rpc_types_engine::JwtSecret;
+use alloy_signer_local::PrivateKeySigner;
 use alloy_sol_types::SolCall;
 
 mod error;
@@ -25,7 +28,7 @@ use block_building::{
         },
         hekla::{
             GAS_LIMIT,
-            addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_anchor_address},
+            addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_anchor_address, get_taiko_inbox_address},
             get_basefee_config_v2,
         },
         preconf_blocks::{create_executable_data, publish_preconfirmed_transactions},
@@ -51,7 +54,7 @@ async fn main() -> PreconferResult<()> {
     let config = Config::default();
     let taiko_anchor_address = get_taiko_anchor_address();
     let provider = ProviderBuilder::new().connect(HEKLA_URL).await?;
-    let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider);
+    let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider.clone());
     let current_l1_header = get_header(&l1_client, BlockNumberOrTag::Latest).await?;
     let base_fee_config = get_basefee_config_v2();
     let anchor_block_id = get_anchor_id(current_l1_header.number, config.anchor_id_lag);
@@ -115,7 +118,7 @@ async fn main() -> PreconferResult<()> {
         timeShift: 0,
         signalSlots: vec![],
     }];
-    let _propose_batch_params = create_propose_batch_params(
+    let propose_batch_params = create_propose_batch_params(
         preconfer_address,
         tx_bytes,
         block_params,
@@ -125,6 +128,27 @@ async fn main() -> PreconferResult<()> {
         coinbase,
         number_of_blobs,
     );
+
+    let signer = PrivateKeySigner::random();
+    let nonce = get_nonce(&client, &signer.address().to_string()).await?;
+    let taiko_inbox_address = get_taiko_inbox_address();
+    let tx = TransactionRequest::default()
+        .with_to(taiko_inbox_address)
+        .with_input(propose_batch_params.clone())
+        .with_from(signer.address());
+    let gas_limit = provider.estimate_gas(tx).await?;
+    let fee_estimate = provider.estimate_eip1559_fees().await?;
+    let signed_tx = get_signed_eip1559_tx(
+        taiko_inbox_address,
+        propose_batch_params,
+        nonce,
+        gas_limit,
+        fee_estimate.max_fee_per_gas,
+        fee_estimate.max_priority_fee_per_gas,
+        &signer,
+    )?;
+
+    println!("signed propose batch tx {signed_tx:?}");
 
     println!("nonce {nonce}");
 
