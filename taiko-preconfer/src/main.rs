@@ -227,7 +227,6 @@ async fn listen_to_header_streams() {
 #[derive(Debug)]
 struct L2Clients {
     client: RpcClient,
-    #[allow(dead_code)]
     auth_client: RpcClient,
     taiko_anchor: TaikoAnchorInstance,
     provider: TaikoProvider,
