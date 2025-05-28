@@ -67,9 +67,13 @@ pub async fn publish_preconfirmed_transactions<Client: HttpClient>(
     executable_data: ExecutableData,
     end_of_sequencing: bool,
 ) -> Result<Header, HttpError> {
-    let request_body = json!(BuildPreconfBlockRequest { executable_data, end_of_sequencing });
-    let response: BuildPreconfBlockResponse =
-        client.request(PRECONF_BLOCKS.to_string(), request_body).await?;
+    let request_body = json!(BuildPreconfBlockRequest {
+        executable_data,
+        end_of_sequencing
+    });
+    let response: BuildPreconfBlockResponse = client
+        .request(PRECONF_BLOCKS.to_string(), request_body)
+        .await?;
     Ok(response.block_header)
 }
 
