@@ -58,7 +58,7 @@ async fn stream_block_headers<T: Fn(Header) -> BoxFuture<'static, PreconferResul
     url: &str,
     f: T,
 ) -> PreconferResult<()> {
-    info!("connect to {url}");
+    info!("Subscribe to headers at {url}");
     let ws = WsConnect::new(url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
     let mut stream = provider.subscribe_blocks().await?;
@@ -79,7 +79,7 @@ async fn stream_block_headers_with_builder<
     f: T,
     block_builder: Arc<Mutex<BlockBuilder<L1Client>>>,
 ) -> PreconferResult<()> {
-    info!("connect to {url}");
+    info!("Subscribe to headers at {url}");
     let ws = WsConnect::new(url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
     let mut stream = provider.subscribe_blocks().await?;
@@ -99,7 +99,7 @@ async fn stream_block_headers_into<
     f: T,
     current: Arc<Mutex<u64>>,
 ) -> PreconferResult<()> {
-    info!("connect to {url}");
+    info!("Subscribe to headers at {url}");
     let ws = WsConnect::new(url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
     let mut stream = provider.subscribe_blocks().await?;
@@ -116,7 +116,7 @@ async fn stream_blocks<T: Fn(Block) -> BoxFuture<'static, PreconferResult<()>>>(
     url: &str,
     f: T,
 ) -> PreconferResult<()> {
-    info!("connect to {url}");
+    info!("Subscribe to full blocks at {url}");
     let ws = WsConnect::new(url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
     let mut stream = provider
@@ -141,7 +141,7 @@ async fn stream_pending_transactions<
     mempool_txs: Arc<Mutex<Vec<Transaction>>>,
 ) -> PreconferResult<()> {
     let mut f = f;
-    info!("connect to {url}");
+    info!("Subscribe to pending transactions at {url}");
     let ws = WsConnect::new(url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
     let mut stream = provider.subscribe_full_pending_transactions().await?;
