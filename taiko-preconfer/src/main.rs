@@ -1,30 +1,23 @@
 use alloy_consensus::TxEnvelope;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionBuilder};
-use alloy_rpc_types::{Block, TransactionRequest};
-use alloy_rpc_types::{Header, Transaction};
+use alloy_rpc_types::{Block, Header, Transaction, TransactionRequest};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer_local::PrivateKeySigner;
-use block_building::http_client::HttpClient;
 use c_kzg::BYTES_PER_BLOB;
-use futures::future::BoxFuture;
-use futures::{FutureExt, StreamExt};
-use tokio::time::sleep;
-
+use futures::{
+    future::BoxFuture,
+    {FutureExt, StreamExt},
+};
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::join;
-use tokio::sync::Mutex;
+use tokio::{join, sync::Mutex, time::sleep};
 use tracing::info;
 
-mod error;
-use crate::error::PreconferResult;
-
-mod rpc;
 use block_building::{
     compression::compress,
     dummy_client::DummyClient,
-    http_client::{flatten_mempool_txs, get_header_by_id, get_mempool_txs, get_nonce},
+    http_client::{HttpClient, flatten_mempool_txs, get_header_by_id, get_mempool_txs, get_nonce},
     rpc_client::RpcClient,
     taiko::{
         contracts::{
@@ -42,9 +35,15 @@ use block_building::{
         propose_batch::create_propose_batch_params,
     },
 };
-mod add_anchor_transaction;
+
+mod error;
+use crate::error::PreconferResult;
+
+mod rpc;
 use crate::rpc::{get_auth_client, get_client};
-use add_anchor_transaction::{
+
+mod add_anchor_transaction;
+use crate::add_anchor_transaction::{
     Config, get_anchor_id, get_signed_eip1559_tx, get_timestamp, insert_anchor_transaction,
 };
 
