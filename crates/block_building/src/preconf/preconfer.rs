@@ -11,16 +11,16 @@ use tracing::{debug, info};
 use alloy_primitives::{Address, B256, Bytes, ChainId};
 
 use crate::compression::compress;
-use crate::http_client::{HttpClient, get_header_by_id, get_nonce};
 use crate::preconf::PreconferResult;
 use crate::taiko::contracts::taiko_wrapper::BlockParams;
 use crate::taiko::hekla::addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_inbox_address};
 use crate::taiko::propose_batch::create_propose_batch_params;
 use crate::taiko::taiko_client::ITaikoClient;
+use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::time_provider::ITimeProvider;
 
 #[derive(Debug)]
-pub struct Preconfer<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
+pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
     last_l1_block_number: Arc<Mutex<u64>>,
     config: Config,
     l1_client: L1Client,
@@ -29,7 +29,7 @@ pub struct Preconfer<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: IT
     time_provider: TimeProvider,
 }
 
-impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
+impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
     Preconfer<L1Client, Taiko, TimeProvider>
 {
     pub fn new(
@@ -84,7 +84,7 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.config.anchor_id_lag);
         debug!("t: get anchor header with id {}", anchor_block_id);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
-            get_header_by_id(&self.l1_client, anchor_block_id),
+            self.l1_client.get_header(anchor_block_id),
             self.taiko.get_nonce(GOLDEN_TOUCH_ADDRESS),
             self.taiko.get_base_fee(parent_header.gas_used, now),
         );
@@ -144,7 +144,7 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             .with_from(signer.address());
         let signer_str = signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
-            get_nonce(&self.l1_client, &signer_str),
+            self.l1_client.get_nonce(&signer_str),
             self.taiko.estimate_gas(tx), // TODO estimate using l1 provider
             self.taiko.estimate_eip1559_fees(), // TODO estimate using l1 provider
         );
@@ -232,9 +232,7 @@ mod tests {
     use alloy_signer::Signature;
 
     use crate::{
-        encode_util::u64_to_hex,
-        http_client::{GET_HEADER_BY_NUMBER, GET_TRANSACTION_COUNT, MockHttpClient},
-        taiko::taiko_client::MockITaikoClient,
+        taiko::{taiko_client::MockITaikoClient, taiko_l1_client::MockITaikoL1Client},
         time_provider::MockITimeProvider,
     };
 
@@ -271,15 +269,13 @@ mod tests {
         let last_block_timestamp = 1_000_000u64;
         let next_block_desired_timestamp = last_block_timestamp + config.l2_block_time.as_secs();
 
-        let mut l1_client = MockHttpClient::new();
+        let mut l1_client = MockITaikoL1Client::new();
         l1_client
-            .expect_request()
-            .withf(|method, _| method == GET_TRANSACTION_COUNT)
-            .return_once(|_, _| Box::pin(async { Ok(u64_to_hex(DUMMY_NONCE)) }));
+            .expect_get_nonce()
+            .return_once(|_| Box::pin(async { Ok(DUMMY_NONCE) }));
         l1_client
-            .expect_request()
-            .withf(|method, _| method == GET_HEADER_BY_NUMBER)
-            .return_once(|_, _| Box::pin(async { Ok(Some(ConsensusHeader::default())) }));
+            .expect_get_header()
+            .return_once(|_| Box::pin(async { Ok(ConsensusHeader::default()) }));
 
         let mut taiko = MockITaikoClient::new();
         taiko

@@ -5,3 +5,4 @@ pub mod hekla;
 pub mod propose_batch;
 pub mod sign;
 pub mod taiko_client;
+pub mod taiko_l1_client;

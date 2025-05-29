@@ -18,6 +18,9 @@ pub enum PreconferError {
     TaikoClient(#[from] crate::taiko::taiko_client::TaikoClientError),
 
     #[error("{0}")]
+    TaikoL1Client(#[from] crate::taiko::taiko_l1_client::TaikoL1ClientError),
+
+    #[error("{0}")]
     TryLock(#[from] tokio::sync::TryLockError),
 }
 
