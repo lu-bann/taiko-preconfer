@@ -121,11 +121,21 @@ mod tests {
         let slot = Slot::new(0, 7);
         assert!(model.is_first_preconfirmation_slot(slot));
     }
+
     #[test]
     fn is_not_first_slot_in_preconfirmation_window() {
         let handover_slots = 3u64;
         let mut model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
         model.set_next_active_epoch(1);
+
+        let slot = Slot::new(0, 8);
+        assert!(!model.is_first_preconfirmation_slot(slot));
+    }
+
+    #[test]
+    fn if_no_active_epoch_is_set_then_is_not_first_slot_in_preconfirmation_window() {
+        let handover_slots = u64::MAX;
+        let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
 
         let slot = Slot::new(0, 8);
         assert!(!model.is_first_preconfirmation_slot(slot));
