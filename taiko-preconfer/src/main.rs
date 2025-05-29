@@ -12,7 +12,7 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::{join, sync::Mutex, time::sleep};
-use tracing::info;
+use tracing::{error, info};
 
 use block_building::{
     preconf::{Config, Preconfer},
@@ -282,7 +282,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
                 info!("L2 🗣 #{:<10} {}", num, hash);
                 let now = SystemTime::now();
                 wait_until_next_block(now, header.timestamp, l2_block_time).await?;
-                block_builder.lock().await.build_block(header).await?;
+                if let Err(err) = block_builder.lock().await.build_block(header).await { error!("Error during block building: {:?}", err) }
                 Ok(())
             }
             .boxed()
