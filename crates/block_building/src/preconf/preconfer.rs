@@ -6,7 +6,7 @@ use alloy_signer_local::PrivateKeySigner;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tokio::{join, sync::Mutex, time::sleep};
-use tracing::info;
+use tracing::{debug, info};
 
 use alloy_primitives::{Address, B256, Bytes, ChainId};
 
@@ -76,16 +76,13 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
 
         let start = SystemTime::now();
 
-        let last_l1_block_number = self.last_l1_block_number()?;
-        info!(
-            "build block {}, l1 {}",
-            parent_header.number + 1,
-            last_l1_block_number
-        );
+        info!("Start preconfirming block: #{}", parent_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
-        info!("t: now={} parent={}", now, parent_header.timestamp);
+        debug!("t: now={} parent={}", now, parent_header.timestamp);
 
+        let last_l1_block_number = self.last_l1_block_number()?;
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.config.anchor_id_lag);
+        debug!("t: get anchor header with id {}", anchor_block_id);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             get_header_by_id(&self.l1_client, anchor_block_id),
             self.taiko.get_nonce(GOLDEN_TOUCH_ADDRESS),
@@ -97,7 +94,7 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             .taiko
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
-        info!("#txs in mempool: {}", txs.len());
+        debug!("#txs in mempool: {}", txs.len());
 
         let anchor_tx = self.taiko.get_signed_anchor_tx(
             anchor_block_id,
@@ -148,8 +145,8 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         let signer_str = signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
             get_nonce(&self.l1_client, &signer_str),
-            self.taiko.estimate_gas(tx),
-            self.taiko.estimate_eip1559_fees(),
+            self.taiko.estimate_gas(tx), // TODO estimate using l1 provider
+            self.taiko.estimate_eip1559_fees(), // TODO estimate using l1 provider
         );
         let fee_estimate = fee_estimate?;
 
@@ -164,9 +161,9 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             &signer,
         )?;
 
-        info!("signed propose batch tx {signed_tx:?}");
+        debug!("signed propose batch tx {signed_tx:?}");
         let end = SystemTime::now();
-        info!(
+        debug!(
             "elapsed: {} ms",
             end.duration_since(start).unwrap().as_millis()
         );
@@ -225,4 +222,128 @@ fn get_signed_eip1559_tx(
     let signed = tx.into_signed(sig);
 
     Ok(signed.into())
+}
+
+#[cfg(test)]
+mod tests {
+    use alloy_consensus::Header as ConsensusHeader;
+    use alloy_primitives::{FixedBytes, U256};
+    use alloy_provider::utils::Eip1559Estimation;
+    use alloy_signer::Signature;
+
+    use crate::{
+        encode_util::u64_to_hex,
+        http_client::{GET_HEADER_BY_NUMBER, GET_TRANSACTION_COUNT, MockHttpClient},
+        taiko::taiko_client::MockITaikoClient,
+        time_provider::MockITimeProvider,
+    };
+
+    use super::*;
+
+    fn get_rpc_header(inner: ConsensusHeader) -> Header {
+        Header {
+            hash: FixedBytes::<32>::default(),
+            inner,
+            total_difficulty: None,
+            size: None,
+        }
+    }
+
+    fn get_header(number: u64, timestamp: u64) -> ConsensusHeader {
+        ConsensusHeader {
+            number,
+            timestamp,
+            ..Default::default()
+        }
+    }
+
+    const DUMMY_NONCE: u64 = 10;
+    const DUMMY_BASE_FEE: u128 = 100;
+    const DUMMY_BLOCK_NUMBER: u64 = 1234;
+    const DUMMY_TIMESTAMP: u64 = 987654321;
+    const DUMMY_GAS: u64 = 30000;
+    const DUMMY_MAX_FEE_PER_GAS: u128 = 50000;
+    const DUMMY_MAX_PRIORITY_FEE_PER_GAS: u128 = 70000;
+
+    #[tokio::test]
+    async fn test_build_blocks_adds_anchor_transaction() {
+        let config = Config::default();
+        let last_block_timestamp = 1_000_000u64;
+        let next_block_desired_timestamp = last_block_timestamp + config.l2_block_time.as_secs();
+
+        let mut l1_client = MockHttpClient::new();
+        l1_client
+            .expect_request()
+            .withf(|method, _| method == GET_TRANSACTION_COUNT)
+            .return_once(|_, _| Box::pin(async { Ok(u64_to_hex(DUMMY_NONCE)) }));
+        l1_client
+            .expect_request()
+            .withf(|method, _| method == GET_HEADER_BY_NUMBER)
+            .return_once(|_, _| Box::pin(async { Ok(Some(ConsensusHeader::default())) }));
+
+        let mut taiko = MockITaikoClient::new();
+        taiko
+            .expect_get_nonce()
+            .return_once(|_| Box::pin(async { Ok(DUMMY_NONCE) }));
+        taiko
+            .expect_get_base_fee()
+            .return_once(|_, _| Box::pin(async { Ok(DUMMY_BASE_FEE) }));
+        taiko
+            .expect_get_signed_anchor_tx()
+            .return_once(|_, _, _, _, _| {
+                Ok(TxEnvelope::new_unhashed(
+                    TxEip1559::default().into(),
+                    Signature::new(U256::ONE, U256::default(), false),
+                ))
+            });
+        taiko
+            .expect_publish_preconfirmed_transactions()
+            .withf(|_, _, _, _, txs| txs.len() == 2 && txs[0].signature().r() == U256::ONE)
+            .return_once(|_, _, _, _, _| {
+                Box::pin(async {
+                    Ok(get_rpc_header(get_header(
+                        DUMMY_BLOCK_NUMBER,
+                        DUMMY_TIMESTAMP,
+                    )))
+                })
+            });
+        taiko.expect_get_mempool_txs().return_once(|_, _| {
+            Box::pin(async {
+                Ok(vec![TxEnvelope::new_unhashed(
+                    TxEip1559::default().into(),
+                    Signature::new(U256::default(), U256::default(), false),
+                )])
+            })
+        });
+
+        taiko
+            .expect_estimate_gas()
+            .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
+        taiko.expect_estimate_eip1559_fees().return_once(|| {
+            Box::pin(async {
+                Ok(Eip1559Estimation {
+                    max_fee_per_gas: DUMMY_MAX_FEE_PER_GAS,
+                    max_priority_fee_per_gas: DUMMY_MAX_PRIORITY_FEE_PER_GAS,
+                })
+            })
+        });
+
+        let mut time_provider = MockITimeProvider::new();
+        time_provider.expect_now().return_const(
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(next_block_desired_timestamp))
+                .unwrap(),
+        );
+        time_provider
+            .expect_timestamp_in_s()
+            .return_const(next_block_desired_timestamp);
+
+        let preconfer_address = Address::random();
+
+        let preconfer = Preconfer::new(config, l1_client, taiko, preconfer_address, time_provider);
+        *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
+
+        let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
+        assert!(preconfer.build_block(parent_header).await.is_ok());
+    }
 }
