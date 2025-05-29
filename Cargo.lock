@@ -965,6 +965,7 @@ dependencies = [
  "serde_json",
  "thiserror 2.0.12",
  "tokio",
+ "tracing",
 ]
 
 [[package]]
@@ -3420,7 +3421,6 @@ dependencies = [
  "alloy-transport",
  "alloy-transport-http",
  "block-building",
- "c-kzg",
  "futures",
  "http-body-util",
  "k256",
