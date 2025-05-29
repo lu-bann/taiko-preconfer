@@ -95,6 +95,9 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
         debug!("#txs in mempool: {}", txs.len());
+        if txs.is_empty() {
+            return Ok(());
+        }
 
         let anchor_tx = self.taiko.get_signed_anchor_tx(
             anchor_block_id,
@@ -322,6 +325,49 @@ mod tests {
                 )])
             })
         });
+
+        let mut time_provider = MockITimeProvider::new();
+        time_provider.expect_now().return_const(
+            UNIX_EPOCH
+                .checked_add(Duration::from_secs(next_block_desired_timestamp))
+                .unwrap(),
+        );
+        time_provider
+            .expect_timestamp_in_s()
+            .return_const(next_block_desired_timestamp);
+
+        let preconfer_address = Address::random();
+
+        let preconfer = Preconfer::new(config, l1_client, taiko, preconfer_address, time_provider);
+        *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
+
+        let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
+        assert!(preconfer.build_block(parent_header).await.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_no_block_gets_published_when_mempool_is_empty() {
+        let config = Config::default();
+        let last_block_timestamp = 1_000_000u64;
+        let next_block_desired_timestamp = last_block_timestamp + config.l2_block_time.as_secs();
+
+        let mut l1_client = MockITaikoL1Client::new();
+        l1_client
+            .expect_get_header()
+            .return_once(|_| Box::pin(async { Ok(ConsensusHeader::default()) }));
+
+        let mut taiko = MockITaikoClient::new();
+        taiko
+            .expect_get_nonce()
+            .return_once(|_| Box::pin(async { Ok(DUMMY_NONCE) }));
+        taiko
+            .expect_get_base_fee()
+            .return_once(|_, _| Box::pin(async { Ok(DUMMY_BASE_FEE) }));
+        taiko.expect_get_signed_anchor_tx().never();
+        taiko.expect_publish_preconfirmed_transactions().never();
+        taiko
+            .expect_get_mempool_txs()
+            .return_once(|_, _| Box::pin(async { Ok(vec![]) }));
 
         let mut time_provider = MockITimeProvider::new();
         time_provider.expect_now().return_const(
