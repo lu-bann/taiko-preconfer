@@ -13,7 +13,9 @@ use alloy_primitives::{Address, B256, Bytes, ChainId};
 use crate::compression::compress;
 use crate::preconf::PreconferResult;
 use crate::taiko::contracts::taiko_wrapper::BlockParams;
-use crate::taiko::hekla::addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_inbox_address};
+use crate::taiko::hekla::addresses::{
+    GOLDEN_TOUCH_ADDRESS, get_golden_touch_signing_key, get_taiko_inbox_address,
+};
 use crate::taiko::propose_batch::create_propose_batch_params;
 use crate::taiko::taiko_client::ITaikoClient;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
@@ -119,6 +121,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             )
             .await?;
 
+        debug!("compression");
         let number_of_blobs = 0u8;
         let parent_meta_hash = B256::ZERO;
         let coinbase = parent_header.beneficiary;
@@ -128,6 +131,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             timeShift: 0,
             signalSlots: vec![],
         }];
+        debug!("create propose batch params");
         let propose_batch_params = create_propose_batch_params(
             self.address,
             tx_bytes,
@@ -139,7 +143,8 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             number_of_blobs,
         );
 
-        let signer = PrivateKeySigner::random();
+        debug!("create tx");
+        let signer = PrivateKeySigner::from_signing_key(get_golden_touch_signing_key());
         let taiko_inbox_address = get_taiko_inbox_address();
         let tx = TransactionRequest::default()
             .with_to(taiko_inbox_address)
@@ -148,11 +153,15 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         let signer_str = signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
             self.l1_client.get_nonce(&signer_str),
-            self.l1_client.estimate_gas(tx),
+            self.taiko.estimate_gas(tx), // TODO: use l1_client to estimate gas (fix address/params/whitelist first)
             self.l1_client.estimate_eip1559_fees(),
         );
         let fee_estimate = fee_estimate?;
 
+        debug!(
+            "sign tx {} {:?} {:?}",
+            taiko_inbox_address, nonce, gas_limit
+        );
         let signed_tx = get_signed_eip1559_tx(
             0, // TODO: Add L1 Chain id
             taiko_inbox_address,
@@ -279,9 +288,6 @@ mod tests {
         l1_client
             .expect_get_header()
             .return_once(|_| Box::pin(async { Ok(ConsensusHeader::default()) }));
-        l1_client
-            .expect_estimate_gas()
-            .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
         l1_client.expect_estimate_eip1559_fees().return_once(|| {
             Box::pin(async {
                 Ok(Eip1559Estimation {
@@ -306,6 +312,9 @@ mod tests {
                     Signature::new(U256::ONE, U256::default(), false),
                 ))
             });
+        taiko
+            .expect_estimate_gas()
+            .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
         taiko
             .expect_publish_preconfirmed_transactions()
             .withf(|_, _, _, _, txs| txs.len() == 2 && txs[0].signature().r() == U256::ONE)
