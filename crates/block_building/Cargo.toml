@@ -14,6 +14,7 @@ alloy-rlp = { workspace = true }
 alloy-rpc-client = { workspace = true }
 alloy-rpc-types = { workspace = true }
 alloy-signer = { workspace = true }
+alloy-signer-local = { workspace = true }
 alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
 c-kzg = { workspace = true }
@@ -23,12 +24,11 @@ libdeflater = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+tokio = { workspace = true }
 tracing = { workspace = true }
 
 [dev-dependencies]
-alloy-signer-local = { workspace = true }
 mockall = { workspace = true }
-tokio = { workspace = true }
 
 [package.metadata.cargo-machete]
 ignored = ["alloy-contract"]
