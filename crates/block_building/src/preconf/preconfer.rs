@@ -4,8 +4,8 @@ use alloy_rpc_types::{Header, TransactionRequest};
 use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
-use tokio::{join, sync::Mutex, time::sleep};
+use std::time::{Duration, SystemTime};
+use tokio::{join, sync::Mutex};
 use tracing::{debug, info};
 
 use alloy_primitives::{Address, B256, Bytes, ChainId};
@@ -59,32 +59,15 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         Ok(self.last_l1_block_number.try_lock().map(|guard| *guard)?)
     }
 
-    async fn wait_until_next_block(&self, current_block_timestamp: u64) -> PreconferResult<()> {
-        let now = self.time_provider.now();
-        let desired_next_block_time = UNIX_EPOCH
-            .checked_add(Duration::from_secs(current_block_timestamp))
-            .map(|x| {
-                x.checked_add(self.config.l2_block_time)
-                    .unwrap_or(UNIX_EPOCH)
-            })
-            .unwrap_or(UNIX_EPOCH);
-        let remaining = desired_next_block_time.duration_since(now)?;
-        sleep(remaining).await;
-        Ok(())
-    }
-
     pub async fn build_block(&self, parent_header: Header) -> PreconferResult<()> {
-        self.wait_until_next_block(parent_header.timestamp).await?;
-
         let start = SystemTime::now();
 
         info!("Start preconfirming block: #{}", parent_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
-        debug!("t: now={} parent={}", now, parent_header.timestamp);
+        debug!("now={} parent={}", now, parent_header.timestamp);
 
         let last_l1_block_number = self.last_l1_block_number()?;
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.config.anchor_id_lag);
-        debug!("t: get anchor header with id {}", anchor_block_id);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
             self.taiko.get_nonce(GOLDEN_TOUCH_ADDRESS),
@@ -98,6 +81,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             .await?;
         debug!("#txs in mempool: {}", txs.len());
         if txs.is_empty() {
+            info!("Empty mempool: skipping block building.");
             return Ok(());
         }
 
@@ -110,6 +94,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         )?;
         txs.insert(0, anchor_tx);
 
+        info!("Publish preconfirmed block with {} transactions", txs.len());
         let _header = self
             .taiko
             .publish_preconfirmed_transactions(
@@ -121,7 +106,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             )
             .await?;
 
-        debug!("compression");
+        debug!("Compression");
         let number_of_blobs = 0u8;
         let parent_meta_hash = B256::ZERO;
         let coinbase = parent_header.beneficiary;
@@ -131,7 +116,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             timeShift: 0,
             signalSlots: vec![],
         }];
-        debug!("create propose batch params");
+        debug!("Create propose batch params");
         let propose_batch_params = create_propose_batch_params(
             self.address,
             tx_bytes,
@@ -143,7 +128,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             number_of_blobs,
         );
 
-        debug!("create tx");
+        debug!("Create tx");
         let signer = PrivateKeySigner::from_signing_key(get_golden_touch_signing_key());
         let taiko_inbox_address = get_taiko_inbox_address();
         let tx = TransactionRequest::default()
@@ -242,6 +227,7 @@ mod tests {
     use alloy_primitives::{FixedBytes, U256};
     use alloy_provider::utils::Eip1559Estimation;
     use alloy_signer::Signature;
+    use std::time::UNIX_EPOCH;
 
     use crate::{
         taiko::{taiko_client::MockITaikoClient, taiko_l1_client::MockITaikoL1Client},

@@ -1,18 +1,18 @@
-use alloy_json_rpc::RpcError;
-use alloy_transport::TransportErrorKind;
 use thiserror::Error;
-use url::ParseError;
 
 #[derive(Error, Debug)]
 pub enum ApplicationError {
     #[error("{0}")]
-    Rpc(#[from] RpcError<TransportErrorKind>),
+    Rpc(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
 
     #[error("{0}")]
-    UrlParse(#[from] ParseError),
+    UrlParse(#[from] url::ParseError),
 
     #[error("{0}")]
     Preconfer(#[from] block_building::preconf::PreconferError),
+
+    #[error("{0}")]
+    SystemTime(#[from] std::time::SystemTimeError),
 
     #[error("Web socket connection lost at {url}.")]
     WsConnectionLost { url: String },
