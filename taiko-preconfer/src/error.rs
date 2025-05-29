@@ -5,7 +5,7 @@ use alloy_json_rpc::RpcError;
 use alloy_primitives::ruint::FromUintError;
 use alloy_signer::Error as SignerError;
 use alloy_transport::TransportErrorKind;
-use block_building::http_client::HttpError;
+use block_building::{http_client::HttpError, taiko::taiko_client::TaikoClientError};
 use k256::ecdsa::Error as EcdsaError;
 use libdeflater::CompressionError;
 use thiserror::Error;
@@ -22,6 +22,9 @@ pub enum PreconferError {
 
     #[error("{0}")]
     Contract(#[from] ContractError),
+
+    #[error("{0}")]
+    TaikoClient(#[from] TaikoClientError),
 
     #[error("{0}")]
     Ecdsa(#[from] EcdsaError),

@@ -1,10 +1,8 @@
-use alloy_consensus::TxEnvelope;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::{Provider, ProviderBuilder, WsConnect, network::TransactionBuilder};
 use alloy_rpc_types::{Block, Header, Transaction, TransactionRequest};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer_local::PrivateKeySigner;
-use c_kzg::BYTES_PER_BLOB;
 use futures::{
     future::BoxFuture,
     {FutureExt, StreamExt},
@@ -16,23 +14,17 @@ use tracing::info;
 
 use block_building::{
     compression::compress,
-    dummy_client::DummyClient,
-    http_client::{HttpClient, flatten_mempool_txs, get_header_by_id, get_mempool_txs, get_nonce},
+    http_client::{HttpClient, get_header_by_id, get_nonce},
     rpc_client::RpcClient,
     taiko::{
-        contracts::{
-            Provider as TaikoProvider,
-            TaikoAnchor::{self},
-            TaikoAnchorInstance,
-            taiko_wrapper::BlockParams,
-        },
+        contracts::{TaikoAnchorInstance, taiko_wrapper::BlockParams},
         hekla::{
-            GAS_LIMIT,
+            CHAIN_ID,
             addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_anchor_address, get_taiko_inbox_address},
             get_basefee_config_v2,
         },
-        preconf_blocks::{create_executable_data, publish_preconfirmed_transactions},
         propose_batch::create_propose_batch_params,
+        taiko_client::{ITaikoClient, TaikoClient},
     },
 };
 
@@ -43,9 +35,7 @@ mod rpc;
 use crate::rpc::{get_auth_client, get_client};
 
 mod add_anchor_transaction;
-use crate::add_anchor_transaction::{
-    Config, get_anchor_id, get_signed_eip1559_tx, get_timestamp, insert_anchor_transaction,
-};
+use crate::add_anchor_transaction::{Config, get_anchor_id, get_signed_eip1559_tx, get_timestamp};
 
 const HEKLA_URL: &str = "https://rpc.hekla.taiko.xyz";
 const LOCAL_TAIKO_URL: &str = "http://37.27.222.77:28551";
@@ -73,11 +63,12 @@ async fn stream_block_headers<'a, T: Fn(Header) -> BoxFuture<'a, PreconferResult
 async fn stream_block_headers_with_builder<
     'a,
     L1Client: HttpClient,
-    T: Fn(Header, Arc<Mutex<BlockBuilder<L1Client>>>) -> BoxFuture<'a, PreconferResult<()>>,
+    Taiko: ITaikoClient,
+    T: Fn(Header, Arc<Mutex<BlockBuilder<L1Client, Taiko>>>) -> BoxFuture<'a, PreconferResult<()>>,
 >(
     url: &str,
     f: T,
-    block_builder: Arc<Mutex<BlockBuilder<L1Client>>>,
+    block_builder: Arc<Mutex<BlockBuilder<L1Client, Taiko>>>,
 ) -> PreconferResult<()> {
     info!("Subscribe to headers at {url}");
     let ws = WsConnect::new(url);
@@ -216,53 +207,21 @@ async fn listen_to_header_streams() {
 }
 
 #[derive(Debug)]
-struct L2Clients {
-    client: RpcClient,
-    auth_client: RpcClient,
-    taiko_anchor: TaikoAnchorInstance,
-    provider: TaikoProvider,
-}
-
-impl L2Clients {
-    pub fn new(
-        client: RpcClient,
-        auth_client: RpcClient,
-        taiko_anchor: TaikoAnchorInstance,
-        provider: TaikoProvider,
-    ) -> Self {
-        Self {
-            client,
-            auth_client,
-            taiko_anchor,
-            provider,
-        }
-    }
-}
-
-#[derive(Debug)]
-struct BlockBuilder<L1Client: HttpClient> {
+struct BlockBuilder<L1Client: HttpClient, Taiko: ITaikoClient> {
     last_l1_block_number: Arc<Mutex<u64>>,
     config: Config,
     l1_client: L1Client,
-    l2_clients: L2Clients,
-    base_fee_config: TaikoAnchor::BaseFeeConfig,
+    taiko: Taiko,
     address: Address,
 }
 
-impl<L1Client: HttpClient> BlockBuilder<L1Client> {
-    pub fn new(
-        config: Config,
-        l1_client: L1Client,
-        l2_clients: L2Clients,
-        base_fee_config: TaikoAnchor::BaseFeeConfig,
-        address: Address,
-    ) -> Self {
+impl<L1Client: HttpClient, Taiko: ITaikoClient> BlockBuilder<L1Client, Taiko> {
+    pub fn new(config: Config, l1_client: L1Client, taiko: Taiko, address: Address) -> Self {
         Self {
             last_l1_block_number: Arc::new(Mutex::new(0u64)),
             config,
             l1_client,
-            l2_clients,
-            base_fee_config,
+            taiko,
             address,
         }
     }
@@ -289,47 +248,6 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
         Ok(())
     }
 
-    async fn get_mempool_txs(&self, base_fee: u64) -> PreconferResult<Vec<TxEnvelope>> {
-        let mempool_tx_lists = get_mempool_txs(
-            &self.l2_clients.auth_client,
-            self.address,
-            base_fee,
-            GAS_LIMIT,
-            BYTES_PER_BLOB as u64,
-            vec![],
-            1,
-        )
-        .await?;
-        Ok(flatten_mempool_txs(mempool_tx_lists))
-    }
-
-    async fn publish_preconfirmed_transactions(
-        &self,
-        base_fee: u64,
-        timestamp: u64,
-        parent_header: &Header,
-        txs: Vec<TxEnvelope>,
-    ) -> PreconferResult<()> {
-        let executable_data = create_executable_data(
-            base_fee,
-            parent_header.number + 1,
-            self.base_fee_config.sharingPctg,
-            self.address,
-            GAS_LIMIT,
-            parent_header.hash_slow(),
-            timestamp,
-            txs,
-        )?;
-        info!("executable data {executable_data:?}");
-        let dummy_client = DummyClient {};
-        let end_of_sequencing = false;
-        let dummy_header =
-            publish_preconfirmed_transactions(&dummy_client, executable_data, end_of_sequencing)
-                .await?;
-        info!("header {dummy_header:?}");
-        Ok(())
-    }
-
     pub async fn build_block(&self, parent_header: Header) -> PreconferResult<()> {
         self.wait_until_next_block(parent_header.timestamp).await?;
 
@@ -349,42 +267,44 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
 
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.config.anchor_id_lag);
         let timestamp = get_timestamp();
-        let get_basefee_builder = self.l2_clients.taiko_anchor.getBasefeeV2(
-            parent_header.gas_used as u32,
-            timestamp,
-            self.base_fee_config.clone(),
-        );
         let start2 = SystemTime::now();
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             get_header_by_id(&self.l1_client, anchor_block_id),
-            get_nonce(&self.l2_clients.client, GOLDEN_TOUCH_ADDRESS),
-            get_basefee_builder.call(),
+            self.taiko.get_nonce(GOLDEN_TOUCH_ADDRESS),
+            self.taiko.get_base_fee(parent_header.gas_used, timestamp,),
         );
 
-        let base_fee: u128 = base_fee?.basefee_.try_into()?;
-        let mempool_txs = self.get_mempool_txs(base_fee as u64).await?;
+        let base_fee: u128 = base_fee?;
+        let mut txs = self
+            .taiko
+            .get_mempool_txs(self.address, base_fee as u64)
+            .await?;
         let end2 = SystemTime::now();
         info!(
             "join: {} ms",
             end2.duration_since(start2).unwrap().as_millis()
         );
-        info!("#txs in mempool: {}", mempool_txs.len());
+        info!("#txs in mempool: {}", txs.len());
 
-        let txs = insert_anchor_transaction(
-            mempool_txs,
-            parent_header.inner.clone(),
-            anchor_header?,
-            base_fee,
-            self.base_fee_config.clone(),
+        let anchor_tx = self.taiko.get_signed_anchor_tx(
+            anchor_block_id,
+            anchor_header?.state_root,
+            parent_header.gas_used as u32,
             golden_touch_nonce?,
+            base_fee,
         )?;
-        self.publish_preconfirmed_transactions(
-            base_fee as u64,
-            timestamp,
-            &parent_header,
-            txs.clone(),
-        )
-        .await?;
+        txs.insert(0, anchor_tx);
+
+        let _header = self
+            .taiko
+            .publish_preconfirmed_transactions(
+                self.address,
+                base_fee as u64,
+                timestamp,
+                &parent_header,
+                txs.clone(),
+            )
+            .await?;
 
         let number_of_blobs = 0u8;
         let parent_meta_hash = B256::ZERO;
@@ -415,8 +335,8 @@ impl<L1Client: HttpClient> BlockBuilder<L1Client> {
         let signer_str = signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
             get_nonce(&self.l1_client, &signer_str),
-            self.l2_clients.provider.estimate_gas(tx),
-            self.l2_clients.provider.estimate_eip1559_fees(),
+            self.taiko.estimate_gas(tx),
+            self.taiko.estimate_eip1559_fees(),
         );
         let fee_estimate = fee_estimate?;
 
@@ -453,12 +373,18 @@ async fn run_preconfer() -> PreconferResult<()> {
     let provider = ProviderBuilder::new().connect(HEKLA_URL).await?;
     let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider.clone());
 
-    let l2_clients = L2Clients::new(l2_client, auth_client, taiko_anchor, provider);
+    let taiko = TaikoClient::new(
+        l2_client,
+        auth_client,
+        taiko_anchor,
+        provider,
+        get_basefee_config_v2(),
+        CHAIN_ID,
+    );
     let block_builder = Arc::new(Mutex::new(BlockBuilder::new(
         Config::default(),
         l1_client,
-        l2_clients,
-        get_basefee_config_v2(),
+        taiko,
         Address::random(),
     )));
     let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
@@ -478,7 +404,7 @@ async fn run_preconfer() -> PreconferResult<()> {
     };
 
     let process_l2_header = {
-        |header: Header, block_builder: Arc<Mutex<BlockBuilder<RpcClient>>>| {
+        |header: Header, block_builder: Arc<Mutex<BlockBuilder<RpcClient, TaikoClient>>>| {
             async move {
                 let num = header.number;
                 let hash = header.hash;
