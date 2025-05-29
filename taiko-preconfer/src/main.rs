@@ -12,13 +12,13 @@ use tokio::{join, sync::Mutex, time::sleep};
 use tracing::info;
 
 use block_building::{
-    http_client::HttpClient,
     preconf::{Config, Preconfer},
     rpc_client::RpcClient,
     taiko::{
         contracts::TaikoAnchorInstance,
         hekla::{CHAIN_ID, addresses::get_taiko_anchor_address, get_basefee_config_v2},
         taiko_client::{ITaikoClient, TaikoClient},
+        taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
 };
@@ -54,7 +54,7 @@ async fn stream_block_headers<'a, T: Fn(Header) -> BoxFuture<'a, ApplicationResu
 
 async fn stream_block_headers_with_builder<
     'a,
-    L1Client: HttpClient,
+    L1Client: ITaikoL1Client,
     Taiko: ITaikoClient,
     TimeProvider: ITimeProvider,
     T: Fn(
@@ -210,7 +210,8 @@ async fn run_preconfer() -> ApplicationResult<()> {
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
             .unwrap();
     let auth_client = RpcClient::new(get_auth_client(LOCAL_TAIKO_URL, jwt_secret)?);
-    let l1_client = RpcClient::new(get_client(L1_URL)?);
+    let l1_client = TaikoL1Client::new(RpcClient::new(get_client(L1_URL)?));
+
     let taiko_anchor_address = get_taiko_anchor_address();
     let provider = ProviderBuilder::new().connect(HEKLA_URL).await?;
     let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider.clone());
@@ -248,7 +249,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
 
     let process_l2_header = {
         |header: Header,
-         block_builder: Arc<Mutex<Preconfer<RpcClient, TaikoClient, SystemTimeProvider>>>| {
+         block_builder: Arc<Mutex<Preconfer<TaikoL1Client, TaikoClient, SystemTimeProvider>>>| {
             async move {
                 let num = header.number;
                 let hash = header.hash;
