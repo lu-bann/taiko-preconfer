@@ -210,7 +210,8 @@ async fn run_preconfer() -> ApplicationResult<()> {
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
             .unwrap();
     let auth_client = RpcClient::new(get_auth_client(LOCAL_TAIKO_URL, jwt_secret)?);
-    let l1_client = TaikoL1Client::new(RpcClient::new(get_client(L1_URL)?));
+    let l1_provider = ProviderBuilder::new().connect(L1_URL).await?;
+    let l1_client = TaikoL1Client::new(RpcClient::new(get_client(L1_URL)?), l1_provider);
 
     let taiko_anchor_address = get_taiko_anchor_address();
     let provider = ProviderBuilder::new().connect(HEKLA_URL).await?;
