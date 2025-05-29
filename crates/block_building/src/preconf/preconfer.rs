@@ -17,24 +17,35 @@ use crate::taiko::contracts::taiko_wrapper::BlockParams;
 use crate::taiko::hekla::addresses::{GOLDEN_TOUCH_ADDRESS, get_taiko_inbox_address};
 use crate::taiko::propose_batch::create_propose_batch_params;
 use crate::taiko::taiko_client::ITaikoClient;
+use crate::time_provider::ITimeProvider;
 
 #[derive(Debug)]
-pub struct Preconfer<L1Client: HttpClient, Taiko: ITaikoClient> {
+pub struct Preconfer<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
     last_l1_block_number: Arc<Mutex<u64>>,
     config: Config,
     l1_client: L1Client,
     taiko: Taiko,
     address: Address,
+    time_provider: TimeProvider,
 }
 
-impl<L1Client: HttpClient, Taiko: ITaikoClient> Preconfer<L1Client, Taiko> {
-    pub fn new(config: Config, l1_client: L1Client, taiko: Taiko, address: Address) -> Self {
+impl<L1Client: HttpClient, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
+    Preconfer<L1Client, Taiko, TimeProvider>
+{
+    pub fn new(
+        config: Config,
+        l1_client: L1Client,
+        taiko: Taiko,
+        address: Address,
+        time_provider: TimeProvider,
+    ) -> Self {
         Self {
             last_l1_block_number: Arc::new(Mutex::new(0u64)),
             config,
             l1_client,
             taiko,
             address,
+            time_provider,
         }
     }
 
@@ -47,7 +58,7 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient> Preconfer<L1Client, Taiko> {
     }
 
     async fn wait_until_next_block(&self, current_block_timestamp: u64) -> PreconferResult<()> {
-        let now = SystemTime::now();
+        let now = self.time_provider.now();
         let desired_next_block_time = UNIX_EPOCH
             .checked_add(Duration::from_secs(current_block_timestamp))
             .map(|x| {
@@ -71,7 +82,7 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient> Preconfer<L1Client, Taiko> {
             parent_header.number + 1,
             last_l1_block_number
         );
-        let now = get_timestamp();
+        let now = self.time_provider.timestamp_in_s();
         info!("t: now={} parent={}", now, parent_header.timestamp);
 
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.config.anchor_id_lag);
@@ -214,11 +225,4 @@ fn get_signed_eip1559_tx(
     let signed = tx.into_signed(sig);
 
     Ok(signed.into())
-}
-
-pub fn get_timestamp() -> u64 {
-    SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs()
 }

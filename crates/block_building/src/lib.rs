@@ -7,4 +7,5 @@ pub mod password;
 pub mod preconf;
 pub mod rpc_client;
 pub mod taiko;
+pub mod time_provider;
 pub mod verification;
