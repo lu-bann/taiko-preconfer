@@ -9,7 +9,7 @@ pub struct RpcClient {
 }
 
 impl RpcClient {
-    pub fn new(client: AlloyClient) -> Self {
+    pub const fn new(client: AlloyClient) -> Self {
         Self { rpc_client: client }
     }
 }

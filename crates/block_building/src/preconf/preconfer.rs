@@ -145,8 +145,8 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         let signer_str = signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
             self.l1_client.get_nonce(&signer_str),
-            self.taiko.estimate_gas(tx), // TODO estimate using l1 provider
-            self.taiko.estimate_eip1559_fees(), // TODO estimate using l1 provider
+            self.l1_client.estimate_gas(tx),
+            self.l1_client.estimate_eip1559_fees(),
         );
         let fee_estimate = fee_estimate?;
 
@@ -276,6 +276,17 @@ mod tests {
         l1_client
             .expect_get_header()
             .return_once(|_| Box::pin(async { Ok(ConsensusHeader::default()) }));
+        l1_client
+            .expect_estimate_gas()
+            .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
+        l1_client.expect_estimate_eip1559_fees().return_once(|| {
+            Box::pin(async {
+                Ok(Eip1559Estimation {
+                    max_fee_per_gas: DUMMY_MAX_FEE_PER_GAS,
+                    max_priority_fee_per_gas: DUMMY_MAX_PRIORITY_FEE_PER_GAS,
+                })
+            })
+        });
 
         let mut taiko = MockITaikoClient::new();
         taiko
@@ -309,18 +320,6 @@ mod tests {
                     TxEip1559::default().into(),
                     Signature::new(U256::default(), U256::default(), false),
                 )])
-            })
-        });
-
-        taiko
-            .expect_estimate_gas()
-            .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
-        taiko.expect_estimate_eip1559_fees().return_once(|| {
-            Box::pin(async {
-                Ok(Eip1559Estimation {
-                    max_fee_per_gas: DUMMY_MAX_FEE_PER_GAS,
-                    max_priority_fee_per_gas: DUMMY_MAX_PRIORITY_FEE_PER_GAS,
-                })
             })
         });
 
