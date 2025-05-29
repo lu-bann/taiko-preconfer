@@ -6,14 +6,18 @@ use futures::{
     future::BoxFuture,
     {FutureExt, StreamExt},
 };
-use std::sync::Arc;
 use std::time::Duration;
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
 use tokio::{join, sync::Mutex, time::sleep};
 use tracing::info;
 
 use block_building::{
     preconf::{Config, Preconfer},
     rpc_client::RpcClient,
+    slot_model::HOLESKY_SLOT_MODEL,
     taiko::{
         contracts::TaikoAnchorInstance,
         hekla::{CHAIN_ID, addresses::get_taiko_anchor_address, get_basefee_config_v2},
@@ -202,8 +206,25 @@ async fn listen_to_header_streams() {
     );
 }
 
+async fn wait_until_next_block(
+    now: SystemTime,
+    current_block_timestamp: u64,
+    l2_block_time: Duration,
+) -> Result<(), std::time::SystemTimeError> {
+    let desired_next_block_time = UNIX_EPOCH
+        .checked_add(Duration::from_secs(current_block_timestamp))
+        .map(|x| x.checked_add(l2_block_time).unwrap_or(UNIX_EPOCH))
+        .unwrap_or(UNIX_EPOCH);
+    let remaining = desired_next_block_time.duration_since(now)?;
+    sleep(remaining).await;
+    Ok(())
+}
+
 async fn run_preconfer() -> ApplicationResult<()> {
-    tracing_subscriber::fmt().with_target(false).init();
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .init();
 
     let l2_client = RpcClient::new(get_client(HEKLA_URL)?);
     let jwt_secret =
@@ -225,8 +246,10 @@ async fn run_preconfer() -> ApplicationResult<()> {
         get_basefee_config_v2(),
         CHAIN_ID,
     );
+    let config = Config::default();
+    let l2_block_time = config.l2_block_time;
     let block_builder = Arc::new(Mutex::new(Preconfer::new(
-        Config::default(),
+        config,
         l1_client,
         taiko,
         Address::random(),
@@ -241,6 +264,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
                 let hash = header.hash;
 
                 info!("L1 🗣 #{:<10} {}", num, hash);
+                info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
                 *current.lock().await = header.number;
                 Ok(())
             }
@@ -256,7 +280,8 @@ async fn run_preconfer() -> ApplicationResult<()> {
                 let hash = header.hash;
 
                 info!("L2 🗣 #{:<10} {}", num, hash);
-
+                let now = SystemTime::now();
+                wait_until_next_block(now, header.timestamp, l2_block_time).await?;
                 block_builder.lock().await.build_block(header).await?;
                 Ok(())
             }
