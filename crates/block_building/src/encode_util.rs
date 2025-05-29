@@ -9,8 +9,11 @@ pub fn hex_decode(hex_string: &str) -> Result<Vec<u8>, FromHexError> {
 }
 
 pub fn hex_to_u64(s: &str) -> Result<u64, std::num::ParseIntError> {
-    let s = s.trim_start_matches("0x");
-    u64::from_str_radix(s, 16)
+    u64::from_str_radix(s.trim_start_matches("0x"), 16)
+}
+
+pub fn u64_to_hex(value: u64) -> String {
+    format!("{:#x}", value)
 }
 
 #[cfg(test)]
@@ -35,5 +38,12 @@ mod tests {
         let hex_str = "0x10";
         let decoded = hex_to_u64(hex_str).unwrap();
         assert_eq!(decoded, 16u64);
+    }
+
+    #[test]
+    fn test_u64_to_hex() {
+        let value = 16u64;
+        let encoded = u64_to_hex(value);
+        assert_eq!(encoded, "0x10");
     }
 }
