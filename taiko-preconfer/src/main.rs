@@ -20,6 +20,7 @@ use block_building::{
         hekla::{CHAIN_ID, addresses::get_taiko_anchor_address, get_basefee_config_v2},
         taiko_client::{ITaikoClient, TaikoClient},
     },
+    time_provider::{ITimeProvider, SystemTimeProvider},
 };
 
 mod rpc;
@@ -55,11 +56,15 @@ async fn stream_block_headers_with_builder<
     'a,
     L1Client: HttpClient,
     Taiko: ITaikoClient,
-    T: Fn(Header, Arc<Mutex<Preconfer<L1Client, Taiko>>>) -> BoxFuture<'a, ApplicationResult<()>>,
+    TimeProvider: ITimeProvider,
+    T: Fn(
+        Header,
+        Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
+    ) -> BoxFuture<'a, ApplicationResult<()>>,
 >(
     url: &str,
     f: T,
-    block_builder: Arc<Mutex<Preconfer<L1Client, Taiko>>>,
+    block_builder: Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
 ) -> ApplicationResult<()> {
     info!("Subscribe to headers at {url}");
     let ws = WsConnect::new(url);
@@ -223,6 +228,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
         l1_client,
         taiko,
         Address::random(),
+        SystemTimeProvider::new(),
     )));
     let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
 
@@ -241,7 +247,8 @@ async fn run_preconfer() -> ApplicationResult<()> {
     };
 
     let process_l2_header = {
-        |header: Header, block_builder: Arc<Mutex<Preconfer<RpcClient, TaikoClient>>>| {
+        |header: Header,
+         block_builder: Arc<Mutex<Preconfer<RpcClient, TaikoClient, SystemTimeProvider>>>| {
             async move {
                 let num = header.number;
                 let hash = header.hash;
