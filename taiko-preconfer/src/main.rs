@@ -259,19 +259,14 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient> BlockBuilder<L1Client, Taiko> {
             parent_header.number + 1,
             last_l1_block_number
         );
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = get_timestamp();
         info!("t: now={} parent={}", now, parent_header.timestamp);
 
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.config.anchor_id_lag);
-        let timestamp = get_timestamp();
-        let start2 = SystemTime::now();
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             get_header_by_id(&self.l1_client, anchor_block_id),
             self.taiko.get_nonce(GOLDEN_TOUCH_ADDRESS),
-            self.taiko.get_base_fee(parent_header.gas_used, timestamp,),
+            self.taiko.get_base_fee(parent_header.gas_used, now),
         );
 
         let base_fee: u128 = base_fee?;
@@ -279,11 +274,6 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient> BlockBuilder<L1Client, Taiko> {
             .taiko
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
-        let end2 = SystemTime::now();
-        info!(
-            "join: {} ms",
-            end2.duration_since(start2).unwrap().as_millis()
-        );
         info!("#txs in mempool: {}", txs.len());
 
         let anchor_tx = self.taiko.get_signed_anchor_tx(
@@ -300,7 +290,7 @@ impl<L1Client: HttpClient, Taiko: ITaikoClient> BlockBuilder<L1Client, Taiko> {
             .publish_preconfirmed_transactions(
                 self.address,
                 base_fee as u64,
-                timestamp,
+                now, // after await, recompute?
                 &parent_header,
                 txs.clone(),
             )
