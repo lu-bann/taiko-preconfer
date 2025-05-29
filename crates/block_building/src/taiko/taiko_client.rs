@@ -11,7 +11,7 @@ use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::Error as EcdsaError;
 use libdeflater::CompressionError;
 use thiserror::Error;
-use tracing::info;
+use tracing::debug;
 
 use crate::dummy_client::DummyClient;
 use crate::http_client::{HttpError, flatten_mempool_txs, get_mempool_txs, get_nonce};
@@ -206,13 +206,13 @@ impl ITaikoClient for TaikoClient {
             timestamp,
             txs,
         )?;
-        info!("executable data {executable_data:?}");
+        debug!("executable data {executable_data:?}");
         let dummy_client = DummyClient {};
         let end_of_sequencing = false;
         let dummy_header =
             publish_preconfirmed_transactions(&dummy_client, executable_data, end_of_sequencing)
                 .await?;
-        info!("header {dummy_header:?}");
+        debug!("header {dummy_header:?}");
         Ok(dummy_header)
     }
 }
