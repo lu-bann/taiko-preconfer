@@ -1,5 +1,3 @@
-#![allow(dead_code)]
-
 use alloy_primitives::Bytes;
 use alloy_rpc_client::RpcClient as AlloyClient;
 use alloy_rpc_types_engine::JwtSecret;
@@ -11,14 +9,14 @@ use http_body_util::Full;
 use tower::ServiceBuilder;
 use url::Url;
 
-use crate::error::PreconferResult;
+use crate::error::ApplicationResult;
 
-pub fn get_client(url: &str) -> PreconferResult<AlloyClient> {
+pub fn get_client(url: &str) -> ApplicationResult<AlloyClient> {
     let transport = Http::new(Url::parse(url)?);
     Ok(AlloyClient::new(transport, false))
 }
 
-pub fn get_auth_client(url: &str, jwt_secret: JwtSecret) -> PreconferResult<AlloyClient> {
+pub fn get_auth_client(url: &str, jwt_secret: JwtSecret) -> ApplicationResult<AlloyClient> {
     let hyper_client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
     let auth_layer = AuthLayer::new(jwt_secret);
     let service = ServiceBuilder::new()

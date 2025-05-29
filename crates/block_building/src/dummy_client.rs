@@ -5,7 +5,7 @@ use serde_json::{Value as JsonValue, from_value, to_value};
 
 use crate::{
     http_client::{HttpClient, HttpError},
-    taiko::preconf_blocks::{BuildPreconfBlockResponse, PRECONF_BLOCKS},
+    preconf::preconf_blocks::{BuildPreconfBlockResponse, PRECONF_BLOCKS},
 };
 
 pub struct DummyClient;
