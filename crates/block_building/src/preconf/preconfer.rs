@@ -1,25 +1,29 @@
-use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
-use alloy_provider::network::TransactionBuilder;
-use alloy_rpc_types::{Header, TransactionRequest};
-use alloy_signer::SignerSync;
-use alloy_signer_local::PrivateKeySigner;
+use alloy_consensus::TxEnvelope;
+use alloy_rpc_types::Header;
 use std::sync::Arc;
 use std::time::{Duration, SystemTime};
 use tokio::{join, sync::Mutex};
 use tracing::{debug, info};
 
-use alloy_primitives::{Address, B256, Bytes, ChainId};
+use alloy_primitives::Address;
 
-use crate::compression::compress;
 use crate::preconf::PreconferResult;
-use crate::taiko::contracts::taiko_wrapper::BlockParams;
-use crate::taiko::hekla::addresses::{
-    GOLDEN_TOUCH_ADDRESS, get_golden_touch_signing_key, get_taiko_inbox_address,
-};
-use crate::taiko::propose_batch::create_propose_batch_params;
+use crate::taiko::hekla::addresses::GOLDEN_TOUCH_ADDRESS;
 use crate::taiko::taiko_client::ITaikoClient;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::time_provider::ITimeProvider;
+
+#[derive(Debug)]
+pub struct SimpleBlock {
+    pub header: Header,
+    pub txs: Vec<TxEnvelope>,
+}
+
+impl SimpleBlock {
+    pub const fn new(header: Header, txs: Vec<TxEnvelope>) -> Self {
+        Self { header, txs }
+    }
+}
 
 #[derive(Debug)]
 pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
@@ -59,7 +63,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         Ok(self.last_l1_block_number.try_lock().map(|guard| *guard)?)
     }
 
-    pub async fn build_block(&self, parent_header: Header) -> PreconferResult<()> {
+    pub async fn build_block(&self, parent_header: Header) -> PreconferResult<Option<SimpleBlock>> {
         let start = SystemTime::now();
 
         info!("Start preconfirming block: #{}", parent_header.number + 1,);
@@ -82,7 +86,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         debug!("#txs in mempool: {}", txs.len());
         if txs.is_empty() {
             info!("Empty mempool: skipping block building.");
-            return Ok(());
+            return Ok(None);
         }
 
         let anchor_tx = self.taiko.get_signed_anchor_tx(
@@ -95,7 +99,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         txs.insert(0, anchor_tx);
 
         info!("Publish preconfirmed block with {} transactions", txs.len());
-        let _header = self
+        let header = self
             .taiko
             .publish_preconfirmed_transactions(
                 self.address,
@@ -106,65 +110,12 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             )
             .await?;
 
-        debug!("Compression");
-        let number_of_blobs = 0u8;
-        let parent_meta_hash = B256::ZERO;
-        let coinbase = parent_header.beneficiary;
-        let tx_bytes = Bytes::from(compress(txs.clone())?);
-        let block_params = vec![BlockParams {
-            numTransactions: txs.len() as u16,
-            timeShift: 0,
-            signalSlots: vec![],
-        }];
-        debug!("Create propose batch params");
-        let propose_batch_params = create_propose_batch_params(
-            self.address,
-            tx_bytes,
-            block_params,
-            parent_meta_hash,
-            anchor_block_id,
-            parent_header.timestamp,
-            coinbase,
-            number_of_blobs,
-        );
-
-        debug!("Create tx");
-        let signer = PrivateKeySigner::from_signing_key(get_golden_touch_signing_key());
-        let taiko_inbox_address = get_taiko_inbox_address();
-        let tx = TransactionRequest::default()
-            .with_to(taiko_inbox_address)
-            .with_input(propose_batch_params.clone())
-            .with_from(signer.address());
-        let signer_str = signer.address().to_string();
-        let (nonce, gas_limit, fee_estimate) = join!(
-            self.l1_client.get_nonce(&signer_str),
-            self.taiko.estimate_gas(tx), // TODO: use l1_client to estimate gas (fix address/params/whitelist first)
-            self.l1_client.estimate_eip1559_fees(),
-        );
-        let fee_estimate = fee_estimate?;
-
-        debug!(
-            "sign tx {} {:?} {:?}",
-            taiko_inbox_address, nonce, gas_limit
-        );
-        let signed_tx = get_signed_eip1559_tx(
-            0, // TODO: Add L1 Chain id
-            taiko_inbox_address,
-            propose_batch_params,
-            nonce?,
-            gas_limit?,
-            fee_estimate.max_fee_per_gas,
-            fee_estimate.max_priority_fee_per_gas,
-            &signer,
-        )?;
-
-        debug!("signed propose batch tx {signed_tx:?}");
         let end = SystemTime::now();
         debug!(
             "elapsed: {} ms",
             end.duration_since(start).unwrap().as_millis()
         );
-        Ok(())
+        Ok(Some(SimpleBlock::new(header, txs)))
     }
 }
 
@@ -192,38 +143,9 @@ fn get_anchor_id(current_block_number: u64, lag: u64) -> u64 {
     current_block_number - std::cmp::min(current_block_number, lag)
 }
 
-#[allow(clippy::too_many_arguments)]
-fn get_signed_eip1559_tx(
-    chain_id: ChainId,
-    to: Address,
-    input: Bytes,
-    nonce: u64,
-    gas_limit: u64,
-    max_fee_per_gas: u128,
-    max_priority_fee_per_gas: u128,
-    signer: &PrivateKeySigner,
-) -> PreconferResult<TxEnvelope> {
-    let tx = TxEip1559 {
-        chain_id,
-        nonce,
-        gas_limit,
-        max_fee_per_gas,
-        max_priority_fee_per_gas,
-        to: to.into(),
-        input,
-        value: Default::default(),
-        access_list: Default::default(),
-    };
-
-    let sig = signer.sign_hash_sync(&tx.signature_hash())?;
-    let signed = tx.into_signed(sig);
-
-    Ok(signed.into())
-}
-
 #[cfg(test)]
 mod tests {
-    use alloy_consensus::Header as ConsensusHeader;
+    use alloy_consensus::{Header as ConsensusHeader, TxEip1559};
     use alloy_primitives::{FixedBytes, U256};
     use alloy_provider::utils::Eip1559Estimation;
     use alloy_signer::Signature;
@@ -337,7 +259,13 @@ mod tests {
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
         let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
-        assert!(preconfer.build_block(parent_header).await.is_ok());
+        assert!(
+            preconfer
+                .build_block(parent_header)
+                .await
+                .unwrap()
+                .is_some()
+        );
     }
 
     #[tokio::test]
@@ -380,6 +308,12 @@ mod tests {
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
         let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
-        assert!(preconfer.build_block(parent_header).await.is_ok());
+        assert!(
+            preconfer
+                .build_block(parent_header)
+                .await
+                .unwrap()
+                .is_none()
+        );
     }
 }
