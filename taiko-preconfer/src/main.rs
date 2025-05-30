@@ -6,7 +6,7 @@ use futures::{
     future::BoxFuture,
     {FutureExt, StreamExt},
 };
-use std::time::Duration;
+use std::{pin::Pin, time::Duration};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -15,6 +15,7 @@ use tokio::{join, sync::Mutex, time::sleep};
 use tracing::{error, info};
 
 use block_building::{
+    active_operator_model::ActiveOperatorModel,
     preconf::{Config, Preconfer},
     rpc_client::RpcClient,
     slot_model::HOLESKY_SLOT_MODEL,
@@ -62,13 +63,18 @@ async fn stream_block_headers_with_builder<
     Taiko: ITaikoClient,
     TimeProvider: ITimeProvider,
     T: Fn(
-        Header,
-        Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
-    ) -> BoxFuture<'a, ApplicationResult<()>>,
+            Header,
+            Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
+            Arc<Mutex<ActiveOperatorModel>>,
+            Duration,
+        ) -> BoxFuture<'a, ApplicationResult<()>>
+        + Send,
 >(
     url: &str,
     f: T,
     block_builder: Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
+    active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
+    l2_block_time: Duration,
 ) -> ApplicationResult<()> {
     info!("Subscribe to headers at {url}");
     let ws = WsConnect::new(url);
@@ -76,7 +82,13 @@ async fn stream_block_headers_with_builder<
     let mut stream = provider.subscribe_blocks().await?;
 
     while let Ok(header) = stream.recv().await {
-        f(header, block_builder.clone()).await?;
+        f(
+            header,
+            block_builder.clone(),
+            active_operator_model.clone(),
+            l2_block_time,
+        )
+        .await?;
     }
     Err(ApplicationError::WsConnectionLost {
         url: url.to_string(),
@@ -208,15 +220,58 @@ async fn listen_to_header_streams() {
 
 async fn wait_until_next_block(
     now: SystemTime,
-    current_block_timestamp: u64,
+    current_block_time: Duration,
     l2_block_time: Duration,
 ) -> Result<(), std::time::SystemTimeError> {
     let desired_next_block_time = UNIX_EPOCH
-        .checked_add(Duration::from_secs(current_block_timestamp))
+        .checked_add(current_block_time)
         .map(|x| x.checked_add(l2_block_time).unwrap_or(UNIX_EPOCH))
         .unwrap_or(UNIX_EPOCH);
-    let remaining = desired_next_block_time.duration_since(now)?;
-    sleep(remaining).await;
+    if let Ok(remaining) = desired_next_block_time.duration_since(now) {
+        sleep(remaining).await;
+    }
+    Ok(())
+}
+
+async fn process_l2_header(
+    header: Header,
+    block_builder: Arc<Mutex<Preconfer<TaikoL1Client, TaikoClient, SystemTimeProvider>>>,
+    active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
+    l2_block_time: Duration,
+) -> ApplicationResult<()> {
+    let num = header.number;
+    let hash = header.hash;
+
+    info!("L2 🗣 #{:<10} {}", num, hash);
+    let now = SystemTime::now();
+    if let Err(err) =
+        wait_until_next_block(now, Duration::from_secs(header.timestamp), l2_block_time).await
+    {
+        error!("Error during wait for block building start: {:?}", err)
+    }
+    let slot = HOLESKY_SLOT_MODEL.get_slot(header.timestamp);
+    // Set active operator model to be always active
+    let epoch = if active_operator_model
+        .lock()
+        .await
+        .within_handover_period(slot.slot)
+    {
+        slot.epoch + 1
+    } else {
+        slot.epoch
+    };
+    info!("Set active epoch to {} for slot {:?}", epoch, slot);
+    active_operator_model
+        .lock()
+        .await
+        .set_next_active_epoch(epoch);
+    if active_operator_model.lock().await.can_preconfirm(slot) {
+        if let Err(err) = block_builder.lock().await.build_block(header).await {
+            error!("Error during block building: {:?}", err)
+        }
+    } else {
+        info!("Not active operator. Skip block building.");
+    }
     Ok(())
 }
 
@@ -248,6 +303,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
     );
     let config = Config::default();
     let l2_block_time = config.l2_block_time;
+    let handover_slots = config.handover_window_slots as u64;
     let block_builder = Arc::new(Mutex::new(Preconfer::new(
         config,
         l1_client,
@@ -272,22 +328,24 @@ async fn run_preconfer() -> ApplicationResult<()> {
         }
     };
 
-    let process_l2_header = {
+    let slots_per_epoch = 32;
+    let active_operator_model = Arc::new(Mutex::new(ActiveOperatorModel::new(
+        handover_slots,
+        slots_per_epoch,
+    )));
+    let process_l2_header2 =
         |header: Header,
-         block_builder: Arc<Mutex<Preconfer<TaikoL1Client, TaikoClient, SystemTimeProvider>>>| {
-            async move {
-                let num = header.number;
-                let hash = header.hash;
-
-                info!("L2 🗣 #{:<10} {}", num, hash);
-                let now = SystemTime::now();
-                wait_until_next_block(now, header.timestamp, l2_block_time).await?;
-                if let Err(err) = block_builder.lock().await.build_block(header).await { error!("Error during block building: {:?}", err) }
-                Ok(())
-            }
-            .boxed()
-        }
-    };
+         block_builder: Arc<Mutex<Preconfer<TaikoL1Client, TaikoClient, SystemTimeProvider>>>,
+         active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
+         l2_block_time: Duration|
+         -> Pin<Box<dyn Future<Output = ApplicationResult<()>> + Send>> {
+            Box::pin(process_l2_header(
+                header,
+                block_builder,
+                active_operator_model,
+                l2_block_time,
+            ))
+        };
 
     let _ = join!(
         stream_block_headers_into(
@@ -295,7 +353,13 @@ async fn run_preconfer() -> ApplicationResult<()> {
             process_l1_header,
             shared_last_l1_block_number.clone()
         ),
-        stream_block_headers_with_builder(WS_HEKLA_URL, process_l2_header, block_builder),
+        stream_block_headers_with_builder(
+            WS_HEKLA_URL,
+            process_l2_header2,
+            block_builder,
+            active_operator_model,
+            l2_block_time
+        ),
     );
 
     Ok(())
