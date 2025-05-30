@@ -259,13 +259,9 @@ mod tests {
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
         let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
-        assert!(
-            preconfer
-                .build_block(parent_header)
-                .await
-                .unwrap()
-                .is_some()
-        );
+        let preconfirmed_block = preconfer.build_block(parent_header).await.unwrap().unwrap();
+        assert_eq!(preconfirmed_block.txs.len(), 2);
+        assert_eq!(preconfirmed_block.txs[0].signature().r(), U256::ONE);
     }
 
     #[tokio::test]
