@@ -19,7 +19,7 @@ impl ActiveOperatorModel {
         self.next_active_epoch = Some(epoch);
     }
 
-    fn within_handover_period(&self, slot: u64) -> bool {
+    pub fn within_handover_period(&self, slot: u64) -> bool {
         slot >= self.slots_per_epoch - self.handover_slots
     }
 
@@ -178,5 +178,27 @@ mod tests {
 
         let slot = Slot::new(2, 0);
         assert!(!model.can_confirm(slot));
+    }
+
+    #[test]
+    fn within_handover_period() {
+        let handover_slots = 3u64;
+        let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+
+        let slot = 0;
+        assert!(!model.within_handover_period(slot));
+        let slot = 6;
+        assert!(!model.within_handover_period(slot));
+    }
+
+    #[test]
+    fn not_within_handover_period() {
+        let handover_slots = 3u64;
+        let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+
+        let slot = 7;
+        assert!(model.within_handover_period(slot));
+        let slot = 9;
+        assert!(model.within_handover_period(slot));
     }
 }
