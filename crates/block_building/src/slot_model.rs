@@ -2,19 +2,9 @@ use std::time::Duration;
 
 use alloy_eips::merge::{EPOCH_DURATION, SLOT_DURATION};
 
+use crate::slot::Slot;
+
 const HOLESKY_GENESIS_TIMESTAMP: u64 = 1_695_902_100;
-
-#[derive(Debug, PartialEq)]
-pub struct Slot {
-    pub epoch: u64,
-    pub slot: u64,
-}
-
-impl Slot {
-    pub const fn new(epoch: u64, slot: u64) -> Self {
-        Self { epoch, slot }
-    }
-}
 
 #[derive(Debug)]
 pub struct SlotModel {
