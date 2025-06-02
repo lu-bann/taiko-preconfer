@@ -9,3 +9,14 @@ impl Slot {
         Self { epoch, slot }
     }
 }
+#[derive(Debug, PartialEq)]
+pub struct SubSlot {
+    pub slot: Slot,
+    pub sub_slot: u64,
+}
+
+impl SubSlot {
+    pub const fn new(slot: Slot, sub_slot: u64) -> Self {
+        Self { slot, sub_slot }
+    }
+}
