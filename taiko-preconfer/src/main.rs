@@ -99,7 +99,7 @@ async fn trigger_from_stream<
                 .can_preconfirm(subslot.slot)
             {
                 if let Err(err) = block_builder.lock().await.build_block().await {
-                    error!("Error during block building: {:?}", err)
+                    error!("Error during block building: {:?}", err.to_string())
                 }
             } else {
                 info!("Not active operator. Skip block building.");
@@ -220,9 +220,9 @@ async fn run_preconfer() -> ApplicationResult<()> {
         stream_block_headers_into(
             &config.l1_ws_url,
             process_l1_header,
-            shared_last_l1_block_number.clone()
+            shared_last_l1_block_number
         ),
-        stream_block_headers_into(&config.l2_ws_url, process_l2_header, shared_parent_header,),
+        stream_block_headers_into(&config.l2_ws_url, process_l2_header, shared_parent_header),
         trigger_from_stream(slot_stream, block_builder, active_operator_model,),
     );
 
