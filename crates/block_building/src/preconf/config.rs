@@ -1,9 +1,17 @@
-use std::{env, time::Duration};
+use std::{
+    env,
+    time::{Duration, SystemTime, UNIX_EPOCH},
+};
 use thiserror::Error;
+
+use crate::slot_model::HOLESKY_GENESIS_TIMESTAMP;
 
 #[derive(Debug)]
 pub struct Config {
-    pub l2_block_time: Duration,
+    pub l1_genesis_time: SystemTime,
+    pub l1_slot_time: Duration,
+    pub l1_slots_per_epoch: u64,
+    pub l2_slot_time: Duration,
     #[allow(dead_code)]
     pub handover_window_slots: u32,
     #[allow(dead_code)]
@@ -28,7 +36,11 @@ pub enum ConfigError {
 impl Config {
     pub fn try_from_env() -> Result<Self, ConfigError> {
         Ok(Self {
-            l2_block_time: Duration::from_millis(std::env::var("L2_BLOCK_TIME_MS")?.parse()?),
+            l1_genesis_time: UNIX_EPOCH
+                + Duration::from_secs(env::var("L1_GENESIS_TIMESTAMP_S")?.parse()?),
+            l1_slot_time: Duration::from_millis(std::env::var("L1_SLOT_TIME_MS")?.parse()?),
+            l1_slots_per_epoch: env::var("L1_SLOTS_PER_EPOCH")?.parse()?,
+            l2_slot_time: Duration::from_millis(std::env::var("L2_SLOT_TIME_MS")?.parse()?),
             handover_window_slots: std::env::var("HANDOVER_WINDOW_SLOTS")?.parse()?,
             handover_start_buffer: Duration::from_millis(
                 std::env::var("HANDOVER_WINDOW_START_BUFFER_MS")?.parse()?,
@@ -46,7 +58,10 @@ impl Config {
 impl Default for Config {
     fn default() -> Self {
         Self {
-            l2_block_time: Duration::from_millis(12000),
+            l1_genesis_time: UNIX_EPOCH + Duration::from_secs(HOLESKY_GENESIS_TIMESTAMP),
+            l1_slot_time: Duration::from_millis(12000),
+            l1_slots_per_epoch: 32,
+            l2_slot_time: Duration::from_millis(2000),
             handover_window_slots: 4,
             handover_start_buffer: Duration::from_millis(6000),
             anchor_id_lag: 4,
