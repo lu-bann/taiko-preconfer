@@ -1,5 +1,5 @@
-use alloy_consensus::TxEnvelope;
-use alloy_rpc_types::Header;
+use alloy_consensus::{Header, TxEnvelope};
+use alloy_rpc_types::Header as RpcHeader;
 use std::sync::Arc;
 use std::time::SystemTime;
 use tokio::{join, sync::Mutex};
@@ -15,12 +15,12 @@ use crate::time_provider::ITimeProvider;
 
 #[derive(Debug)]
 pub struct SimpleBlock {
-    pub header: Header,
+    pub header: RpcHeader,
     pub txs: Vec<TxEnvelope>,
 }
 
 impl SimpleBlock {
-    pub const fn new(header: Header, txs: Vec<TxEnvelope>) -> Self {
+    pub const fn new(header: RpcHeader, txs: Vec<TxEnvelope>) -> Self {
         Self { header, txs }
     }
 }
@@ -137,35 +137,19 @@ fn get_anchor_id(current_block_number: u64, lag: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use alloy_consensus::{Header as ConsensusHeader, TxEip1559};
-    use alloy_primitives::{FixedBytes, U256};
+    use alloy_consensus::TxEip1559;
+    use alloy_primitives::U256;
     use alloy_provider::utils::Eip1559Estimation;
     use alloy_signer::Signature;
     use std::time::{Duration, UNIX_EPOCH};
 
     use crate::{
         taiko::{taiko_client::MockITaikoClient, taiko_l1_client::MockITaikoL1Client},
+        test_util::{get_header, get_rpc_header},
         time_provider::MockITimeProvider,
     };
 
     use super::*;
-
-    fn get_rpc_header(inner: ConsensusHeader) -> Header {
-        Header {
-            hash: FixedBytes::<32>::default(),
-            inner,
-            total_difficulty: None,
-            size: None,
-        }
-    }
-
-    fn get_header(number: u64, timestamp: u64) -> ConsensusHeader {
-        ConsensusHeader {
-            number,
-            timestamp,
-            ..Default::default()
-        }
-    }
 
     const DUMMY_NONCE: u64 = 10;
     const DUMMY_BASE_FEE: u128 = 100;
@@ -187,7 +171,7 @@ mod tests {
             .return_once(|_| Box::pin(async { Ok(DUMMY_NONCE) }));
         l1_client
             .expect_get_header()
-            .return_once(|_| Box::pin(async { Ok(ConsensusHeader::default()) }));
+            .return_once(|_| Box::pin(async { Ok(Header::default()) }));
         l1_client.expect_estimate_eip1559_fees().return_once(|| {
             Box::pin(async {
                 Ok(Eip1559Estimation {
@@ -257,10 +241,8 @@ mod tests {
         );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
-        *preconfer.shared_parent_header().lock().await = Some(get_rpc_header(get_header(
-            DUMMY_BLOCK_NUMBER,
-            last_block_timestamp,
-        )));
+        *preconfer.shared_parent_header().lock().await =
+            Some(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
         let preconfirmed_block = preconfer.build_block().await.unwrap().unwrap();
         assert_eq!(preconfirmed_block.txs.len(), 2);
         assert_eq!(preconfirmed_block.txs[0].signature().r(), U256::ONE);
@@ -275,7 +257,7 @@ mod tests {
         let mut l1_client = MockITaikoL1Client::new();
         l1_client
             .expect_get_header()
-            .return_once(|_| Box::pin(async { Ok(ConsensusHeader::default()) }));
+            .return_once(|_| Box::pin(async { Ok(Header::default()) }));
 
         let mut taiko = MockITaikoClient::new();
         taiko
@@ -312,10 +294,8 @@ mod tests {
         );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
-        *preconfer.shared_parent_header().lock().await = Some(get_rpc_header(get_header(
-            DUMMY_BLOCK_NUMBER,
-            last_block_timestamp,
-        )));
+        *preconfer.shared_parent_header().lock().await =
+            Some(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
         assert!(preconfer.build_block().await.unwrap().is_none());
     }
 }

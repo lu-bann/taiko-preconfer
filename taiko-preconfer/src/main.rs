@@ -1,7 +1,8 @@
+use alloy_consensus::Header;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
-use alloy_rpc_types::Header;
 use alloy_rpc_types_engine::JwtSecret;
+use block_building::header_stream::{get_header_stream, get_polling_stream};
 use block_building::preconf::handover_start_buffer::{
     DummySequencingMonitor, end_of_handover_start_buffer,
 };
@@ -37,29 +38,7 @@ mod rpc;
 use crate::rpc::{get_auth_client, get_client};
 
 mod error;
-use crate::error::{ApplicationError, ApplicationResult};
-
-async fn stream_block_headers_into<
-    'a,
-    Value,
-    T: Fn(Header, Arc<Mutex<Value>>) -> BoxFuture<'a, ApplicationResult<()>>,
->(
-    url: &str,
-    f: T,
-    current: Arc<Mutex<Value>>,
-) -> ApplicationResult<()> {
-    info!("Subscribe to headers at {url}");
-    let ws = WsConnect::new(url);
-    let provider = ProviderBuilder::new().connect_ws(ws).await?;
-    let mut stream = provider.subscribe_blocks().await?;
-
-    while let Ok(header) = stream.recv().await {
-        f(header, current.clone()).await?;
-    }
-    Err(ApplicationError::WsConnectionLost {
-        url: url.to_string(),
-    })
-}
+use crate::error::ApplicationResult;
 
 fn get_next_slot_start(slot_time: &Duration) -> ApplicationResult<Instant> {
     let duration_now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
@@ -67,6 +46,22 @@ fn get_next_slot_start(slot_time: &Duration) -> ApplicationResult<Instant> {
         Duration::from_millis((duration_now.as_millis() % slot_time.as_millis()).try_into()?);
     let remaining = *slot_time - in_current_slot_ms;
     Ok(Instant::now() + remaining)
+}
+
+async fn stream_block_headers_into<
+    'a,
+    Value,
+    T: Fn(Header, Arc<Mutex<Value>>) -> BoxFuture<'a, ApplicationResult<()>>,
+>(
+    stream: impl Stream<Item = Header>,
+    f: T,
+    current: Arc<Mutex<Value>>,
+) -> ApplicationResult<()> {
+    pin_mut!(stream);
+    while let Some(header) = stream.next().await {
+        f(header, current.clone()).await?;
+    }
+    Ok(())
 }
 
 async fn trigger_from_stream<
@@ -145,6 +140,20 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
     ))
 }
 
+async fn create_header_stream(
+    client_url: &str,
+    ws_url: &str,
+) -> ApplicationResult<impl Stream<Item = Header>> {
+    let l2_client = RpcClient::new(get_client(client_url)?);
+    let polling_stream = get_polling_stream(l2_client, Duration::from_millis(100));
+
+    let ws = WsConnect::new(ws_url);
+    let provider = ProviderBuilder::new().connect_ws(ws).await?;
+    let subscription = provider.subscribe_blocks().await?;
+    let ws_stream = subscription.into_stream().map(|header| header.inner);
+    Ok(get_header_stream(polling_stream, ws_stream))
+}
+
 async fn run_preconfer() -> ApplicationResult<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
@@ -198,9 +207,8 @@ async fn run_preconfer() -> ApplicationResult<()> {
         |header: Header, current: Arc<Mutex<u64>>| {
             async move {
                 let num = header.number;
-                let hash = header.hash;
 
-                info!("L1 🗣 #{:<10} {} {}", num, hash, header.timestamp);
+                info!("L1 🗣 #{:<10} {}", num, header.timestamp);
                 info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
                 *current.lock().await = header.number;
                 Ok(())
@@ -213,9 +221,8 @@ async fn run_preconfer() -> ApplicationResult<()> {
         |header: Header, current: Arc<Mutex<Option<Header>>>| {
             async move {
                 let num = header.number;
-                let hash = header.hash;
 
-                info!("L2 🗣 #{:<10} {} {}", num, hash, header.timestamp);
+                info!("L2 🗣 #{:<10} {}", num, header.timestamp);
                 info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
                 *current.lock().await = Some(header);
                 Ok(())
@@ -230,13 +237,15 @@ async fn run_preconfer() -> ApplicationResult<()> {
         slots_per_epoch,
     )));
 
+    let l1_header_stream = create_header_stream(&config.l1_client_url, &config.l1_ws_url).await?;
+    let l2_header_stream = create_header_stream(&config.l2_client_url, &config.l2_ws_url).await?;
     let _ = join!(
         stream_block_headers_into(
-            &config.l1_ws_url,
+            l1_header_stream,
             process_l1_header,
             shared_last_l1_block_number
         ),
-        stream_block_headers_into(&config.l2_ws_url, process_l2_header, shared_parent_header),
+        stream_block_headers_into(l2_header_stream, process_l2_header, shared_parent_header),
         trigger_from_stream(
             slot_stream,
             block_builder,

@@ -17,6 +17,7 @@ alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
 alloy-sol-types = { workspace = true }
 alloy-transport = { workspace = true }
+async-stream = { workspace = true }
 c-kzg = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
