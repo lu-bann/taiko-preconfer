@@ -1,7 +1,7 @@
 use alloy_consensus::TxEnvelope;
 use alloy_rpc_types::Header;
 use std::sync::Arc;
-use std::time::{Duration, SystemTime};
+use std::time::SystemTime;
 use tokio::{join, sync::Mutex};
 use tracing::{debug, info};
 
@@ -28,7 +28,7 @@ impl SimpleBlock {
 #[derive(Debug)]
 pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
     last_l1_block_number: Arc<Mutex<u64>>,
-    config: Config,
+    anchor_id_lag: u64,
     l1_client: L1Client,
     taiko: Taiko,
     address: Address,
@@ -39,7 +39,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
     Preconfer<L1Client, Taiko, TimeProvider>
 {
     pub fn new(
-        config: Config,
+        anchor_id_lag: u64,
         l1_client: L1Client,
         taiko: Taiko,
         address: Address,
@@ -47,7 +47,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
     ) -> Self {
         Self {
             last_l1_block_number: Arc::new(Mutex::new(0u64)),
-            config,
+            anchor_id_lag,
             l1_client,
             taiko,
             address,
@@ -71,7 +71,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         debug!("now={} parent={}", now, parent_header.timestamp);
 
         let last_l1_block_number = self.last_l1_block_number()?;
-        let anchor_block_id = get_anchor_id(last_l1_block_number, self.config.anchor_id_lag);
+        let anchor_block_id = get_anchor_id(last_l1_block_number, self.anchor_id_lag);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
             self.taiko.get_nonce(GOLDEN_TOUCH_ADDRESS),
@@ -119,26 +119,6 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
     }
 }
 
-#[derive(Debug)]
-pub struct Config {
-    pub l2_block_time: Duration,
-    #[allow(dead_code)]
-    pub handover_window_slots: u32,
-    #[allow(dead_code)]
-    pub handover_start_buffer: Duration,
-    pub anchor_id_lag: u64,
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            l2_block_time: Duration::from_millis(12000),
-            handover_window_slots: 4,
-            handover_start_buffer: Duration::from_millis(6000),
-            anchor_id_lag: 4,
-        }
-    }
-}
 fn get_anchor_id(current_block_number: u64, lag: u64) -> u64 {
     current_block_number - std::cmp::min(current_block_number, lag)
 }
@@ -149,7 +129,7 @@ mod tests {
     use alloy_primitives::{FixedBytes, U256};
     use alloy_provider::utils::Eip1559Estimation;
     use alloy_signer::Signature;
-    use std::time::UNIX_EPOCH;
+    use std::time::{Duration, UNIX_EPOCH};
 
     use crate::{
         taiko::{taiko_client::MockITaikoClient, taiko_l1_client::MockITaikoL1Client},
@@ -185,9 +165,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_build_blocks_adds_anchor_transaction() {
-        let config = Config::default();
+        let l2_block_time_secs = 2000_u64;
         let last_block_timestamp = 1_000_000u64;
-        let next_block_desired_timestamp = last_block_timestamp + config.l2_block_time.as_secs();
+        let next_block_desired_timestamp = last_block_timestamp + l2_block_time_secs;
 
         let mut l1_client = MockITaikoL1Client::new();
         l1_client
@@ -255,7 +235,14 @@ mod tests {
 
         let preconfer_address = Address::random();
 
-        let preconfer = Preconfer::new(config, l1_client, taiko, preconfer_address, time_provider);
+        let anchor_id_lag = 4u64;
+        let preconfer = Preconfer::new(
+            anchor_id_lag,
+            l1_client,
+            taiko,
+            preconfer_address,
+            time_provider,
+        );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
         let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
@@ -266,9 +253,9 @@ mod tests {
 
     #[tokio::test]
     async fn test_no_block_gets_published_when_mempool_is_empty() {
-        let config = Config::default();
+        let l2_block_time_secs = 2000_u64;
         let last_block_timestamp = 1_000_000u64;
-        let next_block_desired_timestamp = last_block_timestamp + config.l2_block_time.as_secs();
+        let next_block_desired_timestamp = last_block_timestamp + l2_block_time_secs;
 
         let mut l1_client = MockITaikoL1Client::new();
         l1_client
@@ -300,7 +287,14 @@ mod tests {
 
         let preconfer_address = Address::random();
 
-        let preconfer = Preconfer::new(config, l1_client, taiko, preconfer_address, time_provider);
+        let anchor_id_lag = 4u64;
+        let preconfer = Preconfer::new(
+            anchor_id_lag,
+            l1_client,
+            taiko,
+            preconfer_address,
+            time_provider,
+        );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
         let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));

@@ -3,6 +3,12 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ApplicationError {
     #[error("{0}")]
+    Config(#[from] block_building::preconf::config::ConfigError),
+
+    #[error("{0}")]
+    DotEnv(#[from] dotenv::Error),
+
+    #[error("{0}")]
     Rpc(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
 
     #[error("{0}")]

@@ -1,3 +1,4 @@
+pub mod config;
 pub mod confirmation_strategy;
 mod error;
 pub mod preconf_blocks;
