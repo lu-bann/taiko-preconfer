@@ -15,6 +15,9 @@ pub enum ApplicationError {
     UrlParse(#[from] url::ParseError),
 
     #[error("{0}")]
+    TryFromInt(#[from] std::num::TryFromIntError),
+
+    #[error("{0}")]
     Preconfer(#[from] block_building::preconf::PreconferError),
 
     #[error("{0}")]

@@ -7,7 +7,7 @@ use tracing::{debug, info};
 
 use alloy_primitives::Address;
 
-use crate::preconf::PreconferResult;
+use crate::preconf::{PreconferError, PreconferResult};
 use crate::taiko::hekla::addresses::GOLDEN_TOUCH_ADDRESS;
 use crate::taiko::taiko_client::ITaikoClient;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
@@ -28,6 +28,7 @@ impl SimpleBlock {
 #[derive(Debug)]
 pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
     last_l1_block_number: Arc<Mutex<u64>>,
+    parent_header: Arc<Mutex<Option<Header>>>,
     anchor_id_lag: u64,
     l1_client: L1Client,
     taiko: Taiko,
@@ -47,6 +48,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
     ) -> Self {
         Self {
             last_l1_block_number: Arc::new(Mutex::new(0u64)),
+            parent_header: Arc::new(Mutex::new(None)),
             anchor_id_lag,
             l1_client,
             taiko,
@@ -59,11 +61,21 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         self.last_l1_block_number.clone()
     }
 
+    pub fn shared_parent_header(&self) -> Arc<Mutex<Option<Header>>> {
+        self.parent_header.clone()
+    }
+
     pub fn last_l1_block_number(&self) -> PreconferResult<u64> {
         Ok(self.last_l1_block_number.try_lock().map(|guard| *guard)?)
     }
 
-    pub async fn build_block(&self, parent_header: Header) -> PreconferResult<Option<SimpleBlock>> {
+    pub async fn build_block(&self) -> PreconferResult<Option<SimpleBlock>> {
+        let parent_header = self.parent_header.lock().await.clone();
+        if parent_header.is_none() {
+            return Err(PreconferError::MissingParentHeader);
+        }
+        let parent_header = parent_header.unwrap();
+
         let start = SystemTime::now();
 
         info!("Start preconfirming block: #{}", parent_header.number + 1,);
@@ -245,8 +257,11 @@ mod tests {
         );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
-        let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
-        let preconfirmed_block = preconfer.build_block(parent_header).await.unwrap().unwrap();
+        *preconfer.shared_parent_header().lock().await = Some(get_rpc_header(get_header(
+            DUMMY_BLOCK_NUMBER,
+            last_block_timestamp,
+        )));
+        let preconfirmed_block = preconfer.build_block().await.unwrap().unwrap();
         assert_eq!(preconfirmed_block.txs.len(), 2);
         assert_eq!(preconfirmed_block.txs[0].signature().r(), U256::ONE);
     }
@@ -297,13 +312,10 @@ mod tests {
         );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
-        let parent_header = get_rpc_header(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
-        assert!(
-            preconfer
-                .build_block(parent_header)
-                .await
-                .unwrap()
-                .is_none()
-        );
+        *preconfer.shared_parent_header().lock().await = Some(get_rpc_header(get_header(
+            DUMMY_BLOCK_NUMBER,
+            last_block_timestamp,
+        )));
+        assert!(preconfer.build_block().await.unwrap().is_none());
     }
 }

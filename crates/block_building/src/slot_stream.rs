@@ -6,32 +6,16 @@ use tokio_stream::wrappers::IntervalStream;
 
 use crate::slot::{Slot, SubSlot};
 
-fn get_slot_count_for_next(
-    instant: &Instant,
-    genesis: Instant,
-    slot_time: &Duration,
-) -> Result<u64, TryFromIntError> {
-    let time_since_genesis_ns = instant.duration_since(genesis).as_millis();
-    let slot_time_ns = slot_time.as_millis();
-    let is_at_slot_start = time_since_genesis_ns % slot_time_ns == 0;
-    let passed_slots: u64 = (time_since_genesis_ns / slot_time_ns).try_into()?;
-    Ok(if is_at_slot_start {
-        passed_slots
-    } else {
-        passed_slots + 1
-    })
-}
-
 pub fn get_slot_stream(
-    genesis: Instant,
+    start: Instant,
+    next_slot_count: u64,
     slot_time: Duration,
     slots_per_epoch: u64,
 ) -> Result<impl Stream<Item = Slot>, TryFromIntError> {
-    let mut interval = interval_at(genesis, slot_time);
+    let mut interval = interval_at(start, slot_time);
     interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
 
-    let now = Instant::now();
-    let mut next_slot_count = get_slot_count_for_next(&now, genesis, &slot_time)?;
+    let mut next_slot_count = next_slot_count;
 
     Ok(IntervalStream::new(interval).map(move |_| {
         let slot_count = next_slot_count;
@@ -64,8 +48,9 @@ mod tests {
     async fn if_at_genesis_then_stream_yields_slot_0_at_epoch_0() {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
-        let genesis = Instant::now();
-        let stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let start = Instant::now();
+        let next_slot_count = 0;
+        let stream = get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         pin_mut!(stream);
         let value = stream.next().await;
         assert!(value.is_some());
@@ -76,9 +61,10 @@ mod tests {
     async fn if_started_half_slot_time_after_genesis_then_stream_yields_next_slot_1_at_epoch_0() {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
-        let genesis = Instant::now();
+        let start = Instant::now();
         tokio::time::advance(slot_time / 2).await;
-        let stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let next_slot_count = 1;
+        let stream = get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         pin_mut!(stream);
         let value = stream.next().await;
         assert!(value.is_some());
@@ -89,9 +75,10 @@ mod tests {
     async fn if_started_one_slot_time_after_genesis_then_stream_yields_slot_1_at_epoch_0() {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
-        let genesis = Instant::now();
+        let start = Instant::now();
         tokio::time::advance(slot_time).await;
-        let stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let next_slot_count = 1;
+        let stream = get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         pin_mut!(stream);
         let value = stream.next().await;
         assert!(value.is_some());
@@ -102,9 +89,10 @@ mod tests {
     async fn if_started_ten_slot_times_after_genesis_then_stream_yields_slot_0_at_epoch_1() {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
-        let genesis = Instant::now();
+        let start = Instant::now();
         tokio::time::advance(10 * slot_time).await;
-        let stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let next_slot_count = 10;
+        let stream = get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         pin_mut!(stream);
         let value = stream.next().await;
         assert!(value.is_some());
@@ -116,8 +104,10 @@ mod tests {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
         let subslots_per_slot = 2;
-        let genesis = Instant::now();
-        let slot_stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let start = Instant::now();
+        let next_slot_count = 0;
+        let slot_stream =
+            get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         let stream = get_subslot_stream(slot_stream, subslots_per_slot);
         pin_mut!(stream);
         let value = stream.next().await;
@@ -131,9 +121,11 @@ mod tests {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
         let subslots_per_slot = 2;
-        let genesis = Instant::now();
+        let start = Instant::now();
         tokio::time::advance(slot_time / 2).await;
-        let slot_stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let next_slot_count = 1;
+        let slot_stream =
+            get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         let stream = get_subslot_stream(slot_stream, subslots_per_slot);
         pin_mut!(stream);
         let value = stream.next().await;
@@ -147,9 +139,11 @@ mod tests {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
         let subslots_per_slot = 2;
-        let genesis = Instant::now();
+        let start = Instant::now();
         tokio::time::advance(slot_time).await;
-        let slot_stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let next_slot_count = 1;
+        let slot_stream =
+            get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         let stream = get_subslot_stream(slot_stream, subslots_per_slot);
         pin_mut!(stream);
         let value = stream.next().await;
@@ -163,9 +157,11 @@ mod tests {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
         let subslots_per_slot = 2;
-        let genesis = Instant::now();
+        let start = Instant::now();
         tokio::time::advance(2 * slot_time).await;
-        let slot_stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let next_slot_count = 2;
+        let slot_stream =
+            get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         let stream = get_subslot_stream(slot_stream, subslots_per_slot);
         pin_mut!(stream);
         let value = stream.next().await;
@@ -179,9 +175,11 @@ mod tests {
         let slot_time = Duration::from_millis(100);
         let slots_per_epoch = 10;
         let subslots_per_slot = 2;
-        let genesis = Instant::now();
+        let start = Instant::now();
         tokio::time::advance(10 * slot_time).await;
-        let slot_stream = get_slot_stream(genesis, slot_time, slots_per_epoch).unwrap();
+        let next_slot_count = 10;
+        let slot_stream =
+            get_slot_stream(start, next_slot_count, slot_time, slots_per_epoch).unwrap();
         let stream = get_subslot_stream(slot_stream, subslots_per_slot);
         pin_mut!(stream);
         let value = stream.next().await;
