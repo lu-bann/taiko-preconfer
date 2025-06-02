@@ -107,15 +107,8 @@ async fn trigger_from_stream<
         }
     }
 }
-async fn run_preconfer() -> ApplicationResult<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_target(false)
-        .init();
 
-    dotenv::dotenv()?;
-    let config = Config::try_from_env()?;
-
+fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
     let taiko_slot_model = SlotModel::new(
         HOLESKY_GENESIS_TIMESTAMP,
         config.l2_slot_time,
@@ -132,10 +125,22 @@ async fn run_preconfer() -> ApplicationResult<()> {
     let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
     let slots_per_epoch = config.l1_slots_per_epoch * subslots_per_slot;
     let next_slot_count = taiko_slot.epoch * slots_per_epoch + taiko_slot.slot + 1;
-    let slot_stream = get_subslot_stream(
+    Ok(get_subslot_stream(
         get_slot_stream(start, next_slot_count, config.l2_slot_time, slots_per_epoch)?,
         subslots_per_slot,
-    );
+    ))
+}
+
+async fn run_preconfer() -> ApplicationResult<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .init();
+
+    dotenv::dotenv()?;
+    let config = Config::try_from_env()?;
+
+    let slot_stream = create_subslot_stream(&config)?;
 
     let l2_client = RpcClient::new(get_client(&config.l2_client_url)?);
     let jwt_secret =
