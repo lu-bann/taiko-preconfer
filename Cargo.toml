@@ -7,7 +7,7 @@ members = ["crates/*", "taiko-preconfer"]
 resolver = "2"
 
 [workspace.dependencies]
-alloy-consensus = "1.0.7"
+alloy-consensus = "1.0.9"
 alloy-contract = "1.0.7"
 alloy-json-rpc = "1.0.7"
 alloy-rpc-client = "1.0.7"
