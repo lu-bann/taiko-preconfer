@@ -2,6 +2,9 @@ use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types::Header;
 use alloy_rpc_types_engine::JwtSecret;
+use block_building::preconf::handover_start_buffer::{
+    DummySequencingMonitor, end_of_handover_start_buffer,
+};
 use block_building::slot::SubSlot;
 use block_building::slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel};
 use block_building::slot_stream::{get_slot_stream, get_subslot_stream};
@@ -14,7 +17,7 @@ use std::{
 };
 use tokio::time::Instant;
 use tokio::{join, sync::Mutex};
-use tracing::{error, info};
+use tracing::{debug, error, info, trace};
 
 use block_building::{
     active_operator_model::ActiveOperatorModel,
@@ -74,11 +77,12 @@ async fn trigger_from_stream<
     stream: impl Stream<Item = SubSlot>,
     block_builder: Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
     active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
+    handover_timeout: Duration,
 ) -> ApplicationResult<()> {
     pin_mut!(stream);
     loop {
         if let Some(subslot) = stream.next().await {
-            info!("Received subslot: {:?}", subslot);
+            trace!("Received subslot: {:?}", subslot);
             let epoch = if active_operator_model
                 .lock()
                 .await
@@ -96,8 +100,18 @@ async fn trigger_from_stream<
             if active_operator_model
                 .lock()
                 .await
-                .can_preconfirm(subslot.slot)
+                .can_preconfirm(&subslot.slot)
             {
+                if active_operator_model
+                    .lock()
+                    .await
+                    .is_first_preconfirmation_slot(&subslot.slot)
+                {
+                    trace!("First slot in window: {:?}", subslot.slot);
+                    let monitor = DummySequencingMonitor {};
+                    end_of_handover_start_buffer(handover_timeout, &monitor).await;
+                    debug!("Last preconfer is done and l2 header is in sync");
+                }
                 if let Err(err) = block_builder.lock().await.build_block().await {
                     error!("Error during block building: {:?}", err.to_string())
                 }
@@ -223,7 +237,12 @@ async fn run_preconfer() -> ApplicationResult<()> {
             shared_last_l1_block_number
         ),
         stream_block_headers_into(&config.l2_ws_url, process_l2_header, shared_parent_header),
-        trigger_from_stream(slot_stream, block_builder, active_operator_model,),
+        trigger_from_stream(
+            slot_stream,
+            block_builder,
+            active_operator_model,
+            config.handover_start_buffer
+        ),
     );
 
     Ok(())
