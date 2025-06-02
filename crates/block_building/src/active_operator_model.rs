@@ -1,4 +1,4 @@
-use crate::slot_model::Slot;
+use crate::slot::Slot;
 
 pub struct ActiveOperatorModel {
     next_active_epoch: Option<u64>,

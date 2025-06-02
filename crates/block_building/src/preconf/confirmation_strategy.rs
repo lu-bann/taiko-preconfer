@@ -86,7 +86,7 @@ impl InstantConfirmationStrategy {
         let signer_str = signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
             client.get_nonce(&signer_str),
-            client.estimate_gas(tx), // TODO: use l1_client to estimate gas (fix address/params/whitelist first)
+            client.estimate_gas(tx),
             client.estimate_eip1559_fees(),
         );
         let fee_estimate = fee_estimate?;
