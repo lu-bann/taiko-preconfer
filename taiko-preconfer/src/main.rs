@@ -18,14 +18,18 @@ use preconfirmation::{
         get_subslot_stream, stream_headers, to_boxed,
     },
     taiko::{
-        contracts::TaikoAnchorInstance,
-        hekla::{CHAIN_ID, addresses::get_taiko_anchor_address, get_basefee_config_v2},
+        contracts::{TaikoAnchorInstance, TaikoWhitelistInstance},
+        hekla::{
+            CHAIN_ID,
+            addresses::{get_golden_touch_address, get_taiko_anchor_address},
+            get_basefee_config_v2,
+        },
         taiko_client::{ITaikoClient, TaikoClient},
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
 };
-use std::time::Duration;
+use std::{str::FromStr, time::Duration};
 use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
@@ -35,6 +39,9 @@ use tracing::{debug, error, info, trace};
 
 mod error;
 use crate::error::ApplicationResult;
+
+const DUMMY_WHITELIST: &str = "0x90A309073b5F2f7C821e0aAc68b2c6F42F649c59";
+const BASE_SEPOLIA_RPC: &str = "https://sepolia.base.org";
 
 async fn trigger_from_stream<
     L1Client: ITaikoL1Client,
@@ -49,21 +56,34 @@ async fn trigger_from_stream<
     pin_mut!(stream);
     loop {
         if let Some(subslot) = stream.next().await {
-            trace!("Received subslot: {:?}", subslot);
-            let epoch = if active_operator_model
+            info!("Received subslot: {:?}", subslot);
+            if !active_operator_model
                 .lock()
                 .await
-                .within_handover_period(subslot.slot.slot)
+                .can_preconfirm(&subslot.slot)
+                && preconfer
+                    .lock()
+                    .await
+                    .l1_client()
+                    .get_current_preconfer()
+                    .await?
+                    == get_golden_touch_address()
             {
-                subslot.slot.epoch + 1
-            } else {
-                subslot.slot.epoch
-            };
-            info!("Set active epoch to {} for slot {:?}", epoch, subslot);
-            active_operator_model
-                .lock()
-                .await
-                .set_next_active_epoch(epoch);
+                let epoch = if active_operator_model
+                    .lock()
+                    .await
+                    .within_handover_period(subslot.slot.slot)
+                {
+                    subslot.slot.epoch + 1
+                } else {
+                    subslot.slot.epoch
+                };
+                active_operator_model
+                    .lock()
+                    .await
+                    .set_next_active_epoch(epoch);
+                info!("Set active epoch to {} for slot {:?}", epoch, subslot);
+            }
             if active_operator_model
                 .lock()
                 .await
@@ -84,6 +104,30 @@ async fn trigger_from_stream<
                 }
             } else {
                 info!("Not active operator. Skip block building.");
+            }
+            if active_operator_model
+                .lock()
+                .await
+                .is_last_slot_before_handover_window(subslot.slot.slot)
+            {
+                let next_preconfer = preconfer
+                    .lock()
+                    .await
+                    .l1_client()
+                    .get_preconfer_for_next_epoch()
+                    .await?;
+                info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
+                if next_preconfer == get_golden_touch_address() {
+                    active_operator_model
+                        .lock()
+                        .await
+                        .set_next_active_epoch(subslot.slot.epoch + 1);
+                    info!(
+                        "Set active epoch to {} for slot {:?}",
+                        subslot.slot.epoch + 1,
+                        subslot
+                    );
+                }
             }
         }
     }
@@ -163,9 +207,15 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
     let l1_provider = ProviderBuilder::new()
         .connect(&config.l1_client_url)
         .await?;
+    let l1_provider_base = ProviderBuilder::new().connect(BASE_SEPOLIA_RPC).await?;
+    let whitelist = TaikoWhitelistInstance::new(
+        Address::from_str(DUMMY_WHITELIST).unwrap(),
+        l1_provider_base,
+    );
     Ok(TaikoL1Client::new(
         RpcClient::new(get_alloy_client(&config.l1_client_url, false)?),
         l1_provider,
+        whitelist,
     ))
 }
 
