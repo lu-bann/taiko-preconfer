@@ -2,7 +2,8 @@ use alloy_consensus::Header;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
-use block_building::{
+use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
+use preconfirmation::{
     active_operator_model::ActiveOperatorModel,
     header_stream::{get_header_stream, get_polling_stream, stream_headers, to_boxed},
     preconf::{
@@ -22,7 +23,6 @@ use block_building::{
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
 };
-use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use std::time::Duration;
 use std::{
     sync::Arc,
@@ -40,7 +40,7 @@ async fn trigger_from_stream<
     TimeProvider: ITimeProvider,
 >(
     stream: impl Stream<Item = SubSlot>,
-    block_builder: Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
+    preconfer: Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
     active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
@@ -77,7 +77,7 @@ async fn trigger_from_stream<
                     end_of_handover_start_buffer(handover_timeout, &monitor).await;
                     debug!("Last preconfer is done and l2 header is in sync");
                 }
-                if let Err(err) = block_builder.lock().await.build_block().await {
+                if let Err(err) = preconfer.lock().await.build_block().await {
                     error!("Error during block building: {:?}", err.to_string())
                 }
             } else {
@@ -210,7 +210,7 @@ async fn main() -> ApplicationResult<()> {
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
 
-    let block_builder = Arc::new(Mutex::new(Preconfer::new(
+    let preconfer = Arc::new(Mutex::new(Preconfer::new(
         config.anchor_id_lag,
         taiko_l1_client,
         taiko_l2_client,
@@ -229,8 +229,8 @@ async fn main() -> ApplicationResult<()> {
     let l1_header_stream = create_header_stream(&config.l1_client_url, &config.l1_ws_url).await?;
     let l2_header_stream = create_header_stream(&config.l2_client_url, &config.l2_ws_url).await?;
 
-    let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
-    let shared_parent_header = block_builder.lock().await.shared_parent_header();
+    let shared_last_l1_block_number = preconfer.lock().await.shared_last_l1_block_number();
+    let shared_parent_header = preconfer.lock().await.shared_parent_header();
 
     let _ = join!(
         stream_headers(
@@ -241,7 +241,7 @@ async fn main() -> ApplicationResult<()> {
         stream_headers(l2_header_stream, store_header_boxed, shared_parent_header),
         trigger_from_stream(
             slot_stream,
-            block_builder,
+            preconfer,
             active_operator_model,
             config.handover_start_buffer
         ),

@@ -3,7 +3,7 @@ use thiserror::Error;
 #[derive(Error, Debug)]
 pub enum ApplicationError {
     #[error("{0}")]
-    Config(#[from] block_building::preconf::config::ConfigError),
+    Config(#[from] preconfirmation::preconf::config::ConfigError),
 
     #[error("{0}")]
     DotEnv(#[from] dotenv::Error),
@@ -18,7 +18,7 @@ pub enum ApplicationError {
     TryFromInt(#[from] std::num::TryFromIntError),
 
     #[error("{0}")]
-    Preconfer(#[from] block_building::preconf::PreconferError),
+    Preconfer(#[from] preconfirmation::preconf::PreconferError),
 
     #[error("{0}")]
     SystemTime(#[from] std::time::SystemTimeError),
