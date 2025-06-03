@@ -1,12 +1,10 @@
 pub mod active_operator_model;
 pub mod blob;
+pub mod client;
 pub mod compression;
-pub mod dummy_client;
 pub mod encode_util;
-pub mod http_client;
 pub mod password;
 pub mod preconf;
-pub mod rpc_client;
 pub mod slot;
 pub mod slot_model;
 pub mod stream;

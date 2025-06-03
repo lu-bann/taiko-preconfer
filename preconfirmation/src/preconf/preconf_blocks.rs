@@ -7,8 +7,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use crate::{
+    client::{HttpClient, HttpError},
     compression::compress,
-    http_client::{HttpClient, HttpError},
 };
 
 pub const PRECONF_BLOCKS: &str = "preconfBlocks";

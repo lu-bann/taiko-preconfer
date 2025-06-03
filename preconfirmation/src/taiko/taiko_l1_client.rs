@@ -4,8 +4,7 @@ use alloy_rpc_types::TransactionRequest;
 use thiserror::Error;
 
 use crate::{
-    http_client::{get_header_by_id, get_nonce},
-    rpc_client::RpcClient,
+    client::{RpcClient, get_header_by_id, get_nonce},
     taiko::contracts::Provider as TaikoProvider,
 };
 
@@ -15,7 +14,7 @@ pub enum TaikoL1ClientError {
     Rpc(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
 
     #[error("{0}")]
-    Http(#[from] crate::http_client::HttpError),
+    Http(#[from] crate::client::HttpError),
 
     #[error("{0}")]
     Contract(#[from] alloy_contract::Error),

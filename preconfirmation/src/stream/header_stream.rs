@@ -5,7 +5,7 @@ use async_stream::stream;
 use futures::{Stream, future::BoxFuture, pin_mut};
 use tokio_stream::StreamExt;
 
-use crate::http_client::{HttpClient, get_header};
+use crate::client::{HttpClient, get_header};
 
 pub fn get_header_stream(
     client_stream: impl Stream<Item = Header>,

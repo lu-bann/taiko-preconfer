@@ -13,10 +13,10 @@ use libdeflater::CompressionError;
 use thiserror::Error;
 use tracing::debug;
 
-use crate::dummy_client::DummyClient;
-use crate::http_client::{HttpError, flatten_mempool_txs, get_mempool_txs, get_nonce};
+use crate::client::{
+    DummyClient, HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs, get_nonce,
+};
 use crate::preconf::preconf_blocks::{create_executable_data, publish_preconfirmed_transactions};
-use crate::rpc_client::RpcClient;
 use crate::taiko::{
     anchor::create_anchor_transaction,
     contracts::{Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},

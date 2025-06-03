@@ -4,7 +4,7 @@ use alloy_rpc_types::Header as RpcHeader;
 use serde_json::{Value as JsonValue, from_value, to_value};
 
 use crate::{
-    http_client::{HttpClient, HttpError},
+    client::{HttpClient, HttpError},
     preconf::preconf_blocks::{BuildPreconfBlockResponse, PRECONF_BLOCKS},
 };
 

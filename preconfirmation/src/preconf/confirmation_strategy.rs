@@ -26,7 +26,7 @@ pub enum ConfirmationError {
     Compression(#[from] libdeflater::CompressionError),
 
     #[error("{0}")]
-    Http(#[from] crate::http_client::HttpError),
+    Http(#[from] crate::client::HttpError),
 
     #[error("{0}")]
     Signer(#[from] alloy_signer::Error),
