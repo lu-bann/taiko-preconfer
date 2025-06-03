@@ -5,7 +5,6 @@ use alloy_rpc_types_engine::JwtSecret;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     active_operator_model::ActiveOperatorModel,
-    header_stream::{get_header_stream, get_polling_stream, stream_headers, to_boxed},
     preconf::{
         Preconfer,
         config::Config,
@@ -14,7 +13,10 @@ use preconfirmation::{
     rpc_client::{RpcClient, get_alloy_auth_client, get_alloy_client},
     slot::SubSlot,
     slot_model::{HOLESKY_GENESIS_TIMESTAMP, HOLESKY_SLOT_MODEL, SlotModel},
-    slot_stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
+    stream::{
+        get_header_stream, get_next_slot_start, get_polling_stream, get_slot_stream,
+        get_subslot_stream, stream_headers, to_boxed,
+    },
     taiko::{
         contracts::TaikoAnchorInstance,
         hekla::{CHAIN_ID, addresses::get_taiko_anchor_address, get_basefee_config_v2},
