@@ -1,11 +1,11 @@
-use alloy_consensus::TxEnvelope;
+use alloy_consensus::{Header, TxEnvelope};
 use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
 use alloy_primitives::FixedBytes;
 use alloy_primitives::{Address, ChainId, ruint::FromUintError};
 use alloy_provider::Provider;
 use alloy_provider::utils::Eip1559Estimation;
-use alloy_rpc_types::{Header, TransactionRequest};
+use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
 use alloy_transport::TransportErrorKind;
 use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::Error as EcdsaError;
@@ -83,7 +83,7 @@ pub trait ITaikoClient {
         timestamp: u64,
         parent_header: &Header,
         txs: Vec<TxEnvelope>,
-    ) -> impl Future<Output = TaikoClientResult<Header>>;
+    ) -> impl Future<Output = TaikoClientResult<RpcHeader>>;
 }
 
 #[derive(Debug)]
@@ -195,7 +195,7 @@ impl ITaikoClient for TaikoClient {
         timestamp: u64,
         parent_header: &Header,
         txs: Vec<TxEnvelope>,
-    ) -> TaikoClientResult<Header> {
+    ) -> TaikoClientResult<RpcHeader> {
         let executable_data = create_executable_data(
             base_fee,
             parent_header.number + 1,

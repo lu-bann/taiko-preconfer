@@ -22,9 +22,6 @@ pub enum ApplicationError {
 
     #[error("{0}")]
     SystemTime(#[from] std::time::SystemTimeError),
-
-    #[error("Web socket connection lost at {url}.")]
-    WsConnectionLost { url: String },
 }
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;

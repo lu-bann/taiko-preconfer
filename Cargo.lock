@@ -956,6 +956,7 @@ dependencies = [
  "alloy-signer-local",
  "alloy-sol-types",
  "alloy-transport",
+ "async-stream",
  "c-kzg",
  "futures",
  "hex",
@@ -3416,11 +3417,11 @@ dependencies = [
 name = "taiko-preconfer"
 version = "0.1.0"
 dependencies = [
+ "alloy-consensus",
  "alloy-json-rpc",
  "alloy-primitives",
  "alloy-provider",
  "alloy-rpc-client",
- "alloy-rpc-types",
  "alloy-rpc-types-engine",
  "alloy-transport",
  "alloy-transport-http",
