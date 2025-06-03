@@ -170,7 +170,8 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
     ))
 }
 
-async fn run_preconfer() -> ApplicationResult<()> {
+#[tokio::main]
+async fn main() -> ApplicationResult<()> {
     tracing_subscriber::fmt()
         .with_max_level(tracing::Level::INFO)
         .with_target(false)
@@ -241,9 +242,4 @@ async fn run_preconfer() -> ApplicationResult<()> {
     );
 
     Ok(())
-}
-
-#[tokio::main]
-async fn main() -> ApplicationResult<()> {
-    run_preconfer().await
 }
