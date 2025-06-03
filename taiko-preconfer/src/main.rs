@@ -60,7 +60,8 @@ async fn trigger_from_stream<
             if !active_operator_model
                 .lock()
                 .await
-                .can_preconfirm(&subslot.slot)
+                .status(&subslot.slot)
+                .can_preconfirm
                 && preconfer
                     .lock()
                     .await
@@ -84,16 +85,10 @@ async fn trigger_from_stream<
                     .set_next_active_epoch(epoch);
                 info!("Set active epoch to {} for slot {:?}", epoch, subslot);
             }
-            if active_operator_model
-                .lock()
-                .await
-                .can_preconfirm(&subslot.slot)
-            {
-                if active_operator_model
-                    .lock()
-                    .await
-                    .is_first_preconfirmation_slot(&subslot.slot)
-                {
+
+            let active_operator_status = active_operator_model.lock().await.status(&subslot.slot);
+            if active_operator_status.can_preconfirm {
+                if active_operator_status.is_first_preconfirmation_slot {
                     trace!("First slot in window: {:?}", subslot.slot);
                     let monitor = DummySequencingMonitor {};
                     end_of_handover_start_buffer(handover_timeout, &monitor).await;
@@ -105,11 +100,7 @@ async fn trigger_from_stream<
             } else {
                 info!("Not active operator. Skip block building.");
             }
-            if active_operator_model
-                .lock()
-                .await
-                .is_last_slot_before_handover_window(subslot.slot.slot)
-            {
+            if active_operator_status.is_last_slot_before_handover_window {
                 let next_preconfer = preconfer
                     .lock()
                     .await
