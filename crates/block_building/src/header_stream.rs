@@ -2,7 +2,7 @@ use std::time::Duration;
 
 use alloy_consensus::Header;
 use async_stream::stream;
-use futures::Stream;
+use futures::{Stream, future::BoxFuture, pin_mut};
 use tokio_stream::StreamExt;
 
 use crate::http_client::{HttpClient, get_header};
@@ -38,6 +38,23 @@ pub fn get_polling_stream<Client: HttpClient>(
             tokio::time::sleep(polling_duration).await;
         }
     }
+}
+
+pub async fn stream_headers<
+    'a,
+    Value: Clone,
+    E,
+    T: Fn(Header, Value) -> BoxFuture<'a, Result<(), E>>,
+>(
+    stream: impl Stream<Item = Header>,
+    f: T,
+    current: Value,
+) -> Result<(), E> {
+    pin_mut!(stream);
+    while let Some(header) = stream.next().await {
+        f(header, current.clone()).await?;
+    }
+    Ok(())
 }
 
 #[cfg(test)]
