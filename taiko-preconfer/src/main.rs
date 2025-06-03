@@ -2,7 +2,7 @@ use alloy_consensus::Header;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
-use block_building::header_stream::{get_header_stream, get_polling_stream};
+use block_building::header_stream::{get_header_stream, get_polling_stream, stream_headers};
 use block_building::preconf::handover_start_buffer::{
     DummySequencingMonitor, end_of_handover_start_buffer,
 };
@@ -10,7 +10,7 @@ use block_building::rpc_client::{get_alloy_auth_client, get_alloy_client};
 use block_building::slot::SubSlot;
 use block_building::slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel};
 use block_building::slot_stream::{get_next_slot_start, get_slot_stream, get_subslot_stream};
-use futures::{FutureExt, future::BoxFuture};
+use futures::FutureExt;
 use futures::{Stream, StreamExt, pin_mut};
 use std::time::Duration;
 use std::{
@@ -36,22 +36,6 @@ use block_building::{
 
 mod error;
 use crate::error::ApplicationResult;
-
-async fn stream_block_headers_into<
-    'a,
-    Value,
-    T: Fn(Header, Arc<Mutex<Value>>) -> BoxFuture<'a, ApplicationResult<()>>,
->(
-    stream: impl Stream<Item = Header>,
-    f: T,
-    current: Arc<Mutex<Value>>,
-) -> ApplicationResult<()> {
-    pin_mut!(stream);
-    while let Some(header) = stream.next().await {
-        f(header, current.clone()).await?;
-    }
-    Ok(())
-}
 
 async fn trigger_from_stream<
     L1Client: ITaikoL1Client,
@@ -211,7 +195,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
                 info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
                 info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
                 *current.lock().await = header.number;
-                Ok(())
+                ApplicationResult::<()>::Ok(())
             }
             .boxed()
         }
@@ -223,7 +207,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
                 info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
                 info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
                 *current.lock().await = Some(header);
-                Ok(())
+                ApplicationResult::<()>::Ok(())
             }
             .boxed()
         }
@@ -242,12 +226,12 @@ async fn run_preconfer() -> ApplicationResult<()> {
     let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
     let shared_parent_header = block_builder.lock().await.shared_parent_header();
     let _ = join!(
-        stream_block_headers_into(
+        stream_headers(
             l1_header_stream,
             process_l1_header,
             shared_last_l1_block_number
         ),
-        stream_block_headers_into(l2_header_stream, process_l2_header, shared_parent_header),
+        stream_headers(l2_header_stream, process_l2_header, shared_parent_header),
         trigger_from_stream(
             slot_stream,
             block_builder,
