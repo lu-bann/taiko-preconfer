@@ -1,5 +1,13 @@
 use crate::slot::Slot;
 
+#[derive(Debug, PartialEq, Default)]
+pub struct Status {
+    pub can_confirm: bool,
+    pub can_preconfirm: bool,
+    pub is_first_preconfirmation_slot: bool,
+    pub is_last_slot_before_handover_window: bool,
+}
+
 pub struct ActiveOperatorModel {
     next_active_epoch: Option<u64>,
     handover_slots: u64,
@@ -23,31 +31,20 @@ impl ActiveOperatorModel {
         slot >= self.slots_per_epoch - self.handover_slots
     }
 
-    pub fn can_preconfirm(&self, slot: &Slot) -> bool {
+    pub fn status(&self, slot: &Slot) -> Status {
         if let Some(next_active_epoch) = self.next_active_epoch {
-            return (slot.epoch + 1 == next_active_epoch && self.within_handover_period(slot.slot))
-                || (slot.epoch == next_active_epoch && !self.within_handover_period(slot.slot));
+            return Status {
+                can_confirm: slot.epoch == next_active_epoch,
+                can_preconfirm: (slot.epoch + 1 == next_active_epoch
+                    && self.within_handover_period(slot.slot))
+                    || (slot.epoch == next_active_epoch && !self.within_handover_period(slot.slot)),
+                is_first_preconfirmation_slot: slot.epoch + 1 == next_active_epoch
+                    && slot.slot == self.slots_per_epoch - self.handover_slots,
+                is_last_slot_before_handover_window: slot.slot
+                    == self.slots_per_epoch - self.handover_slots - 1,
+            };
         }
-        false
-    }
-
-    pub fn can_confirm(&self, slot: &Slot) -> bool {
-        if let Some(next_active_epoch) = self.next_active_epoch {
-            return slot.epoch == next_active_epoch;
-        }
-        false
-    }
-
-    pub fn is_first_preconfirmation_slot(&self, slot: &Slot) -> bool {
-        if let Some(next_active_epoch) = self.next_active_epoch {
-            return slot.epoch + 1 == next_active_epoch
-                && slot.slot == self.slots_per_epoch - self.handover_slots;
-        }
-        false
-    }
-
-    pub fn is_last_slot_before_handover_window(&self, slot: u64) -> bool {
-        slot == self.slots_per_epoch - self.handover_slots - 1
+        Status::default()
     }
 }
 
@@ -63,7 +60,7 @@ mod tests {
         let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
 
         let slot = Slot::new(0, 0);
-        assert!(!model.can_preconfirm(&slot));
+        assert!(!model.status(&slot).can_preconfirm);
     }
 
     #[test]
@@ -73,7 +70,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(0, TEST_SLOTS_PER_EPOCH - handover_slots - 1);
-        assert!(!model.can_preconfirm(&slot));
+        assert!(!model.status(&slot).can_preconfirm);
     }
 
     #[test]
@@ -83,7 +80,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(0, TEST_SLOTS_PER_EPOCH - handover_slots);
-        assert!(model.can_preconfirm(&slot));
+        assert!(model.status(&slot).can_preconfirm);
     }
 
     #[test]
@@ -93,7 +90,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(1, 0);
-        assert!(model.can_preconfirm(&slot));
+        assert!(model.status(&slot).can_preconfirm);
     }
 
     #[test]
@@ -103,7 +100,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(2, 0);
-        assert!(!model.can_preconfirm(&slot));
+        assert!(!model.status(&slot).can_preconfirm);
     }
 
     #[test]
@@ -113,7 +110,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(1, 7);
-        assert!(!model.can_preconfirm(&slot));
+        assert!(!model.status(&slot).can_preconfirm);
     }
 
     #[test]
@@ -123,7 +120,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(0, 7);
-        assert!(model.is_first_preconfirmation_slot(&slot));
+        assert!(model.status(&slot).is_first_preconfirmation_slot);
     }
 
     #[test]
@@ -133,7 +130,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(0, 8);
-        assert!(!model.is_first_preconfirmation_slot(&slot));
+        assert!(!model.status(&slot).is_first_preconfirmation_slot);
     }
 
     #[test]
@@ -142,23 +139,27 @@ mod tests {
         let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
 
         let slot = Slot::new(0, 7);
-        assert!(!model.is_first_preconfirmation_slot(&slot));
+        assert!(!model.status(&slot).is_first_preconfirmation_slot);
     }
 
     #[test]
     fn is_last_slot_before_handover_window() {
         let handover_slots = 3u64;
-        let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+        let mut model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+        model.set_next_active_epoch(1);
 
-        assert!(model.is_last_slot_before_handover_window(6));
+        let slot = Slot::new(0, 6);
+        assert!(model.status(&slot).is_last_slot_before_handover_window);
     }
 
     #[test]
     fn is_not_last_slot_before_handover_window() {
         let handover_slots = 3u64;
-        let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+        let mut model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+        model.set_next_active_epoch(1);
 
-        assert!(!model.is_last_slot_before_handover_window(7));
+        let slot = Slot::new(0, 7);
+        assert!(!model.status(&slot).is_last_slot_before_handover_window);
     }
 
     #[test]
@@ -167,7 +168,7 @@ mod tests {
         let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
 
         let slot = Slot::new(0, 0);
-        assert!(!model.can_confirm(&slot));
+        assert!(!model.status(&slot).can_confirm);
     }
 
     #[test]
@@ -177,7 +178,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(1, 0);
-        assert!(model.can_confirm(&slot));
+        assert!(model.status(&slot).can_confirm);
     }
 
     #[test]
@@ -187,7 +188,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(0, 0);
-        assert!(!model.can_confirm(&slot));
+        assert!(!model.status(&slot).can_confirm);
     }
 
     #[test]
@@ -197,7 +198,7 @@ mod tests {
         model.set_next_active_epoch(1);
 
         let slot = Slot::new(2, 0);
-        assert!(!model.can_confirm(&slot));
+        assert!(!model.status(&slot).can_confirm);
     }
 
     #[test]
