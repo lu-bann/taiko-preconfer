@@ -152,17 +152,12 @@ async fn create_header_stream(
     Ok(get_header_stream(polling_stream, ws_stream))
 }
 
-async fn run_preconfer() -> ApplicationResult<()> {
-    tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
-        .with_target(false)
-        .init();
-
+fn get_config() -> ApplicationResult<Config> {
     dotenv::dotenv()?;
-    let config = Config::try_from_env()?;
+    Ok(Config::try_from_env()?)
+}
 
-    let slot_stream = create_subslot_stream(&config)?;
-
+async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> {
     let l2_client = RpcClient::new(get_alloy_client(&config.l2_client_url, false)?);
     let jwt_secret =
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
@@ -172,13 +167,6 @@ async fn run_preconfer() -> ApplicationResult<()> {
         jwt_secret,
         true,
     )?);
-    let l1_provider = ProviderBuilder::new()
-        .connect(&config.l1_client_url)
-        .await?;
-    let l1_client = TaikoL1Client::new(
-        RpcClient::new(get_alloy_client(&config.l1_client_url, false)?),
-        l1_provider,
-    );
 
     let taiko_anchor_address = get_taiko_anchor_address();
     let provider = ProviderBuilder::new()
@@ -186,31 +174,49 @@ async fn run_preconfer() -> ApplicationResult<()> {
         .await?;
     let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider.clone());
 
-    let taiko = TaikoClient::new(
+    Ok(TaikoClient::new(
         l2_client,
         auth_client,
         taiko_anchor,
         provider,
         get_basefee_config_v2(),
         CHAIN_ID,
-    );
-    let handover_slots = config.handover_window_slots as u64;
+    ))
+}
+
+async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client> {
+    let l1_provider = ProviderBuilder::new()
+        .connect(&config.l1_client_url)
+        .await?;
+    Ok(TaikoL1Client::new(
+        RpcClient::new(get_alloy_client(&config.l1_client_url, false)?),
+        l1_provider,
+    ))
+}
+
+async fn run_preconfer() -> ApplicationResult<()> {
+    tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::INFO)
+        .with_target(false)
+        .init();
+
+    let config = get_config()?;
+
+    let taiko_l2_client = get_taiko_l2_client(&config).await?;
+    let taiko_l1_client = get_taiko_l1_client(&config).await?;
+
     let block_builder = Arc::new(Mutex::new(Preconfer::new(
         config.anchor_id_lag,
-        l1_client,
-        taiko,
+        taiko_l1_client,
+        taiko_l2_client,
         Address::random(),
         SystemTimeProvider::new(),
     )));
-    let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
-    let shared_parent_header = block_builder.lock().await.shared_parent_header();
 
     let process_l1_header = {
         |header: Header, current: Arc<Mutex<u64>>| {
             async move {
-                let num = header.number;
-
-                info!("L1 🗣 #{:<10} {}", num, header.timestamp);
+                info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
                 info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
                 *current.lock().await = header.number;
                 Ok(())
@@ -222,9 +228,7 @@ async fn run_preconfer() -> ApplicationResult<()> {
     let process_l2_header = {
         |header: Header, current: Arc<Mutex<Option<Header>>>| {
             async move {
-                let num = header.number;
-
-                info!("L2 🗣 #{:<10} {}", num, header.timestamp);
+                info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
                 info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
                 *current.lock().await = Some(header);
                 Ok(())
@@ -234,13 +238,17 @@ async fn run_preconfer() -> ApplicationResult<()> {
     };
 
     let slots_per_epoch = 32;
+    let handover_slots = config.handover_window_slots as u64;
     let active_operator_model = Arc::new(Mutex::new(ActiveOperatorModel::new(
         handover_slots,
         slots_per_epoch,
     )));
 
+    let slot_stream = create_subslot_stream(&config)?;
     let l1_header_stream = create_header_stream(&config.l1_client_url, &config.l1_ws_url).await?;
     let l2_header_stream = create_header_stream(&config.l2_client_url, &config.l2_ws_url).await?;
+    let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
+    let shared_parent_header = block_builder.lock().await.shared_parent_header();
     let _ = join!(
         stream_block_headers_into(
             l1_header_stream,
