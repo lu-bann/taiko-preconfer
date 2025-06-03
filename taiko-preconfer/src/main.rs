@@ -6,6 +6,7 @@ use block_building::header_stream::{get_header_stream, get_polling_stream};
 use block_building::preconf::handover_start_buffer::{
     DummySequencingMonitor, end_of_handover_start_buffer,
 };
+use block_building::rpc_client::{get_alloy_auth_client, get_alloy_client};
 use block_building::slot::SubSlot;
 use block_building::slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel};
 use block_building::slot_stream::{get_slot_stream, get_subslot_stream};
@@ -33,9 +34,6 @@ use block_building::{
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
 };
-
-mod rpc;
-use crate::rpc::{get_auth_client, get_client};
 
 mod error;
 use crate::error::ApplicationResult;
@@ -144,7 +142,7 @@ async fn create_header_stream(
     client_url: &str,
     ws_url: &str,
 ) -> ApplicationResult<impl Stream<Item = Header>> {
-    let l2_client = RpcClient::new(get_client(client_url)?);
+    let l2_client = RpcClient::new(get_alloy_client(client_url, false)?);
     let polling_stream = get_polling_stream(l2_client, Duration::from_millis(100));
 
     let ws = WsConnect::new(ws_url);
@@ -165,16 +163,20 @@ async fn run_preconfer() -> ApplicationResult<()> {
 
     let slot_stream = create_subslot_stream(&config)?;
 
-    let l2_client = RpcClient::new(get_client(&config.l2_client_url)?);
+    let l2_client = RpcClient::new(get_alloy_client(&config.l2_client_url, false)?);
     let jwt_secret =
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
             .unwrap();
-    let auth_client = RpcClient::new(get_auth_client(&config.l2_auth_client_url, jwt_secret)?);
+    let auth_client = RpcClient::new(get_alloy_auth_client(
+        &config.l2_auth_client_url,
+        jwt_secret,
+        true,
+    )?);
     let l1_provider = ProviderBuilder::new()
         .connect(&config.l1_client_url)
         .await?;
     let l1_client = TaikoL1Client::new(
-        RpcClient::new(get_client(&config.l1_client_url)?),
+        RpcClient::new(get_alloy_client(&config.l1_client_url, false)?),
         l1_provider,
     );
 
