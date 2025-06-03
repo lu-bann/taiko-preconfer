@@ -9,7 +9,7 @@ use block_building::preconf::handover_start_buffer::{
 use block_building::rpc_client::{get_alloy_auth_client, get_alloy_client};
 use block_building::slot::SubSlot;
 use block_building::slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel};
-use block_building::slot_stream::{get_slot_stream, get_subslot_stream};
+use block_building::slot_stream::{get_next_slot_start, get_slot_stream, get_subslot_stream};
 use futures::{FutureExt, future::BoxFuture};
 use futures::{Stream, StreamExt, pin_mut};
 use std::time::Duration;
@@ -17,7 +17,6 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::time::Instant;
 use tokio::{join, sync::Mutex};
 use tracing::{debug, error, info, trace};
 
@@ -37,14 +36,6 @@ use block_building::{
 
 mod error;
 use crate::error::ApplicationResult;
-
-fn get_next_slot_start(slot_time: &Duration) -> ApplicationResult<Instant> {
-    let duration_now = SystemTime::now().duration_since(UNIX_EPOCH).unwrap();
-    let in_current_slot_ms: Duration =
-        Duration::from_millis((duration_now.as_millis() % slot_time.as_millis()).try_into()?);
-    let remaining = *slot_time - in_current_slot_ms;
-    Ok(Instant::now() + remaining)
-}
 
 async fn stream_block_headers_into<
     'a,
@@ -122,7 +113,8 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
         Duration::from_secs(384),
     );
 
-    let start = get_next_slot_start(&config.l2_slot_time)?;
+    let time_provider = SystemTimeProvider::new();
+    let start = get_next_slot_start(&config.l2_slot_time, &time_provider)?;
     let timestamp = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .unwrap()
