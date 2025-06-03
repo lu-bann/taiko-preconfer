@@ -4,7 +4,10 @@ use futures::{StreamExt, stream::Stream};
 use tokio::time::{Duration, Instant, interval_at};
 use tokio_stream::wrappers::IntervalStream;
 
-use crate::slot::{Slot, SubSlot};
+use crate::{
+    slot::{Slot, SubSlot},
+    time_provider::ITimeProvider,
+};
 
 pub fn get_slot_stream(
     start: Instant,
@@ -37,9 +40,24 @@ pub fn get_subslot_stream(
     })
 }
 
+pub fn get_next_slot_start<Provider: ITimeProvider>(
+    slot_time: &Duration,
+    provider: &Provider,
+) -> Result<Instant, TryFromIntError> {
+    let duration_now = Duration::from_secs(provider.timestamp_in_s());
+    let in_current_slot_ms: Duration =
+        Duration::from_millis((duration_now.as_millis() % slot_time.as_millis()).try_into()?);
+    let remaining = if in_current_slot_ms.is_zero() {
+        Duration::ZERO
+    } else {
+        *slot_time - in_current_slot_ms
+    };
+    Ok(Instant::now() + remaining)
+}
+
 #[cfg(test)]
 mod tests {
-    use crate::slot::SubSlot;
+    use crate::{slot::SubSlot, time_provider::MockITimeProvider};
 
     use super::*;
     use futures::pin_mut;
@@ -185,5 +203,35 @@ mod tests {
         let value = stream.next().await;
         assert!(value.is_some());
         assert_eq!(value.unwrap(), SubSlot::new(Slot::new(1, 0), 0));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_get_next_slot_start_provides_time_until_next_block_start() {
+        let slot_time = Duration::from_secs(10);
+        let now = Instant::now();
+
+        let timestamp: u64 = 13;
+        let mut time_provider = MockITimeProvider::new();
+        time_provider
+            .expect_timestamp_in_s()
+            .return_const(timestamp);
+
+        let next_slot_start = get_next_slot_start(&slot_time, &time_provider).unwrap();
+        assert_eq!(next_slot_start, now + Duration::from_secs(7));
+    }
+
+    #[tokio::test(start_paused = true)]
+    async fn test_get_next_slot_start_is_now_when_at_slot_start() {
+        let slot_time = Duration::from_secs(10);
+        let now = Instant::now();
+
+        let timestamp: u64 = 20;
+        let mut time_provider = MockITimeProvider::new();
+        time_provider
+            .expect_timestamp_in_s()
+            .return_const(timestamp);
+
+        let next_slot_start = get_next_slot_start(&slot_time, &time_provider).unwrap();
+        assert_eq!(next_slot_start, now + Duration::from_secs(0));
     }
 }
