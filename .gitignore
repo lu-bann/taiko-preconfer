@@ -5,3 +5,5 @@ node_modules
 lcov.info
 local
 .env
+package.json
+package-lock.json
