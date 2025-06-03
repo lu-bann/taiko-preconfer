@@ -8,17 +8,13 @@ alloy-consensus = { workspace = true }
 alloy-json-rpc = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
-alloy-rpc-client = { workspace = true }
 alloy-rpc-types-engine = { workspace = true }
 alloy-transport = { workspace = true }
-alloy-transport-http = { workspace = true }
 block-building = { workspace = true }
 dotenv = { workspace = true }
 futures = { workspace = true }
-http-body-util = { workspace = true }
 thiserror = { workspace = true }
 tokio = { workspace = true }
-tower = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
