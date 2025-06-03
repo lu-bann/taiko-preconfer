@@ -2,29 +2,18 @@ use alloy_consensus::Header;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
-use block_building::header_stream::{get_header_stream, get_polling_stream, stream_headers};
-use block_building::preconf::handover_start_buffer::{
-    DummySequencingMonitor, end_of_handover_start_buffer,
-};
-use block_building::rpc_client::{get_alloy_auth_client, get_alloy_client};
-use block_building::slot::SubSlot;
-use block_building::slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel};
-use block_building::slot_stream::{get_next_slot_start, get_slot_stream, get_subslot_stream};
-use futures::FutureExt;
-use futures::{Stream, StreamExt, pin_mut};
-use std::time::Duration;
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
-};
-use tokio::{join, sync::Mutex};
-use tracing::{debug, error, info, trace};
-
 use block_building::{
     active_operator_model::ActiveOperatorModel,
-    preconf::{Preconfer, config::Config},
-    rpc_client::RpcClient,
-    slot_model::HOLESKY_SLOT_MODEL,
+    header_stream::{get_header_stream, get_polling_stream, stream_headers, to_boxed},
+    preconf::{
+        Preconfer,
+        config::Config,
+        handover_start_buffer::{DummySequencingMonitor, end_of_handover_start_buffer},
+    },
+    rpc_client::{RpcClient, get_alloy_auth_client, get_alloy_client},
+    slot::SubSlot,
+    slot_model::{HOLESKY_GENESIS_TIMESTAMP, HOLESKY_SLOT_MODEL, SlotModel},
+    slot_stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
     taiko::{
         contracts::TaikoAnchorInstance,
         hekla::{CHAIN_ID, addresses::get_taiko_anchor_address, get_basefee_config_v2},
@@ -33,6 +22,14 @@ use block_building::{
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
 };
+use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
+use std::time::Duration;
+use std::{
+    sync::Arc,
+    time::{SystemTime, UNIX_EPOCH},
+};
+use tokio::{join, sync::Mutex};
+use tracing::{debug, error, info, trace};
 
 mod error;
 use crate::error::ApplicationResult;
@@ -170,6 +167,37 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
     ))
 }
 
+async fn store_header_number(header: Header, current: Arc<Mutex<u64>>) -> ApplicationResult<()> {
+    info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
+    info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
+    *current.lock().await = header.number;
+    Ok(())
+}
+
+async fn store_header(
+    header: Header,
+    current: Arc<Mutex<Option<Header>>>,
+) -> ApplicationResult<()> {
+    info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
+    info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
+    *current.lock().await = Some(header);
+    Ok(())
+}
+
+fn store_header_boxed<'a>(
+    header: Header,
+    current: Arc<Mutex<Option<Header>>>,
+) -> BoxFuture<'a, ApplicationResult<()>> {
+    to_boxed(header, current, store_header)
+}
+
+fn store_header_number_boxed<'a>(
+    header: Header,
+    current: Arc<Mutex<u64>>,
+) -> BoxFuture<'a, ApplicationResult<()>> {
+    to_boxed(header, current, store_header_number)
+}
+
 #[tokio::main]
 async fn main() -> ApplicationResult<()> {
     tracing_subscriber::fmt()
@@ -190,30 +218,6 @@ async fn main() -> ApplicationResult<()> {
         SystemTimeProvider::new(),
     )));
 
-    let process_l1_header = {
-        |header: Header, current: Arc<Mutex<u64>>| {
-            async move {
-                info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
-                info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
-                *current.lock().await = header.number;
-                ApplicationResult::<()>::Ok(())
-            }
-            .boxed()
-        }
-    };
-
-    let process_l2_header = {
-        |header: Header, current: Arc<Mutex<Option<Header>>>| {
-            async move {
-                info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
-                info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
-                *current.lock().await = Some(header);
-                ApplicationResult::<()>::Ok(())
-            }
-            .boxed()
-        }
-    };
-
     let slots_per_epoch = 32;
     let handover_slots = config.handover_window_slots as u64;
     let active_operator_model = Arc::new(Mutex::new(ActiveOperatorModel::new(
@@ -224,15 +228,17 @@ async fn main() -> ApplicationResult<()> {
     let slot_stream = create_subslot_stream(&config)?;
     let l1_header_stream = create_header_stream(&config.l1_client_url, &config.l1_ws_url).await?;
     let l2_header_stream = create_header_stream(&config.l2_client_url, &config.l2_ws_url).await?;
+
     let shared_last_l1_block_number = block_builder.lock().await.shared_last_l1_block_number();
     let shared_parent_header = block_builder.lock().await.shared_parent_header();
+
     let _ = join!(
         stream_headers(
             l1_header_stream,
-            process_l1_header,
+            store_header_number_boxed,
             shared_last_l1_block_number
         ),
-        stream_headers(l2_header_stream, process_l2_header, shared_parent_header),
+        stream_headers(l2_header_stream, store_header_boxed, shared_parent_header),
         trigger_from_stream(
             slot_stream,
             block_builder,

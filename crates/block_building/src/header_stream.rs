@@ -57,6 +57,19 @@ pub async fn stream_headers<
     Ok(())
 }
 
+pub fn to_boxed<'a, Value, F, FnFut, Res>(
+    header: Header,
+    current: Value,
+    f: F,
+) -> BoxFuture<'a, Res>
+where
+    Value: Send + 'static,
+    FnFut: Future<Output = Res> + Send + 'static,
+    F: Fn(Header, Value) -> FnFut,
+{
+    Box::pin(f(header, current))
+}
+
 #[cfg(test)]
 mod tests {
     use std::{pin::pin, time::Duration};
