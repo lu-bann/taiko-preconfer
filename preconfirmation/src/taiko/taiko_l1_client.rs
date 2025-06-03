@@ -1,11 +1,12 @@
 use alloy_consensus::Header;
+use alloy_primitives::Address;
 use alloy_provider::{Provider, utils::Eip1559Estimation};
 use alloy_rpc_types::TransactionRequest;
 use thiserror::Error;
 
 use crate::{
     client::{RpcClient, get_header_by_id, get_nonce},
-    taiko::contracts::Provider as TaikoProvider,
+    taiko::contracts::{Provider as TaikoProvider, TaikoWhitelistInstance},
 };
 
 #[derive(Debug, Error)]
@@ -38,16 +39,29 @@ pub trait ITaikoL1Client {
 
     fn estimate_eip1559_fees(&self)
     -> impl Future<Output = TaikoL1ClientResult<Eip1559Estimation>>;
+
+    fn get_current_preconfer(&self) -> impl Future<Output = TaikoL1ClientResult<Address>>;
+
+    fn get_preconfer_for_next_epoch(&self) -> impl Future<Output = TaikoL1ClientResult<Address>>;
 }
 
 pub struct TaikoL1Client {
     client: RpcClient,
     provider: TaikoProvider,
+    whitelist: TaikoWhitelistInstance,
 }
 
 impl TaikoL1Client {
-    pub const fn new(client: RpcClient, provider: TaikoProvider) -> Self {
-        Self { client, provider }
+    pub const fn new(
+        client: RpcClient,
+        provider: TaikoProvider,
+        whitelist: TaikoWhitelistInstance,
+    ) -> Self {
+        Self {
+            client,
+            provider,
+            whitelist,
+        }
     }
 }
 
@@ -66,5 +80,15 @@ impl ITaikoL1Client for TaikoL1Client {
 
     async fn estimate_eip1559_fees(&self) -> TaikoL1ClientResult<Eip1559Estimation> {
         Ok(self.provider.estimate_eip1559_fees().await?)
+    }
+
+    async fn get_current_preconfer(&self) -> TaikoL1ClientResult<Address> {
+        let preconfer = self.whitelist.getOperatorForCurrentEpoch().call().await?;
+        Ok(preconfer)
+    }
+
+    async fn get_preconfer_for_next_epoch(&self) -> TaikoL1ClientResult<Address> {
+        let preconfer = self.whitelist.getOperatorForNextEpoch().call().await?;
+        Ok(preconfer)
     }
 }

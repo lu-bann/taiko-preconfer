@@ -45,6 +45,10 @@ impl ActiveOperatorModel {
         }
         false
     }
+
+    pub fn is_last_slot_before_handover_window(&self, slot: u64) -> bool {
+        slot == self.slots_per_epoch - self.handover_slots - 1
+    }
 }
 
 #[cfg(test)]
@@ -137,8 +141,24 @@ mod tests {
         let handover_slots = u64::MAX;
         let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
 
-        let slot = Slot::new(0, 8);
+        let slot = Slot::new(0, 7);
         assert!(!model.is_first_preconfirmation_slot(&slot));
+    }
+
+    #[test]
+    fn is_last_slot_before_handover_window() {
+        let handover_slots = 3u64;
+        let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+
+        assert!(model.is_last_slot_before_handover_window(6));
+    }
+
+    #[test]
+    fn is_not_last_slot_before_handover_window() {
+        let handover_slots = 3u64;
+        let model = ActiveOperatorModel::new(handover_slots, TEST_SLOTS_PER_EPOCH);
+
+        assert!(!model.is_last_slot_before_handover_window(7));
     }
 
     #[test]
