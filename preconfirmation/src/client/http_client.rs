@@ -153,7 +153,7 @@ mod tests {
     use alloy_rpc_types::BlockTransactions;
 
     use super::*;
-    use crate::http_client::MockHttpClient;
+    use crate::client::MockHttpClient;
 
     #[tokio::test]
     async fn test_get_block() {

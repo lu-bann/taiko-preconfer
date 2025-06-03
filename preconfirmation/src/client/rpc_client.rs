@@ -10,7 +10,7 @@ use http_body_util::Full;
 use tower::ServiceBuilder;
 use url::Url;
 
-use crate::http_client::{HttpClient, HttpError};
+use crate::client::{HttpClient, HttpError};
 
 #[derive(Debug)]
 pub struct RpcClient {

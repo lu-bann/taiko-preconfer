@@ -5,12 +5,12 @@ use alloy_rpc_types_engine::JwtSecret;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     active_operator_model::ActiveOperatorModel,
+    client::{RpcClient, get_alloy_auth_client, get_alloy_client},
     preconf::{
         Preconfer,
         config::Config,
         handover_start_buffer::{DummySequencingMonitor, end_of_handover_start_buffer},
     },
-    rpc_client::{RpcClient, get_alloy_auth_client, get_alloy_client},
     slot::SubSlot,
     slot_model::{HOLESKY_GENESIS_TIMESTAMP, HOLESKY_SLOT_MODEL, SlotModel},
     stream::{

@@ -6,7 +6,7 @@ pub enum PreconferError {
     Compression(#[from] libdeflater::CompressionError),
 
     #[error("{0}")]
-    Http(#[from] crate::http_client::HttpError),
+    Http(#[from] crate::client::HttpError),
 
     #[error("{0}")]
     Sign(#[from] alloy_signer::Error),
