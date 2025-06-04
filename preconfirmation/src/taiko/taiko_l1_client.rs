@@ -1,11 +1,13 @@
 use alloy_consensus::Header;
+use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::{Address, ChainId};
 use alloy_provider::{Provider, utils::Eip1559Estimation};
 use alloy_rpc_types::TransactionRequest;
+use serde_json::json;
 use thiserror::Error;
 
 use crate::{
-    client::{RpcClient, get_header_by_id, get_nonce},
+    client::{GET_HEADER_BY_NUMBER, GET_TRANSACTION_COUNT},
     taiko::contracts::{Provider as TaikoProvider, TaikoWhitelistInstance},
 };
 
@@ -48,7 +50,6 @@ pub trait ITaikoL1Client {
 }
 
 pub struct TaikoL1Client {
-    client: RpcClient,
     provider: TaikoProvider,
     whitelist: TaikoWhitelistInstance,
     chain_id: ChainId,
@@ -56,13 +57,11 @@ pub struct TaikoL1Client {
 
 impl TaikoL1Client {
     pub const fn new(
-        client: RpcClient,
         provider: TaikoProvider,
         whitelist: TaikoWhitelistInstance,
         chain_id: ChainId,
     ) -> Self {
         Self {
-            client,
             provider,
             whitelist,
             chain_id,
@@ -72,11 +71,21 @@ impl TaikoL1Client {
 
 impl ITaikoL1Client for TaikoL1Client {
     async fn get_nonce(&self, address: &str) -> TaikoL1ClientResult<u64> {
-        Ok(get_nonce(&self.client, address).await?)
+        let params = json!([address, "pending"]);
+        Ok(self
+            .provider
+            .client()
+            .request(GET_TRANSACTION_COUNT, params)
+            .await?)
     }
 
     async fn get_header(&self, id: u64) -> TaikoL1ClientResult<Header> {
-        Ok(get_header_by_id(&self.client, id).await?)
+        let params = json!([BlockNumberOrTag::Number(id)]);
+        Ok(self
+            .provider
+            .client()
+            .request(GET_HEADER_BY_NUMBER, params)
+            .await?)
     }
 
     async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoL1ClientResult<u64> {

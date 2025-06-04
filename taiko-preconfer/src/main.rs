@@ -10,7 +10,7 @@ use preconfirmation::{
         Preconfer,
         config::Config,
         confirmation_strategy::InstantConfirmationStrategy,
-        handover_start_buffer::{DummySequencingMonitor, end_of_handover_start_buffer},
+        handover_start_buffer::{DummySequencingMonitor, SequencingMonitor},
     },
     slot::SubSlot,
     slot_model::SlotModel,
@@ -107,8 +107,14 @@ async fn trigger_from_stream<
                 if active_operator_status.is_first_preconfirmation_slot {
                     trace!("First slot in window: {:?}", subslot.slot);
                     let monitor = DummySequencingMonitor {};
-                    end_of_handover_start_buffer(handover_timeout, &monitor).await;
-                    debug!("Last preconfer is done and l2 header is in sync");
+                    if log_error(
+                        tokio::time::timeout(handover_timeout, monitor.ready()).await,
+                        "State out of sync after handover period",
+                    )
+                    .is_some()
+                    {
+                        debug!("Last preconfer is done and l2 header is in sync");
+                    }
                 }
 
                 if let Some(result) = log_error(
@@ -183,9 +189,10 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
 async fn create_header_stream(
     client_url: &str,
     ws_url: &str,
+    poll_period: Duration,
 ) -> ApplicationResult<impl Stream<Item = Header>> {
     let l2_client = RpcClient::new(get_alloy_client(client_url, false)?);
-    let polling_stream = get_polling_stream(l2_client, Duration::from_millis(100));
+    let polling_stream = get_polling_stream(l2_client, poll_period);
 
     let ws = WsConnect::new(ws_url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
@@ -199,8 +206,11 @@ fn get_config() -> ApplicationResult<Config> {
     Ok(Config::try_from_env()?)
 }
 
-async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> {
-    let l2_client = RpcClient::new(get_alloy_client(&config.l2_client_url, false)?);
+async fn get_taiko_l2_client(
+    config: &Config,
+    header: Arc<Mutex<Option<Header>>>,
+    poll_period: Duration,
+) -> ApplicationResult<TaikoClient> {
     let jwt_secret =
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
             .unwrap();
@@ -219,12 +229,13 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> 
     let chain_id = provider.get_chain_id().await?;
     trace!("L2 chain id {}", chain_id);
     Ok(TaikoClient::new(
-        l2_client,
         auth_client,
         taiko_anchor,
         provider,
         get_basefee_config_v2(),
         chain_id,
+        header,
+        poll_period,
     ))
 }
 
@@ -238,12 +249,7 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
         l1_provider_base,
     );
     let chain_id = l1_provider.get_chain_id().await?;
-    Ok(TaikoL1Client::new(
-        RpcClient::new(get_alloy_client(&config.l1_client_url, false)?),
-        l1_provider,
-        whitelist,
-        chain_id,
-    ))
+    Ok(TaikoL1Client::new(l1_provider, whitelist, chain_id))
 }
 
 async fn store_header_number(header: Header, current: Arc<Mutex<u64>>) -> ApplicationResult<()> {
@@ -285,7 +291,9 @@ async fn main() -> ApplicationResult<()> {
 
     let config = get_config()?;
 
-    let taiko_l2_client = get_taiko_l2_client(&config).await?;
+    let shared_header = Arc::new(Mutex::new(None));
+    let taiko_l2_client =
+        get_taiko_l2_client(&config, shared_header.clone(), config.poll_period).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let l1_chain_id = taiko_l1_client.chain_id();
 
@@ -295,6 +303,7 @@ async fn main() -> ApplicationResult<()> {
         taiko_l2_client,
         get_golden_touch_address(),
         SystemTimeProvider::new(),
+        shared_header.clone(),
     )));
 
     let slots_per_epoch = 32;
@@ -312,11 +321,12 @@ async fn main() -> ApplicationResult<()> {
     )));
 
     let slot_stream = create_subslot_stream(&config)?;
-    let l1_header_stream = create_header_stream(&config.l1_client_url, &config.l1_ws_url).await?;
-    let l2_header_stream = create_header_stream(&config.l2_client_url, &config.l2_ws_url).await?;
+    let l1_header_stream =
+        create_header_stream(&config.l1_client_url, &config.l1_ws_url, config.poll_period).await?;
+    let l2_header_stream =
+        create_header_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
 
     let shared_last_l1_block_number = preconfer.lock().await.shared_last_l1_block_number();
-    let shared_parent_header = preconfer.lock().await.shared_parent_header();
 
     let _ = join!(
         stream_headers(
@@ -324,7 +334,7 @@ async fn main() -> ApplicationResult<()> {
             store_header_number_boxed,
             shared_last_l1_block_number
         ),
-        stream_headers(l2_header_stream, store_header_boxed, shared_parent_header),
+        stream_headers(l2_header_stream, store_header_boxed, shared_header),
         trigger_from_stream(
             slot_stream,
             preconfer,
