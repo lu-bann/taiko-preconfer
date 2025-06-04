@@ -191,8 +191,8 @@ async fn create_header_stream(
     ws_url: &str,
     poll_period: Duration,
 ) -> ApplicationResult<impl Stream<Item = Header>> {
-    let l2_client = RpcClient::new(get_alloy_client(client_url, false)?);
-    let polling_stream = get_polling_stream(l2_client, poll_period);
+    let client = get_alloy_client(client_url, false)?;
+    let polling_stream = get_polling_stream(client, poll_period);
 
     let ws = WsConnect::new(ws_url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;

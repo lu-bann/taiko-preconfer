@@ -3,6 +3,7 @@ use std::{future::Future, num::ParseIntError};
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_json_rpc::{RpcError, RpcRecv};
 use alloy_primitives::Address;
+use alloy_rpc_client::RpcClientInner;
 use alloy_rpc_types::{Block, BlockNumberOrTag};
 use alloy_transport::TransportErrorKind;
 #[cfg(test)]
@@ -40,10 +41,7 @@ pub trait HttpClient {
     ) -> impl Future<Output = Result<Resp, HttpError>>;
 }
 
-pub async fn get_nonce<Client: HttpClient>(
-    client: &Client,
-    address: &str,
-) -> Result<u64, HttpError> {
+pub async fn get_nonce(client: &RpcClientInner, address: &str) -> Result<u64, HttpError> {
     let params = json!([address, "pending"]);
     let transaction_count_hex_str: String = client
         .request(GET_TRANSACTION_COUNT.to_string(), params)
@@ -51,8 +49,8 @@ pub async fn get_nonce<Client: HttpClient>(
     Ok(hex_to_u64(&transaction_count_hex_str)?)
 }
 
-pub async fn get_header<Client: HttpClient>(
-    client: &Client,
+pub async fn get_header(
+    client: &RpcClientInner,
     block_number: BlockNumberOrTag,
 ) -> Result<Header, HttpError> {
     let params = json!([block_number]);
@@ -66,11 +64,12 @@ pub async fn get_header<Client: HttpClient>(
     })
 }
 
-pub async fn get_header_by_id<Client: HttpClient>(
-    client: &Client,
-    id: u64,
-) -> Result<Header, HttpError> {
+pub async fn get_header_by_id(client: &RpcClientInner, id: u64) -> Result<Header, HttpError> {
     get_header(client, BlockNumberOrTag::Number(id)).await
+}
+
+pub async fn get_latest_header(client: &RpcClientInner) -> Result<Header, HttpError> {
+    get_header(client, BlockNumberOrTag::Latest).await
 }
 
 #[derive(Debug, Serialize, Deserialize)]
