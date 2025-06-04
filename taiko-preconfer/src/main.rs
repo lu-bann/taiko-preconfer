@@ -54,6 +54,7 @@ async fn trigger_from_stream<
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
     pin_mut!(stream);
+    let preconfer_address = preconfer.lock().await.address();
     loop {
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
@@ -68,7 +69,7 @@ async fn trigger_from_stream<
                     .l1_client()
                     .get_current_preconfer()
                     .await?
-                    == get_golden_touch_address()
+                    == preconfer_address
             {
                 let epoch = if active_operator_model
                     .lock()
@@ -108,7 +109,7 @@ async fn trigger_from_stream<
                     .get_preconfer_for_next_epoch()
                     .await?;
                 info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
-                if next_preconfer == get_golden_touch_address() {
+                if next_preconfer == preconfer_address {
                     active_operator_model
                         .lock()
                         .await
@@ -257,7 +258,7 @@ async fn main() -> ApplicationResult<()> {
         config.anchor_id_lag,
         taiko_l1_client,
         taiko_l2_client,
-        Address::random(),
+        get_golden_touch_address(),
         SystemTimeProvider::new(),
     )));
 
