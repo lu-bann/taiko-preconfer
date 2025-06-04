@@ -6,7 +6,7 @@ use alloy_signer::SignerSync;
 use alloy_signer_local::PrivateKeySigner;
 use thiserror::Error;
 use tokio::join;
-use tracing::debug;
+use tracing::{debug, error, info};
 
 use crate::{
     compression::compress,
@@ -38,23 +38,22 @@ pub enum ConfirmationError {
 pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
 
 #[derive(Debug)]
-pub struct InstantConfirmationStrategy {
+pub struct InstantConfirmationStrategy<Client: ITaikoL1Client> {
+    client: Client,
     address: Address,
     chain_id: ChainId,
 }
 
-impl InstantConfirmationStrategy {
-    pub const fn new(address: Address, chain_id: ChainId) -> Self {
-        Self { address, chain_id }
+impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
+    pub const fn new(client: Client, address: Address, chain_id: ChainId) -> Self {
+        Self {
+            client,
+            address,
+            chain_id,
+        }
     }
 
-    pub async fn confirm<Client: ITaikoL1Client>(
-        &self,
-        client: &Client,
-        block: SimpleBlock,
-        last_block_timestamp: u64,
-        anchor_block_id: u64,
-    ) -> ConfirmationResult<()> {
+    pub async fn confirm(&self, block: SimpleBlock) -> ConfirmationResult<()> {
         debug!("Compression");
 
         let number_of_blobs = 0u8;
@@ -65,14 +64,14 @@ impl InstantConfirmationStrategy {
             timeShift: 0,
             signalSlots: vec![],
         }];
-        debug!("Create propose batch params");
+        info!("Create propose batch params");
         let propose_batch_params = create_propose_batch_params(
             self.address,
             tx_bytes,
             block_params,
             parent_meta_hash,
-            anchor_block_id,
-            last_block_timestamp,
+            block.anchor_block_id,
+            block.last_block_timestamp,
             self.address,
             number_of_blobs,
         );
@@ -86,9 +85,9 @@ impl InstantConfirmationStrategy {
             .with_from(signer.address());
         let signer_str = signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
-            client.get_nonce(&signer_str),
-            client.estimate_gas(tx),
-            client.estimate_eip1559_fees(),
+            self.client.get_nonce(&signer_str),
+            self.client.estimate_gas(tx),
+            self.client.estimate_eip1559_fees(),
         );
         let fee_estimate = fee_estimate?;
 
@@ -96,6 +95,9 @@ impl InstantConfirmationStrategy {
             "sign tx {} {:?} {:?}",
             taiko_inbox_address, nonce, gas_limit
         );
+        if gas_limit.is_err() {
+            error!("Failed to estimate gas for block confirmation.");
+        }
         let signed_tx = get_signed_eip1559_tx(
             self.chain_id,
             taiko_inbox_address,
@@ -107,7 +109,7 @@ impl InstantConfirmationStrategy {
             &signer,
         )?;
 
-        debug!("signed propose batch tx {signed_tx:?}");
+        info!("signed propose batch tx {signed_tx:?}");
         Ok(())
     }
 }

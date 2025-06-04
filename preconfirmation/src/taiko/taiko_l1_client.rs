@@ -1,5 +1,5 @@
 use alloy_consensus::Header;
-use alloy_primitives::Address;
+use alloy_primitives::{Address, ChainId};
 use alloy_provider::{Provider, utils::Eip1559Estimation};
 use alloy_rpc_types::TransactionRequest;
 use thiserror::Error;
@@ -43,12 +43,15 @@ pub trait ITaikoL1Client {
     fn get_current_preconfer(&self) -> impl Future<Output = TaikoL1ClientResult<Address>>;
 
     fn get_preconfer_for_next_epoch(&self) -> impl Future<Output = TaikoL1ClientResult<Address>>;
+
+    fn chain_id(&self) -> ChainId;
 }
 
 pub struct TaikoL1Client {
     client: RpcClient,
     provider: TaikoProvider,
     whitelist: TaikoWhitelistInstance,
+    chain_id: ChainId,
 }
 
 impl TaikoL1Client {
@@ -56,11 +59,13 @@ impl TaikoL1Client {
         client: RpcClient,
         provider: TaikoProvider,
         whitelist: TaikoWhitelistInstance,
+        chain_id: ChainId,
     ) -> Self {
         Self {
             client,
             provider,
             whitelist,
+            chain_id,
         }
     }
 }
@@ -90,5 +95,9 @@ impl ITaikoL1Client for TaikoL1Client {
     async fn get_preconfer_for_next_epoch(&self) -> TaikoL1ClientResult<Address> {
         let preconfer = self.whitelist.getOperatorForNextEpoch().call().await?;
         Ok(preconfer)
+    }
+
+    fn chain_id(&self) -> ChainId {
+        self.chain_id
     }
 }

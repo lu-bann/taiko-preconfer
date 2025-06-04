@@ -17,11 +17,23 @@ use crate::time_provider::ITimeProvider;
 pub struct SimpleBlock {
     pub header: RpcHeader,
     pub txs: Vec<TxEnvelope>,
+    pub anchor_block_id: u64,
+    pub last_block_timestamp: u64,
 }
 
 impl SimpleBlock {
-    pub const fn new(header: RpcHeader, txs: Vec<TxEnvelope>) -> Self {
-        Self { header, txs }
+    pub const fn new(
+        header: RpcHeader,
+        txs: Vec<TxEnvelope>,
+        anchor_block_id: u64,
+        last_block_timestamp: u64,
+    ) -> Self {
+        Self {
+            header,
+            txs,
+            anchor_block_id,
+            last_block_timestamp,
+        }
     }
 }
 
@@ -135,7 +147,12 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             "elapsed: {} ms",
             end.duration_since(start).unwrap().as_millis()
         );
-        Ok(Some(SimpleBlock::new(header, txs)))
+        Ok(Some(SimpleBlock::new(
+            header,
+            txs,
+            anchor_block_id,
+            parent_header.timestamp,
+        )))
     }
 }
 

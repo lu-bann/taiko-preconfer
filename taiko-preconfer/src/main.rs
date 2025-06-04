@@ -9,6 +9,7 @@ use preconfirmation::{
     preconf::{
         Preconfer,
         config::Config,
+        confirmation_strategy::InstantConfirmationStrategy,
         handover_start_buffer::{DummySequencingMonitor, end_of_handover_start_buffer},
     },
     slot::SubSlot,
@@ -42,14 +43,25 @@ use crate::error::ApplicationResult;
 const DUMMY_WHITELIST: &str = "0x90A309073b5F2f7C821e0aAc68b2c6F42F649c59";
 const BASE_SEPOLIA_RPC: &str = "https://sepolia.base.org";
 
+fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
+    match result {
+        Err(err) => {
+            error!("{msg}: {}", err.to_string());
+            None
+        }
+        Ok(value) => Some(value),
+    }
+}
+
 async fn trigger_from_stream<
     L1Client: ITaikoL1Client,
-    Taiko: ITaikoClient,
+    L2Client: ITaikoClient,
     TimeProvider: ITimeProvider,
 >(
     stream: impl Stream<Item = SubSlot>,
-    preconfer: Arc<Mutex<Preconfer<L1Client, Taiko, TimeProvider>>>,
+    preconfer: Arc<Mutex<Preconfer<L1Client, L2Client, TimeProvider>>>,
     active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
+    confirmation_strategy: Arc<Mutex<InstantConfirmationStrategy<L1Client>>>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
     pin_mut!(stream);
@@ -57,33 +69,37 @@ async fn trigger_from_stream<
     loop {
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
-            if !active_operator_model
-                .lock()
-                .await
-                .status(&subslot.slot)
-                .can_preconfirm
-                && preconfer
+            if let Some(current_preconfer) = log_error(
+                preconfer
                     .lock()
                     .await
                     .l1_client()
                     .get_current_preconfer()
-                    .await?
-                    == preconfer_address
-            {
-                let epoch = if active_operator_model
+                    .await,
+                "Failed to read current preconfer",
+            ) {
+                if !active_operator_model
                     .lock()
                     .await
-                    .within_handover_period(subslot.slot.slot)
+                    .status(&subslot.slot)
+                    .can_preconfirm
+                    && current_preconfer == preconfer_address
                 {
-                    subslot.slot.epoch + 1
-                } else {
-                    subslot.slot.epoch
-                };
-                active_operator_model
-                    .lock()
-                    .await
-                    .set_next_active_epoch(epoch);
-                info!("Set active epoch to {} for slot {:?}", epoch, subslot);
+                    let epoch = if active_operator_model
+                        .lock()
+                        .await
+                        .within_handover_period(subslot.slot.slot)
+                    {
+                        subslot.slot.epoch + 1
+                    } else {
+                        subslot.slot.epoch
+                    };
+                    active_operator_model
+                        .lock()
+                        .await
+                        .set_next_active_epoch(epoch);
+                    info!("Set active epoch to {} for slot {:?}", epoch, subslot);
+                }
             }
 
             let active_operator_status = active_operator_model.lock().await.status(&subslot.slot);
@@ -94,30 +110,50 @@ async fn trigger_from_stream<
                     end_of_handover_start_buffer(handover_timeout, &monitor).await;
                     debug!("Last preconfer is done and l2 header is in sync");
                 }
-                if let Err(err) = preconfer.lock().await.build_block().await {
-                    error!("Error during block building: {:?}", err.to_string())
+
+                if let Some(result) = log_error(
+                    preconfer.lock().await.build_block().await,
+                    "Error building block",
+                ) {
+                    match result {
+                        None => info!("No block created in slot {:?}", subslot),
+                        Some(block) => {
+                            log_error(
+                                confirmation_strategy.lock().await.confirm(block).await,
+                                "Failed to confirm block",
+                            );
+                        }
+                    }
                 }
+                log_error(
+                    preconfer.lock().await.build_block().await,
+                    "Error during block building",
+                );
             } else {
                 info!("Not active operator. Skip block building.");
             }
             if active_operator_status.is_last_slot_before_handover_window {
-                let next_preconfer = preconfer
-                    .lock()
-                    .await
-                    .l1_client()
-                    .get_preconfer_for_next_epoch()
-                    .await?;
-                info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
-                if next_preconfer == preconfer_address {
-                    active_operator_model
+                if let Some(next_preconfer) = log_error(
+                    preconfer
                         .lock()
                         .await
-                        .set_next_active_epoch(subslot.slot.epoch + 1);
-                    info!(
-                        "Set active epoch to {} for slot {:?}",
-                        subslot.slot.epoch + 1,
-                        subslot
-                    );
+                        .l1_client()
+                        .get_preconfer_for_next_epoch()
+                        .await,
+                    "Failed to read preconfer for next epoch",
+                ) {
+                    info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
+                    if next_preconfer == preconfer_address {
+                        active_operator_model
+                            .lock()
+                            .await
+                            .set_next_active_epoch(subslot.slot.epoch + 1);
+                        info!(
+                            "Set active epoch to {} for slot {:?}",
+                            subslot.slot.epoch + 1,
+                            subslot
+                        );
+                    }
                 }
             }
         }
@@ -205,10 +241,12 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
         Address::from_str(DUMMY_WHITELIST).unwrap(),
         l1_provider_base,
     );
+    let chain_id = l1_provider.get_chain_id().await?;
     Ok(TaikoL1Client::new(
         RpcClient::new(get_alloy_client(&config.l1_client_url, false)?),
         l1_provider,
         whitelist,
+        chain_id,
     ))
 }
 
@@ -224,7 +262,6 @@ async fn store_header(
     current: Arc<Mutex<Option<Header>>>,
 ) -> ApplicationResult<()> {
     info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
-    info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
     *current.lock().await = Some(header);
     Ok(())
 }
@@ -254,6 +291,7 @@ async fn main() -> ApplicationResult<()> {
 
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
+    let l1_chain_id = taiko_l1_client.chain_id();
 
     let preconfer = Arc::new(Mutex::new(Preconfer::new(
         config.anchor_id_lag,
@@ -268,6 +306,13 @@ async fn main() -> ApplicationResult<()> {
     let active_operator_model = Arc::new(Mutex::new(ActiveOperatorModel::new(
         handover_slots,
         slots_per_epoch,
+    )));
+
+    let taiko_l1_client = get_taiko_l1_client(&config).await?;
+    let confirmation_strategy = Arc::new(Mutex::new(InstantConfirmationStrategy::new(
+        taiko_l1_client,
+        preconfer.lock().await.address(),
+        l1_chain_id,
     )));
 
     let slot_stream = create_subslot_stream(&config)?;
@@ -288,6 +333,7 @@ async fn main() -> ApplicationResult<()> {
             slot_stream,
             preconfer,
             active_operator_model,
+            confirmation_strategy,
             config.handover_start_buffer
         ),
     );
