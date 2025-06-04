@@ -12,9 +12,7 @@ pub struct Config {
     pub l1_slot_time: Duration,
     pub l1_slots_per_epoch: u64,
     pub l2_slot_time: Duration,
-    #[allow(dead_code)]
     pub handover_window_slots: u32,
-    #[allow(dead_code)]
     pub handover_start_buffer: Duration,
     pub anchor_id_lag: u64,
     pub l2_client_url: String,
@@ -22,6 +20,7 @@ pub struct Config {
     pub l2_ws_url: String,
     pub l1_client_url: String,
     pub l1_ws_url: String,
+    pub poll_period: Duration,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -51,6 +50,7 @@ impl Config {
             l2_ws_url: env::var("L2_WS_URL")?,
             l1_client_url: env::var("L1_CLIENT_URL")?,
             l1_ws_url: env::var("L1_WS_URL")?,
+            poll_period: Duration::from_millis(std::env::var("POLL_TIME_MS")?.parse()?),
         })
     }
 }
@@ -70,6 +70,7 @@ impl Default for Config {
             l2_ws_url: String::default(),
             l1_client_url: String::default(),
             l1_ws_url: String::default(),
+            poll_period: Duration::from_millis(50),
         }
     }
 }

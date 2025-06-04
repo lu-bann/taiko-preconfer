@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::time::Duration;
+
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
@@ -10,12 +13,15 @@ use alloy_transport::TransportErrorKind;
 use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::Error as EcdsaError;
 use libdeflater::CompressionError;
+use serde_json::json;
 use thiserror::Error;
+use tokio::sync::Mutex;
 use tracing::debug;
 
 use crate::client::{
-    DummyClient, HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs, get_nonce,
+    DummyClient, GET_TRANSACTION_COUNT, HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs,
 };
+use crate::preconf::handover_start_buffer::{SequencingMonitor, SequencingStatus};
 use crate::preconf::preconf_blocks::{create_executable_data, publish_preconfirmed_transactions};
 use crate::taiko::{
     anchor::create_anchor_transaction,
@@ -88,30 +94,33 @@ pub trait ITaikoClient {
 
 #[derive(Debug)]
 pub struct TaikoClient {
-    client: RpcClient,
     auth_client: RpcClient,
     taiko_anchor: TaikoAnchorInstance,
     provider: TaikoProvider,
     base_fee_config: TaikoAnchor::BaseFeeConfig,
     chain_id: ChainId,
+    last_header: Arc<Mutex<Option<Header>>>,
+    poll_period: Duration,
 }
 
 impl TaikoClient {
     pub fn new(
-        client: RpcClient,
         auth_client: RpcClient,
         taiko_anchor: TaikoAnchorInstance,
         provider: TaikoProvider,
         base_fee_config: TaikoAnchor::BaseFeeConfig,
         chain_id: ChainId,
+        last_header: Arc<Mutex<Option<Header>>>,
+        poll_period: Duration,
     ) -> Self {
         Self {
-            client,
             auth_client,
             taiko_anchor,
             provider,
             base_fee_config,
             chain_id,
+            last_header,
+            poll_period,
         }
     }
 }
@@ -149,7 +158,12 @@ impl ITaikoClient for TaikoClient {
     }
 
     async fn get_nonce(&self, address: &str) -> TaikoClientResult<u64> {
-        Ok(get_nonce(&self.client, address).await?)
+        let params = json!([address, "pending"]);
+        Ok(self
+            .provider
+            .client()
+            .request(GET_TRANSACTION_COUNT, params)
+            .await?)
     }
 
     async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoClientResult<u64> {
@@ -214,5 +228,22 @@ impl ITaikoClient for TaikoClient {
                 .await?;
         debug!("header {dummy_header:?}");
         Ok(dummy_header)
+    }
+}
+
+impl SequencingMonitor for TaikoClient {
+    async fn ready(&self) -> Result<(), HttpError> {
+        loop {
+            if let Some(last_header) = self.last_header.lock().await.clone() {
+                let status: SequencingStatus =
+                    self.provider.client().request("status", json!([])).await?;
+                if status.end_of_sequencing_block_hash == last_header.hash_slow()
+                    && status.highest_unsafe_l2_payload_block_id == last_header.number
+                {
+                    return Ok(());
+                }
+            }
+            tokio::time::sleep(self.poll_period).await;
+        }
     }
 }

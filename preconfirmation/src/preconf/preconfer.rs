@@ -57,10 +57,11 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         taiko: Taiko,
         address: Address,
         time_provider: TimeProvider,
+        parent_header: Arc<Mutex<Option<Header>>>,
     ) -> Self {
         Self {
             last_l1_block_number: Arc::new(Mutex::new(0u64)),
-            parent_header: Arc::new(Mutex::new(None)),
+            parent_header,
             anchor_id_lag,
             l1_client,
             taiko,
@@ -257,17 +258,20 @@ mod tests {
         let preconfer_address = Address::random();
 
         let anchor_id_lag = 4u64;
+        let parent_header = Arc::new(Mutex::new(Some(get_header(
+            DUMMY_BLOCK_NUMBER,
+            last_block_timestamp,
+        ))));
         let preconfer = Preconfer::new(
             anchor_id_lag,
             l1_client,
             taiko,
             preconfer_address,
             time_provider,
+            parent_header,
         );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
-        *preconfer.shared_parent_header().lock().await =
-            Some(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
         let preconfirmed_block = preconfer.build_block().await.unwrap().unwrap();
         assert_eq!(preconfirmed_block.txs.len(), 2);
         assert_eq!(preconfirmed_block.txs[0].signature().r(), U256::ONE);
@@ -310,17 +314,20 @@ mod tests {
         let preconfer_address = Address::random();
 
         let anchor_id_lag = 4u64;
+        let parent_header = Arc::new(Mutex::new(Some(get_header(
+            DUMMY_BLOCK_NUMBER,
+            last_block_timestamp,
+        ))));
         let preconfer = Preconfer::new(
             anchor_id_lag,
             l1_client,
             taiko,
             preconfer_address,
             time_provider,
+            parent_header,
         );
         *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
-        *preconfer.shared_parent_header().lock().await =
-            Some(get_header(DUMMY_BLOCK_NUMBER, last_block_timestamp));
         assert!(preconfer.build_block().await.unwrap().is_none());
     }
 }
