@@ -13,7 +13,7 @@ use preconfirmation::{
         handover_start_buffer::{DummySequencingMonitor, end_of_handover_start_buffer},
     },
     slot::SubSlot,
-    slot_model::{HOLESKY_GENESIS_TIMESTAMP, HOLESKY_SLOT_MODEL, SlotModel},
+    slot_model::SlotModel,
     stream::{
         get_header_stream, get_next_slot_start, get_polling_stream, get_slot_stream,
         get_subslot_stream, stream_headers, to_boxed,
@@ -161,11 +161,7 @@ async fn trigger_from_stream<
 }
 
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
-    let taiko_slot_model = SlotModel::new(
-        HOLESKY_GENESIS_TIMESTAMP,
-        config.l2_slot_time,
-        Duration::from_secs(384),
-    );
+    let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
 
     let time_provider = SystemTimeProvider::new();
     let start = get_next_slot_start(&config.l2_slot_time, &time_provider)?;
@@ -252,7 +248,7 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
 
 async fn store_header_number(header: Header, current: Arc<Mutex<u64>>) -> ApplicationResult<()> {
     info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
-    info!("{:?}", HOLESKY_SLOT_MODEL.get_slot(header.timestamp));
+    info!("{:?}", SlotModel::holesky().get_slot(header.timestamp));
     *current.lock().await = header.number;
     Ok(())
 }
