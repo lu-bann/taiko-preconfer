@@ -40,11 +40,12 @@ pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
 #[derive(Debug)]
 pub struct InstantConfirmationStrategy {
     address: Address,
+    chain_id: ChainId,
 }
 
 impl InstantConfirmationStrategy {
-    pub const fn new(address: Address) -> Self {
-        Self { address }
+    pub const fn new(address: Address, chain_id: ChainId) -> Self {
+        Self { address, chain_id }
     }
 
     pub async fn confirm<Client: ITaikoL1Client>(
@@ -96,7 +97,7 @@ impl InstantConfirmationStrategy {
             taiko_inbox_address, nonce, gas_limit
         );
         let signed_tx = get_signed_eip1559_tx(
-            0, // TODO: Add L1 Chain id
+            self.chain_id,
             taiko_inbox_address,
             propose_batch_params,
             nonce?,

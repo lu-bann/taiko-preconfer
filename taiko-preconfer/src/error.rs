@@ -6,7 +6,10 @@ pub enum ApplicationError {
     Config(#[from] preconfirmation::preconf::config::ConfigError),
 
     #[error("{0}")]
-    L1Client(#[from] preconfirmation::taiko::taiko_l1_client::TaikoL1ClientError),
+    TaikoClient(#[from] preconfirmation::taiko::taiko_client::TaikoClientError),
+
+    #[error("{0}")]
+    TaikoL1Client(#[from] preconfirmation::taiko::taiko_l1_client::TaikoL1ClientError),
 
     #[error("{0}")]
     DotEnv(#[from] dotenv::Error),

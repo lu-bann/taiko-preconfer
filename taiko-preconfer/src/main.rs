@@ -20,7 +20,6 @@ use preconfirmation::{
     taiko::{
         contracts::{TaikoAnchorInstance, TaikoWhitelistInstance},
         hekla::{
-            CHAIN_ID,
             addresses::{get_golden_touch_address, get_taiko_anchor_address},
             get_basefee_config_v2,
         },
@@ -185,13 +184,15 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> 
         .await?;
     let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider.clone());
 
+    let chain_id = provider.get_chain_id().await?;
+    trace!("L2 chain id {}", chain_id);
     Ok(TaikoClient::new(
         l2_client,
         auth_client,
         taiko_anchor,
         provider,
         get_basefee_config_v2(),
-        CHAIN_ID,
+        chain_id,
     ))
 }
 

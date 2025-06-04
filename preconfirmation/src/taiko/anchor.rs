@@ -35,9 +35,7 @@ mod tests {
     use super::*;
     use crate::{
         encode_util::hex_decode,
-        taiko::hekla::{
-            CHAIN_ID as hekla_id, addresses::get_taiko_anchor_address, get_basefee_config_v2,
-        },
+        taiko::hekla::{addresses::get_taiko_anchor_address, get_basefee_config_v2},
     };
 
     #[test]
@@ -54,11 +52,12 @@ mod tests {
             _signalSlots: vec![],
         };
 
+        let chain_id: ChainId = 167009;
         let nonce = 135343764;
         let max_fee_per_gas: u128 = 10_000_000u128;
         let max_priority_fee_per_gas = 0u128;
         let anchor_transaction = create_anchor_transaction(
-            hekla_id,
+            chain_id,
             nonce,
             max_fee_per_gas,
             max_priority_fee_per_gas,
