@@ -1,11 +1,12 @@
 use std::time::Duration;
 
 use alloy_consensus::Header;
+use alloy_rpc_client::RpcClient;
 use async_stream::stream;
 use futures::{Stream, future::BoxFuture, pin_mut};
 use tokio_stream::StreamExt;
 
-use crate::client::{HttpClient, get_header};
+use crate::client::get_latest_header;
 
 pub fn get_header_stream(
     client_stream: impl Stream<Item = Header>,
@@ -22,14 +23,14 @@ pub fn get_header_stream(
     })
 }
 
-pub fn get_polling_stream<Client: HttpClient>(
-    client: Client,
+pub fn get_polling_stream(
+    client: RpcClient,
     polling_duration: Duration,
 ) -> impl Stream<Item = Header> {
     stream! {
         let mut last_header_number = 0u64;
         loop {
-            if let Ok(header) = get_header(&client, alloy_eips::BlockNumberOrTag::Latest).await {
+            if let Ok(header) =  get_latest_header(&client).await {
                 if header.number > last_header_number {
                     last_header_number = header.number;
                     yield header;

@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 use tracing::debug;
 
 use crate::client::{
-    DummyClient, GET_TRANSACTION_COUNT, HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs,
+    DummyClient, HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs, get_nonce,
 };
 use crate::preconf::handover_start_buffer::{SequencingMonitor, SequencingStatus};
 use crate::preconf::preconf_blocks::{create_executable_data, publish_preconfirmed_transactions};
@@ -158,12 +158,7 @@ impl ITaikoClient for TaikoClient {
     }
 
     async fn get_nonce(&self, address: &str) -> TaikoClientResult<u64> {
-        let params = json!([address, "pending"]);
-        Ok(self
-            .provider
-            .client()
-            .request(GET_TRANSACTION_COUNT, params)
-            .await?)
+        Ok(get_nonce(self.provider.client(), address).await?)
     }
 
     async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoClientResult<u64> {

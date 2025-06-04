@@ -1,13 +1,11 @@
 use alloy_consensus::Header;
-use alloy_eips::BlockNumberOrTag;
 use alloy_primitives::{Address, ChainId};
 use alloy_provider::{Provider, utils::Eip1559Estimation};
 use alloy_rpc_types::TransactionRequest;
-use serde_json::json;
 use thiserror::Error;
 
 use crate::{
-    client::{GET_HEADER_BY_NUMBER, GET_TRANSACTION_COUNT},
+    client::{get_header_by_id, get_nonce},
     taiko::contracts::{Provider as TaikoProvider, TaikoWhitelistInstance},
 };
 
@@ -71,21 +69,11 @@ impl TaikoL1Client {
 
 impl ITaikoL1Client for TaikoL1Client {
     async fn get_nonce(&self, address: &str) -> TaikoL1ClientResult<u64> {
-        let params = json!([address, "pending"]);
-        Ok(self
-            .provider
-            .client()
-            .request(GET_TRANSACTION_COUNT, params)
-            .await?)
+        Ok(get_nonce(self.provider.client(), address).await?)
     }
 
     async fn get_header(&self, id: u64) -> TaikoL1ClientResult<Header> {
-        let params = json!([BlockNumberOrTag::Number(id)]);
-        Ok(self
-            .provider
-            .client()
-            .request(GET_HEADER_BY_NUMBER, params)
-            .await?)
+        Ok(get_header_by_id(self.provider.client(), id).await?)
     }
 
     async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoL1ClientResult<u64> {
