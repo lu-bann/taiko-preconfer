@@ -61,6 +61,10 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         &self.l1_client
     }
 
+    pub fn address(&self) -> Address {
+        self.address
+    }
+
     pub fn shared_last_l1_block_number(&self) -> Arc<Mutex<u64>> {
         self.last_l1_block_number.clone()
     }
