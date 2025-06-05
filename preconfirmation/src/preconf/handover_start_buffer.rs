@@ -4,6 +4,7 @@ use alloy_consensus::Header;
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
+use tracing::debug;
 
 #[derive(Debug, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -60,6 +61,7 @@ impl<StatusMonitor: IStatusMonitor> TaikoSequencingMonitor<StatusMonitor> {
                 if is_end_of_sequencing_status(&status, &last_header) {
                     return Ok(());
                 }
+                debug!("Out of sync. status={status:?} {last_header:?}");
             }
             tokio::time::sleep(self.poll_period).await;
         }
