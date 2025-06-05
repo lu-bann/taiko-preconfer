@@ -2,7 +2,7 @@ use alloy_consensus::{Header, TxEnvelope};
 use alloy_rpc_types::Header as RpcHeader;
 use std::sync::Arc;
 use tokio::{join, sync::Mutex};
-use tracing::{debug, info};
+use tracing::{debug, info, trace};
 
 use alloy_primitives::Address;
 
@@ -81,22 +81,19 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         self.address
     }
 
-    fn last_l1_block_number(&self) -> PreconferResult<u64> {
-        Ok(self.last_l1_block_number.try_lock().map(|guard| *guard)?)
-    }
-
     pub async fn build_block(&self) -> PreconferResult<Option<SimpleBlock>> {
         let parent_header = self.parent_header.lock().await.clone();
         if parent_header.is_none() {
             return Err(PreconferError::MissingParentHeader);
         }
         let parent_header = parent_header.unwrap();
+        trace!("build_block: parent_header={parent_header:?}");
 
         info!("Start preconfirming block: #{}", parent_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
         debug!("now={} parent={}", now, parent_header.timestamp);
 
-        let last_l1_block_number = self.last_l1_block_number()?;
+        let last_l1_block_number = *self.last_l1_block_number.lock().await;
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.anchor_id_lag);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
@@ -105,11 +102,13 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         );
 
         let base_fee: u128 = base_fee?;
+        trace!("base fee: {base_fee}");
         let mut txs = self
             .l2_client
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
         debug!("#txs in mempool: {}", txs.len());
+        trace!("{:?}", txs);
         if txs.is_empty() {
             info!("Empty mempool: skipping block building.");
             return Ok(None);
@@ -135,6 +134,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
                 txs.clone(),
             )
             .await?;
+        trace!("Preconfirmed block header: {header:?}");
 
         Ok(Some(SimpleBlock::new(
             header,
