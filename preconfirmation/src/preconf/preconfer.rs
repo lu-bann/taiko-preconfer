@@ -1,15 +1,14 @@
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_rpc_types::Header as RpcHeader;
 use std::sync::Arc;
-use std::time::SystemTime;
 use tokio::{join, sync::Mutex};
 use tracing::{debug, info};
 
 use alloy_primitives::Address;
 
 use crate::preconf::{PreconferError, PreconferResult};
-use crate::taiko::taiko_client::ITaikoClient;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
+use crate::taiko::taiko_l2_client::ITaikoL2Client;
 use crate::time_provider::ITimeProvider;
 
 #[derive(Debug)]
@@ -37,10 +36,14 @@ impl SimpleBlock {
 }
 
 #[derive(Debug)]
-pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
+pub struct Preconfer<
+    L1Client: ITaikoL1Client,
+    L2Client: ITaikoL2Client,
+    TimeProvider: ITimeProvider,
+> {
     anchor_id_lag: u64,
     l1_client: L1Client,
-    taiko: Taiko,
+    l2_client: L2Client,
     address: Address,
     time_provider: TimeProvider,
     last_l1_block_number: Arc<Mutex<u64>>,
@@ -48,14 +51,14 @@ pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider
     golden_touch_address: String,
 }
 
-impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
-    Preconfer<L1Client, Taiko, TimeProvider>
+impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>
+    Preconfer<L1Client, L2Client, TimeProvider>
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         anchor_id_lag: u64,
         l1_client: L1Client,
-        taiko: Taiko,
+        l2_client: L2Client,
         address: Address,
         time_provider: TimeProvider,
         last_l1_block_number: Arc<Mutex<u64>>,
@@ -65,7 +68,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         Self {
             anchor_id_lag,
             l1_client,
-            taiko,
+            l2_client,
             address,
             time_provider,
             last_l1_block_number,
@@ -89,8 +92,6 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         }
         let parent_header = parent_header.unwrap();
 
-        let start = SystemTime::now();
-
         info!("Start preconfirming block: #{}", parent_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
         debug!("now={} parent={}", now, parent_header.timestamp);
@@ -99,13 +100,13 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.anchor_id_lag);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
-            self.taiko.get_nonce(&self.golden_touch_address),
-            self.taiko.get_base_fee(parent_header.gas_used, now),
+            self.l2_client.get_nonce(&self.golden_touch_address),
+            self.l2_client.get_base_fee(parent_header.gas_used, now),
         );
 
         let base_fee: u128 = base_fee?;
         let mut txs = self
-            .taiko
+            .l2_client
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
         debug!("#txs in mempool: {}", txs.len());
@@ -114,7 +115,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             return Ok(None);
         }
 
-        let anchor_tx = self.taiko.get_signed_anchor_tx(
+        let anchor_tx = self.l2_client.get_signed_anchor_tx(
             anchor_block_id,
             anchor_header?.state_root,
             parent_header.gas_used as u32,
@@ -125,7 +126,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
 
         info!("Publish preconfirmed block with {} transactions", txs.len());
         let header = self
-            .taiko
+            .l2_client
             .publish_preconfirmed_transactions(
                 self.address,
                 base_fee as u64,
@@ -135,11 +136,6 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             )
             .await?;
 
-        let end = SystemTime::now();
-        debug!(
-            "elapsed: {} ms",
-            end.duration_since(start).unwrap().as_millis()
-        );
         Ok(Some(SimpleBlock::new(
             header,
             txs,
@@ -157,12 +153,12 @@ fn get_anchor_id(current_block_number: u64, lag: u64) -> u64 {
 mod tests {
     use alloy_consensus::TxEip1559;
     use alloy_primitives::U256;
-    use alloy_provider::utils::Eip1559Estimation;
+
     use alloy_signer::Signature;
     use std::time::{Duration, UNIX_EPOCH};
 
     use crate::{
-        taiko::{taiko_client::MockITaikoClient, taiko_l1_client::MockITaikoL1Client},
+        taiko::{taiko_l1_client::MockITaikoL1Client, taiko_l2_client::MockITaikoL2Client},
         test_util::{get_header, get_rpc_header},
         time_provider::MockITimeProvider,
     };
@@ -174,39 +170,26 @@ mod tests {
     const DUMMY_BLOCK_NUMBER: u64 = 1234;
     const DUMMY_TIMESTAMP: u64 = 987654321;
     const DUMMY_GAS: u64 = 30000;
-    const DUMMY_MAX_FEE_PER_GAS: u128 = 50000;
-    const DUMMY_MAX_PRIORITY_FEE_PER_GAS: u128 = 70000;
 
     #[tokio::test]
-    async fn test_build_blocks_adds_anchor_transaction() {
+    async fn build_blocks_adds_anchor_transaction() {
         let l2_block_time_secs = 2000_u64;
         let last_block_timestamp = 1_000_000u64;
         let next_block_desired_timestamp = last_block_timestamp + l2_block_time_secs;
 
         let mut l1_client = MockITaikoL1Client::new();
         l1_client
-            .expect_get_nonce()
-            .return_once(|_| Box::pin(async { Ok(DUMMY_NONCE) }));
-        l1_client
             .expect_get_header()
             .return_once(|_| Box::pin(async { Ok(Header::default()) }));
-        l1_client.expect_estimate_eip1559_fees().return_once(|| {
-            Box::pin(async {
-                Ok(Eip1559Estimation {
-                    max_fee_per_gas: DUMMY_MAX_FEE_PER_GAS,
-                    max_priority_fee_per_gas: DUMMY_MAX_PRIORITY_FEE_PER_GAS,
-                })
-            })
-        });
 
-        let mut taiko = MockITaikoClient::new();
-        taiko
+        let mut l2_client = MockITaikoL2Client::new();
+        l2_client
             .expect_get_nonce()
             .return_once(|_| Box::pin(async { Ok(DUMMY_NONCE) }));
-        taiko
+        l2_client
             .expect_get_base_fee()
             .return_once(|_, _| Box::pin(async { Ok(DUMMY_BASE_FEE) }));
-        taiko
+        l2_client
             .expect_get_signed_anchor_tx()
             .return_once(|_, _, _, _, _| {
                 Ok(TxEnvelope::new_unhashed(
@@ -214,10 +197,10 @@ mod tests {
                     Signature::new(U256::ONE, U256::default(), false),
                 ))
             });
-        taiko
+        l2_client
             .expect_estimate_gas()
             .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
-        taiko
+        l2_client
             .expect_publish_preconfirmed_transactions()
             .withf(|_, _, _, _, txs| txs.len() == 2 && txs[0].signature().r() == U256::ONE)
             .return_once(|_, _, _, _, _| {
@@ -228,7 +211,7 @@ mod tests {
                     )))
                 })
             });
-        taiko.expect_get_mempool_txs().return_once(|_, _| {
+        l2_client.expect_get_mempool_txs().return_once(|_, _| {
             Box::pin(async {
                 Ok(vec![TxEnvelope::new_unhashed(
                     TxEip1559::default().into(),
@@ -255,15 +238,16 @@ mod tests {
             last_block_timestamp,
         ))));
         let last_l1_block_number = Arc::new(Mutex::new(DUMMY_BLOCK_NUMBER));
+        let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = Preconfer::new(
             anchor_id_lag,
             l1_client,
-            taiko,
+            l2_client,
             preconfer_address,
             time_provider,
             last_l1_block_number,
             parent_header,
-            "0x0000777735367b36bC9B61C50022d9D0700dB4Ec".into(),
+            golden_touch_addr,
         );
 
         let preconfirmed_block = preconfer.build_block().await.unwrap().unwrap();
@@ -272,7 +256,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_no_block_gets_published_when_mempool_is_empty() {
+    async fn no_block_gets_published_when_mempool_is_empty() {
         let l2_block_time_secs = 2000_u64;
         let last_block_timestamp = 1_000_000u64;
         let next_block_desired_timestamp = last_block_timestamp + l2_block_time_secs;
@@ -282,16 +266,16 @@ mod tests {
             .expect_get_header()
             .return_once(|_| Box::pin(async { Ok(Header::default()) }));
 
-        let mut taiko = MockITaikoClient::new();
-        taiko
+        let mut l2_client = MockITaikoL2Client::new();
+        l2_client
             .expect_get_nonce()
             .return_once(|_| Box::pin(async { Ok(DUMMY_NONCE) }));
-        taiko
+        l2_client
             .expect_get_base_fee()
             .return_once(|_, _| Box::pin(async { Ok(DUMMY_BASE_FEE) }));
-        taiko.expect_get_signed_anchor_tx().never();
-        taiko.expect_publish_preconfirmed_transactions().never();
-        taiko
+        l2_client.expect_get_signed_anchor_tx().never();
+        l2_client.expect_publish_preconfirmed_transactions().never();
+        l2_client
             .expect_get_mempool_txs()
             .return_once(|_, _| Box::pin(async { Ok(vec![]) }));
 
@@ -313,17 +297,47 @@ mod tests {
             last_block_timestamp,
         ))));
         let last_l1_block_number = Arc::new(Mutex::new(DUMMY_BLOCK_NUMBER));
+        let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = Preconfer::new(
             anchor_id_lag,
             l1_client,
-            taiko,
+            l2_client,
             preconfer_address,
             time_provider,
             last_l1_block_number,
             parent_header,
-            "0x0000777735367b36bC9B61C50022d9D0700dB4Ec".into(),
+            golden_touch_addr,
         );
 
         assert!(preconfer.build_block().await.unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn build_block_throws_when_parent_header_is_available() {
+        let l1_client = MockITaikoL1Client::new();
+        let l2_client = MockITaikoL2Client::new();
+        let time_provider = MockITimeProvider::new();
+
+        let preconfer_address = Address::random();
+        let anchor_id_lag = 4u64;
+        let parent_header = Arc::new(Mutex::new(None));
+        let last_l1_block_number = Arc::new(Mutex::new(DUMMY_BLOCK_NUMBER));
+        let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
+        let preconfer = Preconfer::new(
+            anchor_id_lag,
+            l1_client,
+            l2_client,
+            preconfer_address,
+            time_provider,
+            last_l1_block_number,
+            parent_header,
+            golden_touch_addr,
+        );
+
+        let err = preconfer.build_block().await.unwrap_err();
+        match err {
+            PreconferError::MissingParentHeader => {}
+            _ => panic!("unexpected"),
+        }
     }
 }

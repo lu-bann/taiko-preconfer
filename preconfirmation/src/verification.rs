@@ -13,7 +13,7 @@ pub fn verify_signature(
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::eip191_hash_message;
+    use alloy_primitives::{U256, eip191_hash_message};
     use alloy_signer::SignerSync;
     use alloy_signer_local::PrivateKeySigner;
 
@@ -40,6 +40,16 @@ mod tests {
         let message_hash = eip191_hash_message(message);
         let is_valid = verify_signature(&signature, &message_hash, &not_signer.address()).unwrap();
         assert!(!is_valid);
+    }
+
+    #[test]
+    fn verification_throws_for_invalid_signature() {
+        let not_signer = PrivateKeySigner::random();
+        let message = b"some msg";
+
+        let message_hash = eip191_hash_message(message);
+        let signature = Signature::new(U256::ZERO, U256::ZERO, false);
+        assert!(verify_signature(&signature, &message_hash, &not_signer.address()).is_err());
     }
 
     #[test]
