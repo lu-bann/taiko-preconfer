@@ -70,10 +70,6 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         }
     }
 
-    pub fn l1_client(&self) -> &L1Client {
-        &self.l1_client
-    }
-
     pub fn address(&self) -> Address {
         self.address
     }

@@ -63,6 +63,7 @@ async fn trigger_from_stream<
     preconfer: Arc<Mutex<Preconfer<L1Client, L2Client, TimeProvider>>>,
     active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
     monitor: Monitor,
+    whitelist: TaikoWhitelistInstance,
     confirmation_strategy: Arc<Mutex<InstantConfirmationStrategy<L1Client>>>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
@@ -72,12 +73,7 @@ async fn trigger_from_stream<
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
             if let Some(current_preconfer) = log_error(
-                preconfer
-                    .lock()
-                    .await
-                    .l1_client()
-                    .get_current_preconfer()
-                    .await,
+                whitelist.getOperatorForCurrentEpoch().call().await,
                 "Failed to read current preconfer",
             ) {
                 if !active_operator_model
@@ -137,12 +133,7 @@ async fn trigger_from_stream<
             }
             if active_operator_status.is_last_slot_before_handover_window {
                 if let Some(next_preconfer) = log_error(
-                    preconfer
-                        .lock()
-                        .await
-                        .l1_client()
-                        .get_preconfer_for_next_epoch()
-                        .await,
+                    whitelist.getOperatorForNextEpoch().call().await,
                     "Failed to read preconfer for next epoch",
                 ) {
                     info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
@@ -234,13 +225,8 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
     let l1_provider = ProviderBuilder::new()
         .connect(&config.l1_client_url)
         .await?;
-    let l1_provider_base = ProviderBuilder::new().connect(BASE_SEPOLIA_RPC).await?;
-    let whitelist = TaikoWhitelistInstance::new(
-        Address::from_str(DUMMY_WHITELIST).unwrap(),
-        l1_provider_base,
-    );
     let chain_id = l1_provider.get_chain_id().await?;
-    Ok(TaikoL1Client::new(l1_provider, whitelist, chain_id))
+    Ok(TaikoL1Client::new(l1_provider, chain_id))
 }
 
 async fn store_header_number(header: Header, current: Arc<Mutex<u64>>) -> ApplicationResult<()> {
@@ -285,6 +271,12 @@ async fn main() -> ApplicationResult<()> {
     let shared_header = Arc::new(Mutex::new(None));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
+    let l1_provider_base = ProviderBuilder::new().connect(BASE_SEPOLIA_RPC).await?;
+    let whitelist = TaikoWhitelistInstance::new(
+        Address::from_str(DUMMY_WHITELIST).unwrap(),
+        l1_provider_base,
+    );
+
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
     let taiko_sequencing_monitor = TaikoSequencingMonitor::new(
         shared_header.clone(),
@@ -336,6 +328,7 @@ async fn main() -> ApplicationResult<()> {
             preconfer,
             active_operator_model,
             taiko_sequencing_monitor,
+            whitelist,
             confirmation_strategy,
             config.handover_start_buffer
         ),
