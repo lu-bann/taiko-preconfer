@@ -12,7 +12,7 @@ use preconfirmation::{
         Preconfer,
         config::Config,
         confirmation_strategy::InstantConfirmationStrategy,
-        handover_start_buffer::{SequencingMonitor, TaikoSequencingMonitor},
+        handover_start_buffer::{TaikoSequencingMonitor, TaikoStatusMonitor},
     },
     slot::SubSlot,
     slot_model::SlotModel,
@@ -24,8 +24,8 @@ use preconfirmation::{
         contracts::{TaikoAnchorInstance, TaikoWhitelistInstance},
         hekla::get_basefee_config_v2,
         sign::get_signing_key,
-        taiko_client::{ITaikoClient, TaikoClient},
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
+        taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
 };
@@ -55,14 +55,13 @@ fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
 
 async fn trigger_from_stream<
     L1Client: ITaikoL1Client,
-    L2Client: ITaikoClient,
-    Monitor: SequencingMonitor,
+    L2Client: ITaikoL2Client,
     TimeProvider: ITimeProvider,
 >(
     stream: impl Stream<Item = SubSlot>,
     preconfer: Preconfer<L1Client, L2Client, TimeProvider>,
     active_operator_model: ActiveOperatorModel,
-    monitor: Monitor,
+    monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     whitelist: TaikoWhitelistInstance,
     confirmation_strategy: InstantConfirmationStrategy<L1Client>,
     handover_timeout: Duration,
@@ -180,7 +179,7 @@ fn get_config() -> ApplicationResult<Config> {
     Ok(Config::try_from_env()?)
 }
 
-async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> {
+async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client> {
     let jwt_secret =
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
             .unwrap();
@@ -198,7 +197,7 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> 
 
     let chain_id = provider.get_chain_id().await?;
     trace!("L2 chain id {chain_id}");
-    Ok(TaikoClient::new(
+    Ok(TaikoL2Client::new(
         auth_client,
         taiko_anchor,
         provider,
@@ -267,8 +266,8 @@ async fn main() -> ApplicationResult<()> {
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
     let taiko_sequencing_monitor = TaikoSequencingMonitor::new(
         shared_header.clone(),
-        preconfirmation_url,
         config.poll_period,
+        TaikoStatusMonitor::new(preconfirmation_url),
     );
     let l1_chain_id = taiko_l1_client.chain_id();
 

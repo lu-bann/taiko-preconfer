@@ -9,7 +9,7 @@ pub enum ApplicationError {
     TaikoL1Client(#[from] preconfirmation::taiko::taiko_l1_client::TaikoL1ClientError),
 
     #[error("{0}")]
-    TaikoL2Client(#[from] preconfirmation::taiko::taiko_client::TaikoClientError),
+    TaikoL2Client(#[from] preconfirmation::taiko::taiko_l2_client::TaikoL2ClientError),
 
     #[error("{0}")]
     Confirmation(#[from] preconfirmation::preconf::confirmation_strategy::ConfirmationError),

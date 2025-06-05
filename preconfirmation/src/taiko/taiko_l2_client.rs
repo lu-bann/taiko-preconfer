@@ -25,7 +25,7 @@ use crate::taiko::{
 };
 
 #[derive(Debug, Error)]
-pub enum TaikoClientError {
+pub enum TaikoL2ClientError {
     #[error("{0}")]
     Rpc(#[from] RpcError<TransportErrorKind>),
 
@@ -45,27 +45,31 @@ pub enum TaikoClientError {
     Compression(#[from] CompressionError),
 }
 
-pub type TaikoClientResult<T> = Result<T, TaikoClientError>;
+pub type TaikoL2ClientResult<T> = Result<T, TaikoL2ClientError>;
 
 #[cfg_attr(test, mockall::automock)]
-pub trait ITaikoClient {
+pub trait ITaikoL2Client {
     fn get_mempool_txs(
         &self,
         beneficiary: Address,
         base_fee: u64,
-    ) -> impl Future<Output = TaikoClientResult<Vec<TxEnvelope>>>;
+    ) -> impl Future<Output = TaikoL2ClientResult<Vec<TxEnvelope>>>;
 
     fn get_base_fee(
         &self,
         parent_gas_used: u64,
         timestamp: u64,
-    ) -> impl Future<Output = TaikoClientResult<u128>>;
+    ) -> impl Future<Output = TaikoL2ClientResult<u128>>;
 
-    fn get_nonce(&self, address: &str) -> impl Future<Output = TaikoClientResult<u64>>;
+    fn get_nonce(&self, address: &str) -> impl Future<Output = TaikoL2ClientResult<u64>>;
 
-    fn estimate_gas(&self, tx: TransactionRequest) -> impl Future<Output = TaikoClientResult<u64>>;
+    fn estimate_gas(
+        &self,
+        tx: TransactionRequest,
+    ) -> impl Future<Output = TaikoL2ClientResult<u64>>;
 
-    fn estimate_eip1559_fees(&self) -> impl Future<Output = TaikoClientResult<Eip1559Estimation>>;
+    fn estimate_eip1559_fees(&self)
+    -> impl Future<Output = TaikoL2ClientResult<Eip1559Estimation>>;
 
     fn get_signed_anchor_tx(
         &self,
@@ -74,7 +78,7 @@ pub trait ITaikoClient {
         parent_gas_used: u32,
         nonce: u64,
         max_fee_per_gas: u128,
-    ) -> TaikoClientResult<TxEnvelope>;
+    ) -> TaikoL2ClientResult<TxEnvelope>;
 
     fn publish_preconfirmed_transactions(
         &self,
@@ -83,11 +87,11 @@ pub trait ITaikoClient {
         timestamp: u64,
         parent_header: &Header,
         txs: Vec<TxEnvelope>,
-    ) -> impl Future<Output = TaikoClientResult<RpcHeader>>;
+    ) -> impl Future<Output = TaikoL2ClientResult<RpcHeader>>;
 }
 
 #[derive(Debug)]
-pub struct TaikoClient {
+pub struct TaikoL2Client {
     auth_client: RpcClient,
     taiko_anchor: TaikoAnchorInstance,
     provider: TaikoProvider,
@@ -96,7 +100,7 @@ pub struct TaikoClient {
     golden_touch_signing_key: SigningKey,
 }
 
-impl TaikoClient {
+impl TaikoL2Client {
     pub fn new(
         auth_client: RpcClient,
         taiko_anchor: TaikoAnchorInstance,
@@ -116,12 +120,12 @@ impl TaikoClient {
     }
 }
 
-impl ITaikoClient for TaikoClient {
+impl ITaikoL2Client for TaikoL2Client {
     async fn get_mempool_txs(
         &self,
         beneficiary: Address,
         base_fee: u64,
-    ) -> TaikoClientResult<Vec<TxEnvelope>> {
+    ) -> TaikoL2ClientResult<Vec<TxEnvelope>> {
         let mempool_tx_lists = get_mempool_txs(
             &self.auth_client,
             beneficiary,
@@ -135,7 +139,11 @@ impl ITaikoClient for TaikoClient {
         Ok(flatten_mempool_txs(mempool_tx_lists))
     }
 
-    async fn get_base_fee(&self, parent_gas_used: u64, timestamp: u64) -> TaikoClientResult<u128> {
+    async fn get_base_fee(
+        &self,
+        parent_gas_used: u64,
+        timestamp: u64,
+    ) -> TaikoL2ClientResult<u128> {
         let base_fee = self
             .taiko_anchor
             .getBasefeeV2(
@@ -148,15 +156,15 @@ impl ITaikoClient for TaikoClient {
         Ok(base_fee.basefee_.try_into()?)
     }
 
-    async fn get_nonce(&self, address: &str) -> TaikoClientResult<u64> {
+    async fn get_nonce(&self, address: &str) -> TaikoL2ClientResult<u64> {
         Ok(get_nonce(self.provider.client(), address).await?)
     }
 
-    async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoClientResult<u64> {
+    async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoL2ClientResult<u64> {
         Ok(self.provider.estimate_gas(tx).await?)
     }
 
-    async fn estimate_eip1559_fees(&self) -> TaikoClientResult<Eip1559Estimation> {
+    async fn estimate_eip1559_fees(&self) -> TaikoL2ClientResult<Eip1559Estimation> {
         Ok(self.provider.estimate_eip1559_fees().await?)
     }
 
@@ -167,7 +175,7 @@ impl ITaikoClient for TaikoClient {
         parent_gas_used: u32,
         nonce: u64,
         max_fee_per_gas: u128,
-    ) -> TaikoClientResult<TxEnvelope> {
+    ) -> TaikoL2ClientResult<TxEnvelope> {
         let anchor_call = TaikoAnchor::anchorV3Call {
             _anchorBlockId: anchor_block_id,
             _anchorStateRoot: anchor_state_root,
@@ -195,7 +203,7 @@ impl ITaikoClient for TaikoClient {
         timestamp: u64,
         parent_header: &Header,
         txs: Vec<TxEnvelope>,
-    ) -> TaikoClientResult<RpcHeader> {
+    ) -> TaikoL2ClientResult<RpcHeader> {
         let executable_data = create_executable_data(
             base_fee,
             parent_header.number + 1,
