@@ -61,7 +61,7 @@ async fn trigger_from_stream<
     stream: impl Stream<Item = SubSlot>,
     preconfer: Preconfer<L1Client, L2Client, TimeProvider>,
     active_operator_model: ActiveOperatorModel,
-    monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
+    sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     whitelist: TaikoWhitelistInstance,
     confirmation_strategy: InstantConfirmationStrategy<L1Client>,
     handover_timeout: Duration,
@@ -76,7 +76,7 @@ async fn trigger_from_stream<
                 whitelist.getOperatorForCurrentEpoch().call().await,
                 "Failed to read current preconfer",
             ) {
-                if !active_operator_model.status(&subslot.slot).can_preconfirm
+                if !active_operator_model.can_preconfirm(&subslot.slot)
                     && current_preconfer == preconfer_address
                 {
                     let epoch = if active_operator_model.within_handover_period(subslot.slot.slot) {
@@ -89,12 +89,11 @@ async fn trigger_from_stream<
                 }
             }
 
-            let active_operator_status = active_operator_model.status(&subslot.slot);
-            if active_operator_status.can_preconfirm {
-                if active_operator_status.is_first_preconfirmation_slot {
+            if active_operator_model.can_preconfirm(&subslot.slot) {
+                if active_operator_model.is_first_preconfirmation_slot(&subslot.slot) {
                     trace!("First slot in window: {:?}", subslot.slot);
                     if log_error(
-                        tokio::time::timeout(handover_timeout, monitor.ready()).await,
+                        tokio::time::timeout(handover_timeout, sequencing_monitor.ready()).await,
                         "State out of sync after handover period",
                     )
                     .is_some()
@@ -119,7 +118,7 @@ async fn trigger_from_stream<
             } else {
                 info!("Not active operator. Skip block building.");
             }
-            if active_operator_status.is_last_slot_before_handover_window {
+            if active_operator_model.is_last_slot_before_handover_window(subslot.slot.slot) {
                 if let Some(next_preconfer) = log_error(
                     whitelist.getOperatorForNextEpoch().call().await,
                     "Failed to read preconfer for next epoch",
