@@ -60,15 +60,16 @@ async fn trigger_from_stream<
     TimeProvider: ITimeProvider,
 >(
     stream: impl Stream<Item = SubSlot>,
-    preconfer: Arc<Mutex<Preconfer<L1Client, L2Client, TimeProvider>>>,
-    active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
+    preconfer: Preconfer<L1Client, L2Client, TimeProvider>,
+    active_operator_model: ActiveOperatorModel,
     monitor: Monitor,
     whitelist: TaikoWhitelistInstance,
-    confirmation_strategy: Arc<Mutex<InstantConfirmationStrategy<L1Client>>>,
+    confirmation_strategy: InstantConfirmationStrategy<L1Client>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
+    let mut active_operator_model = active_operator_model;
     pin_mut!(stream);
-    let preconfer_address = preconfer.lock().await.address();
+    let preconfer_address = preconfer.address();
     loop {
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
@@ -76,31 +77,20 @@ async fn trigger_from_stream<
                 whitelist.getOperatorForCurrentEpoch().call().await,
                 "Failed to read current preconfer",
             ) {
-                if !active_operator_model
-                    .lock()
-                    .await
-                    .status(&subslot.slot)
-                    .can_preconfirm
+                if !active_operator_model.status(&subslot.slot).can_preconfirm
                     && current_preconfer == preconfer_address
                 {
-                    let epoch = if active_operator_model
-                        .lock()
-                        .await
-                        .within_handover_period(subslot.slot.slot)
-                    {
+                    let epoch = if active_operator_model.within_handover_period(subslot.slot.slot) {
                         subslot.slot.epoch + 1
                     } else {
                         subslot.slot.epoch
                     };
-                    active_operator_model
-                        .lock()
-                        .await
-                        .set_next_active_epoch(epoch);
+                    active_operator_model.set_next_active_epoch(epoch);
                     info!("Set active epoch to {} for slot {:?}", epoch, subslot);
                 }
             }
 
-            let active_operator_status = active_operator_model.lock().await.status(&subslot.slot);
+            let active_operator_status = active_operator_model.status(&subslot.slot);
             if active_operator_status.can_preconfirm {
                 if active_operator_status.is_first_preconfirmation_slot {
                     trace!("First slot in window: {:?}", subslot.slot);
@@ -114,15 +104,14 @@ async fn trigger_from_stream<
                     }
                 }
 
-                if let Some(result) = log_error(
-                    preconfer.lock().await.build_block().await,
-                    "Error building block",
-                ) {
+                if let Some(result) =
+                    log_error(preconfer.build_block().await, "Error building block")
+                {
                     match result {
                         None => info!("No block created in slot {:?}", subslot),
                         Some(block) => {
                             log_error(
-                                confirmation_strategy.lock().await.confirm(block).await,
+                                confirmation_strategy.confirm(block).await,
                                 "Failed to confirm block",
                             );
                         }
@@ -138,10 +127,7 @@ async fn trigger_from_stream<
                 ) {
                     info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
                     if next_preconfer == preconfer_address {
-                        active_operator_model
-                            .lock()
-                            .await
-                            .set_next_active_epoch(subslot.slot.epoch + 1);
+                        active_operator_model.set_next_active_epoch(subslot.slot.epoch + 1);
                         info!(
                             "Set active epoch to {} for slot {:?}",
                             subslot.slot.epoch + 1,
@@ -285,36 +271,30 @@ async fn main() -> ApplicationResult<()> {
     );
     let l1_chain_id = taiko_l1_client.chain_id();
 
-    let preconfer = Arc::new(Mutex::new(Preconfer::new(
+    let shared_last_l1_block_number = Arc::new(Mutex::new(0u64));
+    let preconfer = Preconfer::new(
         config.anchor_id_lag,
         taiko_l1_client,
         taiko_l2_client,
         get_golden_touch_address(),
         SystemTimeProvider::new(),
+        shared_last_l1_block_number.clone(),
         shared_header.clone(),
-    )));
+    );
 
     let slots_per_epoch = 32;
     let handover_slots = config.handover_window_slots as u64;
-    let active_operator_model = Arc::new(Mutex::new(ActiveOperatorModel::new(
-        handover_slots,
-        slots_per_epoch,
-    )));
+    let active_operator_model = ActiveOperatorModel::new(handover_slots, slots_per_epoch);
 
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
-    let confirmation_strategy = Arc::new(Mutex::new(InstantConfirmationStrategy::new(
-        taiko_l1_client,
-        preconfer.lock().await.address(),
-        l1_chain_id,
-    )));
+    let confirmation_strategy =
+        InstantConfirmationStrategy::new(taiko_l1_client, preconfer.address(), l1_chain_id);
 
     let slot_stream = create_subslot_stream(&config)?;
     let l1_header_stream =
         create_header_stream(&config.l1_client_url, &config.l1_ws_url, config.poll_period).await?;
     let l2_header_stream =
         create_header_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
-
-    let shared_last_l1_block_number = preconfer.lock().await.shared_last_l1_block_number();
 
     let _ = join!(
         stream_headers(
