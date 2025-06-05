@@ -31,16 +31,16 @@ sequenceDiagram
 
 ## Components
 In the preconfer operations get triggered by streams. For this we have two stream implementations:
-* a slot stream (`preconfirmation/src/stream/slot_stream.rs`) that provides the L2 slot number as well as the corresponding L1 slot. This triggers the main computations.
-* a header stream (`preconfirmation/src/stream/header_stream.rs`) that provides headers that are guaranteed to have increasing block numbers. This is used to track both the heads of both L1 and L2.
+* a slot stream (`preconfirmation/src/stream/slot_stream.rs`) that provides the L2 slot number as well as the corresponding L1 slot at the start of an L2 slot. This triggers the main computations.
+* a header stream (`preconfirmation/src/stream/header_stream.rs`) that provides headers that are guaranteed to have increasing block numbers. This is used to track both the heads of both L1 and L2. It combines a websocket stream and a polling stream
+  * websocket stream: typically faster, cheap, but unreliable, may provide blocks out of order or miss blocks
+  * polling stream: reliable, slower, higher computational costs, provides blocks in order
 
 The preconfirmation algorithm is split into different responsibilities
 * ActiveOperatorModel: Responsible for determining if we are responsible for preconfirmation in a given slot
 * SequencingMonitor: Responsible for waiting until we are in sync with the status endpoint
 * Preconfer: Responsible for publishing preconfirmed transactions to the L2
 * ConfirmationStrategy: Responsible for confirmation of preconfirmed blocks on the L1
-
-
 
 ## Development
 #### git hooks
