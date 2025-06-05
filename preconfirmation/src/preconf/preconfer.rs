@@ -39,13 +39,13 @@ impl SimpleBlock {
 
 #[derive(Debug)]
 pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider> {
-    last_l1_block_number: Arc<Mutex<u64>>,
-    parent_header: Arc<Mutex<Option<Header>>>,
     anchor_id_lag: u64,
     l1_client: L1Client,
     taiko: Taiko,
     address: Address,
     time_provider: TimeProvider,
+    last_l1_block_number: Arc<Mutex<u64>>,
+    parent_header: Arc<Mutex<Option<Header>>>,
 }
 
 impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
@@ -57,16 +57,17 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         taiko: Taiko,
         address: Address,
         time_provider: TimeProvider,
+        last_l1_block_number: Arc<Mutex<u64>>,
         parent_header: Arc<Mutex<Option<Header>>>,
     ) -> Self {
         Self {
-            last_l1_block_number: Arc::new(Mutex::new(0u64)),
-            parent_header,
             anchor_id_lag,
             l1_client,
             taiko,
             address,
             time_provider,
+            last_l1_block_number,
+            parent_header,
         }
     }
 
@@ -74,15 +75,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         self.address
     }
 
-    pub fn shared_last_l1_block_number(&self) -> Arc<Mutex<u64>> {
-        self.last_l1_block_number.clone()
-    }
-
-    pub fn shared_parent_header(&self) -> Arc<Mutex<Option<Header>>> {
-        self.parent_header.clone()
-    }
-
-    pub fn last_l1_block_number(&self) -> PreconferResult<u64> {
+    fn last_l1_block_number(&self) -> PreconferResult<u64> {
         Ok(self.last_l1_block_number.try_lock().map(|guard| *guard)?)
     }
 
@@ -258,15 +251,16 @@ mod tests {
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
         ))));
+        let last_l1_block_number = Arc::new(Mutex::new(DUMMY_BLOCK_NUMBER));
         let preconfer = Preconfer::new(
             anchor_id_lag,
             l1_client,
             taiko,
             preconfer_address,
             time_provider,
+            last_l1_block_number,
             parent_header,
         );
-        *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
         let preconfirmed_block = preconfer.build_block().await.unwrap().unwrap();
         assert_eq!(preconfirmed_block.txs.len(), 2);
@@ -314,15 +308,16 @@ mod tests {
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
         ))));
+        let last_l1_block_number = Arc::new(Mutex::new(DUMMY_BLOCK_NUMBER));
         let preconfer = Preconfer::new(
             anchor_id_lag,
             l1_client,
             taiko,
             preconfer_address,
             time_provider,
+            last_l1_block_number,
             parent_header,
         );
-        *preconfer.shared_last_l1_block_number().lock().await = DUMMY_BLOCK_NUMBER;
 
         assert!(preconfer.build_block().await.unwrap().is_none());
     }
