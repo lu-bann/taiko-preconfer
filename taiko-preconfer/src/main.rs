@@ -53,6 +53,42 @@ fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
     }
 }
 
+fn set_active_operator_if_necessary(
+    current_preconfer: &Address,
+    preconfer_address: &Address,
+    active_operator_model: &mut ActiveOperatorModel,
+    subslot: &SubSlot,
+) {
+    if !active_operator_model.can_preconfirm(&subslot.slot)
+        && current_preconfer == preconfer_address
+    {
+        let epoch = if active_operator_model.within_handover_period(subslot.slot.slot) {
+            subslot.slot.epoch + 1
+        } else {
+            subslot.slot.epoch
+        };
+        active_operator_model.set_next_active_epoch(epoch);
+        info!("Set active epoch to {} for slot {:?}", epoch, subslot);
+    }
+}
+
+fn set_active_operator_for_next_period(
+    next_preconfer: &Address,
+    preconfer_address: &Address,
+    active_operator_model: &mut ActiveOperatorModel,
+    subslot: &SubSlot,
+) {
+    info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
+    if next_preconfer == preconfer_address {
+        active_operator_model.set_next_active_epoch(subslot.slot.epoch + 1);
+        info!(
+            "Set active epoch to {} for slot {:?}",
+            subslot.slot.epoch + 1,
+            subslot
+        );
+    }
+}
+
 async fn trigger_from_stream<
     L1Client: ITaikoL1Client,
     L2Client: ITaikoL2Client,
@@ -69,24 +105,21 @@ async fn trigger_from_stream<
     let mut active_operator_model = active_operator_model;
     pin_mut!(stream);
     let preconfer_address = preconfer.address();
+
     loop {
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
+
             if let Some(current_preconfer) = log_error(
                 whitelist.getOperatorForCurrentEpoch().call().await,
                 "Failed to read current preconfer",
             ) {
-                if !active_operator_model.can_preconfirm(&subslot.slot)
-                    && current_preconfer == preconfer_address
-                {
-                    let epoch = if active_operator_model.within_handover_period(subslot.slot.slot) {
-                        subslot.slot.epoch + 1
-                    } else {
-                        subslot.slot.epoch
-                    };
-                    active_operator_model.set_next_active_epoch(epoch);
-                    info!("Set active epoch to {} for slot {:?}", epoch, subslot);
-                }
+                set_active_operator_if_necessary(
+                    &current_preconfer,
+                    &preconfer_address,
+                    &mut active_operator_model,
+                    &subslot,
+                );
             }
 
             if active_operator_model.can_preconfirm(&subslot.slot) {
@@ -118,20 +151,18 @@ async fn trigger_from_stream<
             } else {
                 info!("Not active operator. Skip block building.");
             }
+
             if active_operator_model.is_last_slot_before_handover_window(subslot.slot.slot) {
                 if let Some(next_preconfer) = log_error(
                     whitelist.getOperatorForNextEpoch().call().await,
                     "Failed to read preconfer for next epoch",
                 ) {
-                    info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
-                    if next_preconfer == preconfer_address {
-                        active_operator_model.set_next_active_epoch(subslot.slot.epoch + 1);
-                        info!(
-                            "Set active epoch to {} for slot {:?}",
-                            subslot.slot.epoch + 1,
-                            subslot
-                        );
-                    }
+                    set_active_operator_for_next_period(
+                        &next_preconfer,
+                        &preconfer_address,
+                        &mut active_operator_model,
+                        &subslot,
+                    );
                 }
             }
         }
