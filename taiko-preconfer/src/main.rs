@@ -10,7 +10,7 @@ use preconfirmation::{
         Preconfer,
         config::Config,
         confirmation_strategy::InstantConfirmationStrategy,
-        handover_start_buffer::{DummySequencingMonitor, SequencingMonitor},
+        handover_start_buffer::{SequencingMonitor, TaikoSequencingMonitor},
     },
     slot::SubSlot,
     slot_model::SlotModel,
@@ -56,11 +56,13 @@ fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
 async fn trigger_from_stream<
     L1Client: ITaikoL1Client,
     L2Client: ITaikoClient,
+    Monitor: SequencingMonitor,
     TimeProvider: ITimeProvider,
 >(
     stream: impl Stream<Item = SubSlot>,
     preconfer: Arc<Mutex<Preconfer<L1Client, L2Client, TimeProvider>>>,
     active_operator_model: Arc<Mutex<ActiveOperatorModel>>,
+    monitor: Monitor,
     confirmation_strategy: Arc<Mutex<InstantConfirmationStrategy<L1Client>>>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
@@ -106,7 +108,6 @@ async fn trigger_from_stream<
             if active_operator_status.can_preconfirm {
                 if active_operator_status.is_first_preconfirmation_slot {
                     trace!("First slot in window: {:?}", subslot.slot);
-                    let monitor = DummySequencingMonitor {};
                     if log_error(
                         tokio::time::timeout(handover_timeout, monitor.ready()).await,
                         "State out of sync after handover period",
@@ -131,10 +132,6 @@ async fn trigger_from_stream<
                         }
                     }
                 }
-                log_error(
-                    preconfer.lock().await.build_block().await,
-                    "Error during block building",
-                );
             } else {
                 info!("Not active operator. Skip block building.");
             }
@@ -206,11 +203,7 @@ fn get_config() -> ApplicationResult<Config> {
     Ok(Config::try_from_env()?)
 }
 
-async fn get_taiko_l2_client(
-    config: &Config,
-    header: Arc<Mutex<Option<Header>>>,
-    poll_period: Duration,
-) -> ApplicationResult<TaikoClient> {
+async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> {
     let jwt_secret =
         JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
             .unwrap();
@@ -227,15 +220,13 @@ async fn get_taiko_l2_client(
     let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider.clone());
 
     let chain_id = provider.get_chain_id().await?;
-    trace!("L2 chain id {}", chain_id);
+    trace!("L2 chain id {chain_id}");
     Ok(TaikoClient::new(
         auth_client,
         taiko_anchor,
         provider,
         get_basefee_config_v2(),
         chain_id,
-        header,
-        poll_period,
     ))
 }
 
@@ -292,9 +283,14 @@ async fn main() -> ApplicationResult<()> {
     let config = get_config()?;
 
     let shared_header = Arc::new(Mutex::new(None));
-    let taiko_l2_client =
-        get_taiko_l2_client(&config, shared_header.clone(), config.poll_period).await?;
+    let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
+    let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
+    let taiko_sequencing_monitor = TaikoSequencingMonitor::new(
+        shared_header.clone(),
+        preconfirmation_url,
+        config.poll_period,
+    );
     let l1_chain_id = taiko_l1_client.chain_id();
 
     let preconfer = Arc::new(Mutex::new(Preconfer::new(
@@ -339,6 +335,7 @@ async fn main() -> ApplicationResult<()> {
             slot_stream,
             preconfer,
             active_operator_model,
+            taiko_sequencing_monitor,
             confirmation_strategy,
             config.handover_start_buffer
         ),
