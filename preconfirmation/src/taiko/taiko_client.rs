@@ -8,7 +8,7 @@ use alloy_provider::utils::Eip1559Estimation;
 use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
 use alloy_transport::TransportErrorKind;
 use c_kzg::BYTES_PER_BLOB;
-use k256::ecdsa::Error as EcdsaError;
+use k256::ecdsa::{Error as EcdsaError, SigningKey};
 use libdeflater::CompressionError;
 use thiserror::Error;
 use tracing::debug;
@@ -21,7 +21,7 @@ use crate::taiko::{
     anchor::create_anchor_transaction,
     contracts::{Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
     hekla::GAS_LIMIT,
-    sign::get_signed_with_golden_touch,
+    sign::get_signed,
 };
 
 #[derive(Debug, Error)]
@@ -93,6 +93,7 @@ pub struct TaikoClient {
     provider: TaikoProvider,
     base_fee_config: TaikoAnchor::BaseFeeConfig,
     chain_id: ChainId,
+    golden_touch_signing_key: SigningKey,
 }
 
 impl TaikoClient {
@@ -102,6 +103,7 @@ impl TaikoClient {
         provider: TaikoProvider,
         base_fee_config: TaikoAnchor::BaseFeeConfig,
         chain_id: ChainId,
+        golden_touch_signing_key: SigningKey,
     ) -> Self {
         Self {
             auth_client,
@@ -109,6 +111,7 @@ impl TaikoClient {
             provider,
             base_fee_config,
             chain_id,
+            golden_touch_signing_key,
         }
     }
 }
@@ -181,7 +184,7 @@ impl ITaikoClient for TaikoClient {
             anchor_call,
         );
 
-        let signed_anchor_tx = get_signed_with_golden_touch(anchor_tx.clone())?;
+        let signed_anchor_tx = get_signed(&self.golden_touch_signing_key, anchor_tx.clone())?;
         Ok(TxEnvelope::from(signed_anchor_tx))
     }
 

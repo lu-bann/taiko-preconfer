@@ -6,7 +6,12 @@ use k256::{
     elliptic_curve::FieldBytes,
 };
 
-use super::hekla::addresses::get_golden_touch_signing_key;
+use crate::encode_util::hex_decode;
+
+pub fn get_signing_key(private_key: &str) -> SigningKey {
+    let pkey_bytes = hex_decode(private_key).unwrap();
+    SigningKey::from_slice(&pkey_bytes).unwrap()
+}
 
 fn sign_with_fixed_k(
     signing_key: &SigningKey,
@@ -40,11 +45,11 @@ pub fn sign_anchor_tx(
     sign_with_fixed_k(signing_key, tx, 1u64).or(sign_with_fixed_k(signing_key, tx, 2u64))
 }
 
-pub fn get_signed_with_golden_touch(
+pub fn get_signed(
+    signing_key: &SigningKey,
     tx: TypedTransaction,
 ) -> Result<Signed<TypedTransaction>, EcdsaError> {
-    let golden_touch_signing_key = get_golden_touch_signing_key();
-    let sig = sign_anchor_tx(&golden_touch_signing_key, &tx)?;
+    let sig = sign_anchor_tx(signing_key, &tx)?;
     let signed = tx.into_signed(sig);
     signed.hash();
     Ok(signed)
@@ -54,20 +59,20 @@ pub fn get_signed_with_golden_touch(
 mod tests {
     use alloy_consensus::{TxEip1559, TxLegacy};
     use alloy_eips::eip2930::AccessList;
-    use alloy_primitives::{Bytes, FixedBytes, TxKind, U256};
+    use alloy_primitives::{Address, Bytes, FixedBytes, TxKind, U256, address};
     use alloy_sol_types::SolCall;
 
     use super::*;
     use crate::{
         encode_util::hex_decode,
-        taiko::{
-            contracts::TaikoAnchor,
-            hekla::{
-                addresses::{get_golden_touch_signing_key, get_taiko_anchor_address},
-                get_basefee_config_v2,
-            },
-        },
+        taiko::{contracts::TaikoAnchor, hekla::get_basefee_config_v2},
     };
+
+    const TEST_ANCHOR_ADDRESS: Address = address!("0x1670090000000000000000000000000000010001");
+
+    fn get_golden_touch_signing_key() -> SigningKey {
+        get_signing_key("0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
+    }
 
     fn get_test_transaction() -> TypedTransaction {
         TypedTransaction::from(TxLegacy {
@@ -75,7 +80,7 @@ mod tests {
             nonce: 0u64,
             gas_price: 0u128,
             gas_limit: 0u64,
-            to: TxKind::Call(get_taiko_anchor_address()),
+            to: TxKind::Call(TEST_ANCHOR_ADDRESS),
             value: U256::default(),
             input: Bytes::default(),
         })
@@ -98,7 +103,7 @@ mod tests {
             gas_limit: 1_000_000u64,
             max_fee_per_gas: 10_000_000u128,
             max_priority_fee_per_gas: 0u128,
-            to: TxKind::Call(get_taiko_anchor_address()),
+            to: TxKind::Call(TEST_ANCHOR_ADDRESS),
             value: U256::ZERO,
             access_list: AccessList::default(),
             input: Bytes::copy_from_slice(&anchor_call.abi_encode()),
@@ -122,7 +127,7 @@ mod tests {
             gas_limit: 1_000_000u64,
             max_fee_per_gas: 10_000_000u128,
             max_priority_fee_per_gas: 0u128,
-            to: TxKind::Call(get_taiko_anchor_address()),
+            to: TxKind::Call(TEST_ANCHOR_ADDRESS),
             value: U256::ZERO,
             access_list: AccessList::default(),
             input: Bytes::copy_from_slice(&anchor_call.abi_encode()),

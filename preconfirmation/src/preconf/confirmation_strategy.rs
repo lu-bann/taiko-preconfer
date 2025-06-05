@@ -3,7 +3,8 @@ use alloy_primitives::{Address, B256, Bytes, ChainId};
 use alloy_provider::network::TransactionBuilder as _;
 use alloy_rpc_types::TransactionRequest;
 use alloy_signer::SignerSync;
-use alloy_signer_local::PrivateKeySigner;
+use alloy_signer_local::{LocalSigner, PrivateKeySigner};
+use k256::ecdsa::SigningKey;
 use thiserror::Error;
 use tokio::join;
 use tracing::{debug, error, info};
@@ -11,9 +12,7 @@ use tracing::{debug, error, info};
 use crate::{
     compression::compress,
     taiko::{
-        contracts::taiko_wrapper::BlockParams,
-        hekla::addresses::{get_golden_touch_signing_key, get_taiko_inbox_address},
-        propose_batch::create_propose_batch_params,
+        contracts::taiko_wrapper::BlockParams, propose_batch::create_propose_batch_params,
         taiko_l1_client::ITaikoL1Client,
     },
 };
@@ -42,14 +41,24 @@ pub struct InstantConfirmationStrategy<Client: ITaikoL1Client> {
     client: Client,
     address: Address,
     chain_id: ChainId,
+    taiko_inbox: Address,
+    signer: LocalSigner<SigningKey>,
 }
 
 impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
-    pub const fn new(client: Client, address: Address, chain_id: ChainId) -> Self {
+    pub const fn new(
+        client: Client,
+        address: Address,
+        chain_id: ChainId,
+        taiko_inbox: Address,
+        signer: LocalSigner<SigningKey>,
+    ) -> Self {
         Self {
             client,
             address,
             chain_id,
+            taiko_inbox,
+            signer,
         }
     }
 
@@ -77,13 +86,11 @@ impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
         );
 
         debug!("Create tx");
-        let signer = PrivateKeySigner::from_signing_key(get_golden_touch_signing_key());
-        let taiko_inbox_address = get_taiko_inbox_address();
         let tx = TransactionRequest::default()
-            .with_to(taiko_inbox_address)
+            .with_to(self.taiko_inbox)
             .with_input(propose_batch_params.clone())
-            .with_from(signer.address());
-        let signer_str = signer.address().to_string();
+            .with_from(self.signer.address());
+        let signer_str = self.signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
             self.client.get_nonce(&signer_str),
             self.client.estimate_gas(tx),
@@ -91,22 +98,19 @@ impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
         );
         let fee_estimate = fee_estimate?;
 
-        debug!(
-            "sign tx {} {:?} {:?}",
-            taiko_inbox_address, nonce, gas_limit
-        );
+        debug!("sign tx {} {:?} {:?}", self.taiko_inbox, nonce, gas_limit);
         if gas_limit.is_err() {
             error!("Failed to estimate gas for block confirmation.");
         }
         let signed_tx = get_signed_eip1559_tx(
             self.chain_id,
-            taiko_inbox_address,
+            self.taiko_inbox,
             propose_batch_params,
             nonce?,
             gas_limit?,
             fee_estimate.max_fee_per_gas,
             fee_estimate.max_priority_fee_per_gas,
-            &signer,
+            &self.signer,
         )?;
 
         info!("signed propose batch tx {signed_tx:?}");

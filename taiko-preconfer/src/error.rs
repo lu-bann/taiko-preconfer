@@ -31,6 +31,9 @@ pub enum ApplicationError {
 
     #[error("{0}")]
     SystemTime(#[from] std::time::SystemTimeError),
+
+    #[error("{0}")]
+    FromHex(#[from] alloy_primitives::hex::FromHexError),
 }
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;
