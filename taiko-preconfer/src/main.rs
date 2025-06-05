@@ -2,6 +2,8 @@ use alloy_consensus::Header;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
+use alloy_signer::k256::ecdsa::SigningKey;
+use alloy_signer_local::LocalSigner;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     active_operator_model::ActiveOperatorModel,
@@ -20,10 +22,8 @@ use preconfirmation::{
     },
     taiko::{
         contracts::{TaikoAnchorInstance, TaikoWhitelistInstance},
-        hekla::{
-            addresses::{get_golden_touch_address, get_taiko_anchor_address},
-            get_basefee_config_v2,
-        },
+        hekla::get_basefee_config_v2,
+        sign::get_signing_key,
         taiko_client::{ITaikoClient, TaikoClient},
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
     },
@@ -190,7 +190,7 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> 
         true,
     )?);
 
-    let taiko_anchor_address = get_taiko_anchor_address();
+    let taiko_anchor_address = Address::from_str(&config.taiko_anchor_address)?;
     let provider = ProviderBuilder::new()
         .connect(&config.l2_client_url)
         .await?;
@@ -204,6 +204,7 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoClient> 
         provider,
         get_basefee_config_v2(),
         chain_id,
+        get_signing_key(&config.golden_touch_private_key),
     ))
 }
 
@@ -272,14 +273,16 @@ async fn main() -> ApplicationResult<()> {
     let l1_chain_id = taiko_l1_client.chain_id();
 
     let shared_last_l1_block_number = Arc::new(Mutex::new(0u64));
+    let preconfer_address = Address::from_str(&config.golden_touch_address)?;
     let preconfer = Preconfer::new(
         config.anchor_id_lag,
         taiko_l1_client,
         taiko_l2_client,
-        get_golden_touch_address(),
+        preconfer_address,
         SystemTimeProvider::new(),
         shared_last_l1_block_number.clone(),
         shared_header.clone(),
+        config.golden_touch_address.clone(),
     );
 
     let slots_per_epoch = 32;
@@ -287,8 +290,16 @@ async fn main() -> ApplicationResult<()> {
     let active_operator_model = ActiveOperatorModel::new(handover_slots, slots_per_epoch);
 
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
-    let confirmation_strategy =
-        InstantConfirmationStrategy::new(taiko_l1_client, preconfer.address(), l1_chain_id);
+    let wrong_signer = LocalSigner::<SigningKey>::from_signing_key(get_signing_key(
+        &config.golden_touch_private_key,
+    ));
+    let confirmation_strategy = InstantConfirmationStrategy::new(
+        taiko_l1_client,
+        preconfer.address(),
+        l1_chain_id,
+        Address::from_str(&config.taiko_inbox_address)?,
+        wrong_signer,
+    );
 
     let slot_stream = create_subslot_stream(&config)?;
     let l1_header_stream =

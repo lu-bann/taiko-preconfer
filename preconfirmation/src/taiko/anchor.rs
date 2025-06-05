@@ -30,17 +30,14 @@ pub fn create_anchor_transaction(
 #[cfg(test)]
 mod tests {
     use alloy_consensus::Transaction;
-    use alloy_primitives::{Bytes, FixedBytes};
+    use alloy_primitives::{Bytes, FixedBytes, address};
 
     use super::*;
-    use crate::{
-        encode_util::hex_decode,
-        taiko::hekla::{addresses::get_taiko_anchor_address, get_basefee_config_v2},
-    };
+    use crate::{encode_util::hex_decode, taiko::hekla::get_basefee_config_v2};
 
     #[test]
     fn test_create_anchor_transaction() {
-        let taiko_anchor_address = get_taiko_anchor_address();
+        let taiko_anchor_address = address!("0x1670090000000000000000000000000000010001");
         let my_anchor_call = TaikoAnchor::anchorV3Call {
             _anchorBlockId: 3794466,
             _anchorStateRoot: FixedBytes::from_slice(

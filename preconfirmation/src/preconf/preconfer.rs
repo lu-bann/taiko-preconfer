@@ -8,7 +8,6 @@ use tracing::{debug, info};
 use alloy_primitives::Address;
 
 use crate::preconf::{PreconferError, PreconferResult};
-use crate::taiko::hekla::addresses::GOLDEN_TOUCH_ADDRESS;
 use crate::taiko::taiko_client::ITaikoClient;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::time_provider::ITimeProvider;
@@ -46,11 +45,13 @@ pub struct Preconfer<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider
     time_provider: TimeProvider,
     last_l1_block_number: Arc<Mutex<u64>>,
     parent_header: Arc<Mutex<Option<Header>>>,
+    golden_touch_address: String,
 }
 
 impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
     Preconfer<L1Client, Taiko, TimeProvider>
 {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         anchor_id_lag: u64,
         l1_client: L1Client,
@@ -59,6 +60,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         time_provider: TimeProvider,
         last_l1_block_number: Arc<Mutex<u64>>,
         parent_header: Arc<Mutex<Option<Header>>>,
+        golden_touch_address: String,
     ) -> Self {
         Self {
             anchor_id_lag,
@@ -68,6 +70,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
             time_provider,
             last_l1_block_number,
             parent_header,
+            golden_touch_address,
         }
     }
 
@@ -96,7 +99,7 @@ impl<L1Client: ITaikoL1Client, Taiko: ITaikoClient, TimeProvider: ITimeProvider>
         let anchor_block_id = get_anchor_id(last_l1_block_number, self.anchor_id_lag);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
-            self.taiko.get_nonce(GOLDEN_TOUCH_ADDRESS),
+            self.taiko.get_nonce(&self.golden_touch_address),
             self.taiko.get_base_fee(parent_header.gas_used, now),
         );
 
@@ -260,6 +263,7 @@ mod tests {
             time_provider,
             last_l1_block_number,
             parent_header,
+            "0x0000777735367b36bC9B61C50022d9D0700dB4Ec".into(),
         );
 
         let preconfirmed_block = preconfer.build_block().await.unwrap().unwrap();
@@ -317,6 +321,7 @@ mod tests {
             time_provider,
             last_l1_block_number,
             parent_header,
+            "0x0000777735367b36bC9B61C50022d9D0700dB4Ec".into(),
         );
 
         assert!(preconfer.build_block().await.unwrap().is_none());

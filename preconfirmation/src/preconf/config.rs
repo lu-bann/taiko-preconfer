@@ -22,6 +22,11 @@ pub struct Config {
     pub l1_client_url: String,
     pub l1_ws_url: String,
     pub poll_period: Duration,
+    pub taiko_anchor_address: String,
+    pub taiko_inbox_address: String,
+    pub taiko_wrapper_address: String,
+    pub golden_touch_address: String,
+    pub golden_touch_private_key: String,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -53,6 +58,11 @@ impl Config {
             l1_client_url: env::var("L1_CLIENT_URL")?,
             l1_ws_url: env::var("L1_WS_URL")?,
             poll_period: Duration::from_millis(std::env::var("POLL_TIME_MS")?.parse()?),
+            taiko_anchor_address: std::env::var("TAIKO_ANCHOR_ADDRESS")?,
+            taiko_inbox_address: std::env::var("TAIKO_INBOX_ADDRESS")?,
+            taiko_wrapper_address: std::env::var("TAIKO_WRAPPER_ADDRESS")?,
+            golden_touch_address: std::env::var("GOLDEN_TOUCH_ADDRESS")?,
+            golden_touch_private_key: std::env::var("GOLDEN_TOUCH_PRIVATE_KEY")?,
         })
     }
 }
@@ -74,6 +84,12 @@ impl Default for Config {
             l1_client_url: String::default(),
             l1_ws_url: String::default(),
             poll_period: Duration::from_millis(50),
+            taiko_anchor_address: "0x1670090000000000000000000000000000010001".into(),
+            taiko_inbox_address: "0x79C9109b764609df928d16fC4a91e9081F7e87DB".into(),
+            taiko_wrapper_address: "0xD3f681bD6B49887A48cC9C9953720903967E9DC0".into(),
+            golden_touch_address: "0x0000777735367b36bC9B61C50022d9D0700dB4Ec".into(),
+            golden_touch_private_key:
+                "0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38".into(),
         }
     }
 }

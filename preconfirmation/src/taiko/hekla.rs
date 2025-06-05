@@ -1,5 +1,3 @@
-pub mod addresses;
-
 pub const GAS_LIMIT: u64 = 241_000_000;
 
 use crate::taiko::contracts::TaikoAnchor;
