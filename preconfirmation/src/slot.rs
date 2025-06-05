@@ -9,6 +9,7 @@ impl Slot {
         Self { epoch, slot }
     }
 }
+
 #[derive(Debug, PartialEq)]
 pub struct SubSlot {
     pub slot: Slot,
