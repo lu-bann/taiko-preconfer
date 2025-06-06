@@ -1,7 +1,5 @@
-mod dummy_client;
 mod http_client;
 mod rpc_client;
 
-pub use dummy_client::*;
 pub use http_client::*;
 pub use rpc_client::*;

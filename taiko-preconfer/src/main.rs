@@ -224,6 +224,7 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client
 
     let chain_id = provider.get_chain_id().await?;
     trace!("L2 chain id {chain_id}");
+    let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/preconfBlocks";
     Ok(TaikoL2Client::new(
         auth_client,
         taiko_anchor,
@@ -231,6 +232,7 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client
         get_basefee_config_v2(),
         chain_id,
         get_signing_key(&config.golden_touch_private_key),
+        preconfirmation_url,
     ))
 }
 
