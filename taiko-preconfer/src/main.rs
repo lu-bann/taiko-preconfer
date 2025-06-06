@@ -6,13 +6,13 @@ use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::LocalSigner;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
-    active_operator_model::ActiveOperatorModel,
     client::{RpcClient, get_alloy_auth_client, get_alloy_client},
     preconf::{
         Preconfer,
         config::Config,
         confirmation_strategy::InstantConfirmationStrategy,
-        handover_start_buffer::{TaikoSequencingMonitor, TaikoStatusMonitor},
+        sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
+        slot_model::SlotModel as PreconfirmationSlotModel,
     },
     slot::SubSlot,
     slot_model::SlotModel,
@@ -34,7 +34,7 @@ use std::{
     sync::Arc,
     time::{SystemTime, UNIX_EPOCH},
 };
-use tokio::{join, sync::Mutex};
+use tokio::{join, sync::RwLock};
 use tracing::{debug, error, info, trace};
 
 mod error;
@@ -53,18 +53,18 @@ fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
 fn set_active_operator_if_necessary(
     current_preconfer: &Address,
     preconfer_address: &Address,
-    active_operator_model: &mut ActiveOperatorModel,
+    preconfirmation_slot_model: &mut PreconfirmationSlotModel,
     subslot: &SubSlot,
 ) {
-    if !active_operator_model.can_preconfirm(&subslot.slot)
+    if !preconfirmation_slot_model.can_preconfirm(&subslot.slot)
         && current_preconfer == preconfer_address
     {
-        let epoch = if active_operator_model.within_handover_period(subslot.slot.slot) {
+        let epoch = if preconfirmation_slot_model.within_handover_period(subslot.slot.slot) {
             subslot.slot.epoch + 1
         } else {
             subslot.slot.epoch
         };
-        active_operator_model.set_next_active_epoch(epoch);
+        preconfirmation_slot_model.set_next_active_epoch(epoch);
         info!("Set active epoch to {} for slot {:?}", epoch, subslot);
     }
 }
@@ -72,12 +72,12 @@ fn set_active_operator_if_necessary(
 fn set_active_operator_for_next_period(
     next_preconfer: &Address,
     preconfer_address: &Address,
-    active_operator_model: &mut ActiveOperatorModel,
+    preconfirmation_slot_model: &mut PreconfirmationSlotModel,
     subslot: &SubSlot,
 ) {
     info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
     if next_preconfer == preconfer_address {
-        active_operator_model.set_next_active_epoch(subslot.slot.epoch + 1);
+        preconfirmation_slot_model.set_next_active_epoch(subslot.slot.epoch + 1);
         info!(
             "Set active epoch to {} for slot {:?}",
             subslot.slot.epoch + 1,
@@ -93,13 +93,13 @@ async fn trigger_from_stream<
 >(
     stream: impl Stream<Item = SubSlot>,
     preconfer: Preconfer<L1Client, L2Client, TimeProvider>,
-    active_operator_model: ActiveOperatorModel,
+    preconfirmation_slot_model: PreconfirmationSlotModel,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     whitelist: TaikoWhitelistInstance,
     confirmation_strategy: InstantConfirmationStrategy<L1Client>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
-    let mut active_operator_model = active_operator_model;
+    let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
     let preconfer_address = preconfer.address();
 
@@ -114,13 +114,13 @@ async fn trigger_from_stream<
                 set_active_operator_if_necessary(
                     &current_preconfer,
                     &preconfer_address,
-                    &mut active_operator_model,
+                    &mut preconfirmation_slot_model,
                     &subslot,
                 );
             }
 
-            if active_operator_model.can_preconfirm(&subslot.slot) {
-                if active_operator_model.is_first_preconfirmation_slot(&subslot.slot) {
+            if preconfirmation_slot_model.can_preconfirm(&subslot.slot) {
+                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot) {
                     trace!("First slot in window: {:?}", subslot.slot);
                     if log_error(
                         tokio::time::timeout(handover_timeout, sequencing_monitor.ready()).await,
@@ -149,7 +149,7 @@ async fn trigger_from_stream<
                 info!("Not active operator. Skip block building.");
             }
 
-            if active_operator_model.is_last_slot_before_handover_window(subslot.slot.slot) {
+            if preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot) {
                 if let Some(next_preconfer) = log_error(
                     whitelist.getOperatorForNextEpoch().call().await,
                     "Failed to read preconfer for next epoch",
@@ -157,7 +157,7 @@ async fn trigger_from_stream<
                     set_active_operator_for_next_period(
                         &next_preconfer,
                         &preconfer_address,
-                        &mut active_operator_model,
+                        &mut preconfirmation_slot_model,
                         &subslot,
                     );
                 }
@@ -242,32 +242,32 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
     Ok(TaikoL1Client::new(l1_provider, chain_id))
 }
 
-async fn store_header_number(header: Header, current: Arc<Mutex<u64>>) -> ApplicationResult<()> {
+async fn store_header_number(header: Header, current: Arc<RwLock<u64>>) -> ApplicationResult<()> {
     info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
     info!("{:?}", SlotModel::holesky().get_slot(header.timestamp));
-    *current.lock().await = header.number;
+    *current.write().await = header.number;
     Ok(())
 }
 
 async fn store_header(
     header: Header,
-    current: Arc<Mutex<Option<Header>>>,
+    current: Arc<RwLock<Option<Header>>>,
 ) -> ApplicationResult<()> {
     info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
-    *current.lock().await = Some(header);
+    *current.write().await = Some(header);
     Ok(())
 }
 
 fn store_header_boxed<'a>(
     header: Header,
-    current: Arc<Mutex<Option<Header>>>,
+    current: Arc<RwLock<Option<Header>>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
     to_boxed(header, current, store_header)
 }
 
 fn store_header_number_boxed<'a>(
     header: Header,
-    current: Arc<Mutex<u64>>,
+    current: Arc<RwLock<u64>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
     to_boxed(header, current, store_header_number)
 }
@@ -283,7 +283,7 @@ async fn main() -> ApplicationResult<()> {
 
     let signer =
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
-    let shared_header = Arc::new(Mutex::new(None));
+    let shared_header = Arc::new(RwLock::new(None));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let l1_provider = ProviderBuilder::new()
@@ -302,7 +302,7 @@ async fn main() -> ApplicationResult<()> {
     );
     let l1_chain_id = taiko_l1_client.chain_id();
 
-    let shared_last_l1_block_number = Arc::new(Mutex::new(0u64));
+    let shared_last_l1_block_number = Arc::new(RwLock::new(0u64));
     let preconfer_address = signer.address();
     let preconfer = Preconfer::new(
         config.anchor_id_lag,
@@ -317,7 +317,7 @@ async fn main() -> ApplicationResult<()> {
 
     let slots_per_epoch = 32;
     let handover_slots = config.handover_window_slots as u64;
-    let active_operator_model = ActiveOperatorModel::new(handover_slots, slots_per_epoch);
+    let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
 
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let confirmation_strategy = InstantConfirmationStrategy::new(
@@ -344,7 +344,7 @@ async fn main() -> ApplicationResult<()> {
         trigger_from_stream(
             slot_stream,
             preconfer,
-            active_operator_model,
+            preconfirmation_slot_model,
             taiko_sequencing_monitor,
             whitelist,
             confirmation_strategy,

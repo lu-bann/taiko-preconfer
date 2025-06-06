@@ -37,10 +37,10 @@ In the preconfer operations get triggered by streams. For this we have two strea
   * polling stream: reliable, slower, higher computational costs, provides blocks in order
 
 The preconfirmation algorithm is split into different responsibilities
-* ActiveOperatorModel: Responsible for determining if we are responsible for preconfirmation in a given slot
-* SequencingMonitor: Responsible for waiting until we are in sync with the status endpoint
-* Preconfer: Responsible for publishing preconfirmed transactions to the L2
-* ConfirmationStrategy: Responsible for confirmation of preconfirmed blocks on the L1
+* SlotModel (`preconfirmation/src/preconf/slot_model.rs`): Responsible for determining if we are responsible for preconfirmation in a given slot
+* SequencingMonitor (`preconfirmation/src/preconf/sequencing_monitor.rs`): Responsible for waiting until we are in sync with the status endpoint
+* Preconfer (`preconfirmation/src/preconf/preconfer.rs`): Responsible for publishing preconfirmed transactions to the L2
+* ConfirmationStrategy (`preconfirmation/src/preconf/confirmation_strategy.rs`): Responsible for confirmation of preconfirmed blocks on the L1
 
 ## Development
 #### git hooks
