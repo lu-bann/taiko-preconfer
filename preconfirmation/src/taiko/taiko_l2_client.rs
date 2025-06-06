@@ -13,10 +13,10 @@ use libdeflater::CompressionError;
 use thiserror::Error;
 use tracing::debug;
 
-use crate::client::{
-    DummyClient, HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs, get_nonce,
+use crate::client::{HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs, get_nonce};
+use crate::preconf::preconf_blocks::{
+    BuildPreconfBlockRequest, BuildPreconfBlockResponse, create_executable_data,
 };
-use crate::preconf::preconf_blocks::{create_executable_data, publish_preconfirmed_transactions};
 use crate::taiko::{
     anchor::create_anchor_transaction,
     contracts::{Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
@@ -43,6 +43,12 @@ pub enum TaikoL2ClientError {
 
     #[error("{0}")]
     Compression(#[from] CompressionError),
+
+    #[error("{0}")]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error("Reqwest error: code={code} error={error}")]
+    InvalidReqwest { code: u16, error: String },
 }
 
 pub type TaikoL2ClientResult<T> = Result<T, TaikoL2ClientError>;
@@ -98,6 +104,7 @@ pub struct TaikoL2Client {
     base_fee_config: TaikoAnchor::BaseFeeConfig,
     chain_id: ChainId,
     golden_touch_signing_key: SigningKey,
+    preconfirmation_url: String,
 }
 
 impl TaikoL2Client {
@@ -108,6 +115,7 @@ impl TaikoL2Client {
         base_fee_config: TaikoAnchor::BaseFeeConfig,
         chain_id: ChainId,
         golden_touch_signing_key: SigningKey,
+        preconfirmation_url: String,
     ) -> Self {
         Self {
             auth_client,
@@ -116,6 +124,7 @@ impl TaikoL2Client {
             base_fee_config,
             chain_id,
             golden_touch_signing_key,
+            preconfirmation_url,
         }
     }
 }
@@ -215,12 +224,27 @@ impl ITaikoL2Client for TaikoL2Client {
             txs,
         )?;
         debug!("executable data {executable_data:?}");
-        let dummy_client = DummyClient {};
         let end_of_sequencing = false;
-        let dummy_header =
-            publish_preconfirmed_transactions(&dummy_client, executable_data, end_of_sequencing)
-                .await?;
-        debug!("header {dummy_header:?}");
-        Ok(dummy_header)
+
+        let req = BuildPreconfBlockRequest {
+            executable_data,
+            end_of_sequencing,
+        };
+        let client = reqwest::Client::new();
+        let request_builder = client.post(&self.preconfirmation_url);
+        let response = request_builder.json(&req).send().await?;
+        let status = response.status();
+        if !status.is_success() {
+            return Err(TaikoL2ClientError::InvalidReqwest {
+                code: status.as_u16(),
+                error: response.text().await?,
+            });
+            //            info!("{}", response.text().await?);
+            //            let response = client.post(url).json(&req).send().await?;
+            //            return Err(response.error_for_status().unwrap_err().into());
+        }
+
+        let response: BuildPreconfBlockResponse = response.json().await?;
+        Ok(response.block_header)
     }
 }

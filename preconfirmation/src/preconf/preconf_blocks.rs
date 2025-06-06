@@ -4,12 +4,8 @@ use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::Header;
 use libdeflater::CompressionError;
 use serde::{Deserialize, Serialize};
-use serde_json::json;
 
-use crate::{
-    client::{HttpClient, HttpError},
-    compression::compress,
-};
+use crate::compression::compress;
 
 pub const PRECONF_BLOCKS: &str = "preconfBlocks";
 
@@ -29,8 +25,8 @@ pub struct ExecutableData {
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BuildPreconfBlockRequest {
-    executable_data: ExecutableData,
-    end_of_sequencing: bool,
+    pub executable_data: ExecutableData,
+    pub end_of_sequencing: bool,
 }
 
 #[derive(Debug, Deserialize, Serialize)]
@@ -60,21 +56,6 @@ pub fn create_executable_data(
         timestamp,
         transactions: Bytes::from(compress(txs)?),
     })
-}
-
-pub async fn publish_preconfirmed_transactions<Client: HttpClient>(
-    client: &Client,
-    executable_data: ExecutableData,
-    end_of_sequencing: bool,
-) -> Result<Header, HttpError> {
-    let request_body = json!(BuildPreconfBlockRequest {
-        executable_data,
-        end_of_sequencing
-    });
-    let response: BuildPreconfBlockResponse = client
-        .request(PRECONF_BLOCKS.to_string(), request_body)
-        .await?;
-    Ok(response.block_header)
 }
 
 pub fn pad_left<const N: usize>(bytes: &[u8]) -> Bytes {
