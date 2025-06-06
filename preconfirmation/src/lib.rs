@@ -1,4 +1,3 @@
-pub mod active_operator_model;
 pub mod blob;
 pub mod client;
 pub mod compression;

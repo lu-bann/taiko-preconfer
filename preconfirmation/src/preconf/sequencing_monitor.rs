@@ -3,7 +3,7 @@ use std::{sync::Arc, time::Duration};
 use alloy_consensus::Header;
 use alloy_primitives::B256;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
+use tokio::sync::RwLock;
 use tracing::debug;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -36,14 +36,14 @@ impl IStatusMonitor for TaikoStatusMonitor {
 }
 
 pub struct TaikoSequencingMonitor<StatusMonitor: IStatusMonitor> {
-    last_header: Arc<Mutex<Option<Header>>>,
+    last_header: Arc<RwLock<Option<Header>>>,
     poll_period: Duration,
     monitor: StatusMonitor,
 }
 
 impl<StatusMonitor: IStatusMonitor> TaikoSequencingMonitor<StatusMonitor> {
     pub const fn new(
-        last_header: Arc<Mutex<Option<Header>>>,
+        last_header: Arc<RwLock<Option<Header>>>,
         poll_period: Duration,
         monitor: StatusMonitor,
     ) -> Self {
@@ -56,7 +56,7 @@ impl<StatusMonitor: IStatusMonitor> TaikoSequencingMonitor<StatusMonitor> {
 
     pub async fn ready(&self) -> Result<(), reqwest::Error> {
         loop {
-            if let Some(last_header) = self.last_header.lock().await.clone() {
+            if let Some(last_header) = self.last_header.read().await.clone() {
                 let status: SequencingStatus = self.monitor.status().await?;
                 if is_end_of_sequencing_status(&status, &last_header) {
                     return Ok(());
@@ -76,10 +76,10 @@ fn is_end_of_sequencing_status(status: &SequencingStatus, header: &Header) -> bo
 mod tests {
     use std::{sync::Arc, time::Duration};
 
-    use tokio::sync::Mutex;
+    use tokio::sync::RwLock;
 
     use crate::{
-        preconf::handover_start_buffer::{
+        preconf::sequencing_monitor::{
             MockIStatusMonitor, SequencingStatus, TaikoSequencingMonitor,
             is_end_of_sequencing_status,
         },
@@ -131,7 +131,7 @@ mod tests {
     async fn when_no_header_is_available_then_sequencing_monitor_does_nothing() {
         let mut status_monitor = MockIStatusMonitor::new();
         status_monitor.expect_status().never();
-        let header = Arc::new(Mutex::new(None));
+        let header = Arc::new(RwLock::new(None));
         let poll_period = Duration::ZERO;
         let sequencing_monitor = TaikoSequencingMonitor::new(header, poll_period, status_monitor);
 
@@ -151,7 +151,7 @@ mod tests {
             highest_unsafe_l2_payload_block_id: block_number,
             end_of_sequencing_block_hash: header.hash_slow(),
         };
-        let header = Arc::new(Mutex::new(Some(header)));
+        let header = Arc::new(RwLock::new(Some(header)));
         let mut status_monitor = MockIStatusMonitor::new();
         status_monitor
             .expect_status()
