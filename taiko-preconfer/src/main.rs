@@ -40,9 +40,6 @@ use tracing::{debug, error, info, trace};
 mod error;
 use crate::error::ApplicationResult;
 
-const DUMMY_WHITELIST: &str = "0x90A309073b5F2f7C821e0aAc68b2c6F42F649c59";
-const BASE_SEPOLIA_RPC: &str = "https://sepolia.base.org";
-
 fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
     match result {
         Err(err) => {
@@ -289,10 +286,12 @@ async fn main() -> ApplicationResult<()> {
     let shared_header = Arc::new(Mutex::new(None));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
-    let l1_provider_base = ProviderBuilder::new().connect(BASE_SEPOLIA_RPC).await?;
+    let l1_provider = ProviderBuilder::new()
+        .connect(&config.l1_client_url)
+        .await?;
     let whitelist = TaikoWhitelistInstance::new(
-        Address::from_str(DUMMY_WHITELIST).unwrap(),
-        l1_provider_base,
+        Address::from_str(&config.taiko_whitelist_address).unwrap(),
+        l1_provider,
     );
 
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
