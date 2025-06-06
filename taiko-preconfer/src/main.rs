@@ -284,6 +284,8 @@ async fn main() -> ApplicationResult<()> {
 
     let config = get_config()?;
 
+    let signer =
+        LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
     let shared_header = Arc::new(Mutex::new(None));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
@@ -302,7 +304,7 @@ async fn main() -> ApplicationResult<()> {
     let l1_chain_id = taiko_l1_client.chain_id();
 
     let shared_last_l1_block_number = Arc::new(Mutex::new(0u64));
-    let preconfer_address = Address::from_str(&config.golden_touch_address)?;
+    let preconfer_address = signer.address();
     let preconfer = Preconfer::new(
         config.anchor_id_lag,
         taiko_l1_client,
@@ -319,15 +321,12 @@ async fn main() -> ApplicationResult<()> {
     let active_operator_model = ActiveOperatorModel::new(handover_slots, slots_per_epoch);
 
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
-    let wrong_signer = LocalSigner::<SigningKey>::from_signing_key(get_signing_key(
-        &config.golden_touch_private_key,
-    ));
     let confirmation_strategy = InstantConfirmationStrategy::new(
         taiko_l1_client,
         preconfer.address(),
         l1_chain_id,
         Address::from_str(&config.taiko_inbox_address)?,
-        wrong_signer,
+        signer,
     );
 
     let slot_stream = create_subslot_stream(&config)?;

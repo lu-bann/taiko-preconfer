@@ -4,7 +4,7 @@ use std::{
 };
 use thiserror::Error;
 
-use crate::slot_model::HOLESKY_GENESIS_TIMESTAMP;
+use crate::secret::Secret;
 
 #[derive(Debug)]
 pub struct Config {
@@ -27,6 +27,7 @@ pub struct Config {
     pub taiko_wrapper_address: String,
     pub golden_touch_address: String,
     pub golden_touch_private_key: String,
+    pub private_key: Secret,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -63,33 +64,7 @@ impl Config {
             taiko_wrapper_address: std::env::var("TAIKO_WRAPPER_ADDRESS")?,
             golden_touch_address: std::env::var("GOLDEN_TOUCH_ADDRESS")?,
             golden_touch_private_key: std::env::var("GOLDEN_TOUCH_PRIVATE_KEY")?,
+            private_key: Secret::new(std::env::var("PRIVATE_KEY")?),
         })
-    }
-}
-
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            l1_genesis_time: UNIX_EPOCH + Duration::from_secs(HOLESKY_GENESIS_TIMESTAMP),
-            l1_slot_time: Duration::from_millis(12000),
-            l1_slots_per_epoch: 32,
-            l2_slot_time: Duration::from_millis(2000),
-            handover_window_slots: 4,
-            handover_start_buffer: Duration::from_millis(6000),
-            anchor_id_lag: 4,
-            l2_client_url: String::default(),
-            l2_preconfirmation_url: String::default(),
-            l2_auth_client_url: String::default(),
-            l2_ws_url: String::default(),
-            l1_client_url: String::default(),
-            l1_ws_url: String::default(),
-            poll_period: Duration::from_millis(50),
-            taiko_anchor_address: "0x1670090000000000000000000000000000010001".into(),
-            taiko_inbox_address: "0x79C9109b764609df928d16fC4a91e9081F7e87DB".into(),
-            taiko_wrapper_address: "0xD3f681bD6B49887A48cC9C9953720903967E9DC0".into(),
-            golden_touch_address: "0x0000777735367b36bC9B61C50022d9D0700dB4Ec".into(),
-            golden_touch_private_key:
-                "0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38".into(),
-        }
     }
 }
