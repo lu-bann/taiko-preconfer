@@ -11,13 +11,13 @@ alloy-consensus = "1.0.9"
 alloy-contract = "1.0.7"
 alloy-json-rpc = "1.0.9"
 alloy-rpc-client = "1.0.7"
-alloy-eips = { version = "1.0.7", features = ["kzg"] }
+alloy-eips = { version = "1.0.9", features = ["kzg"] }
 alloy-rlp = "0.3.12"
 alloy-rpc-types = "1.0.7"
 alloy-rpc-types-engine = "1.0.9"
 alloy-signer = "1.0.9"
 alloy-signer-local = "1.0.9"
-alloy-transport = "1.0.7"
+alloy-transport = "1.0.9"
 alloy-transport-http = { version = "1.0.9", features = ["hyper", "jwt-auth"] }
 alloy-provider = { version = "1.0.7", features = [
     "reqwest", "ws"
