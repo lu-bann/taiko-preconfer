@@ -45,4 +45,4 @@ jobs:
       - name: Unit tests
         run: cargo llvm-cov --lib --fail-under-lines ${MIN_LINE_COVERAGE} --ignore-filename-regex "taiko/(contracts/.*|taiko_l1_client.rs|taiko_client.rs)|preconf/(config.rs|error.rs)|.*/mod.rs|lib.rs|test_util.rs|client/(dummy_client.rs|rpc_client.rs)"
         env:
-          MIN_LINE_COVERAGE: 77
+          MIN_LINE_COVERAGE: 78

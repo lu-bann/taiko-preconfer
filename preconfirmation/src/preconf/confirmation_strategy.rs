@@ -42,54 +42,33 @@ pub enum ConfirmationError {
 pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
 
 #[derive(Debug)]
-pub struct InstantConfirmationStrategy<Client: ITaikoL1Client> {
+pub struct ConfirmationSender<Client: ITaikoL1Client> {
     client: Client,
-    address: Address,
     chain_id: ChainId,
     taiko_inbox: Address,
     signer: LocalSigner<SigningKey>,
 }
 
-impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
+impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
     pub const fn new(
         client: Client,
-        address: Address,
         chain_id: ChainId,
         taiko_inbox: Address,
         signer: LocalSigner<SigningKey>,
     ) -> Self {
         Self {
             client,
-            address,
             chain_id,
             taiko_inbox,
             signer,
         }
     }
 
-    pub async fn confirm(&self, block: SimpleBlock) -> ConfirmationResult<()> {
-        debug!("Compression");
+    pub fn address(&self) -> Address {
+        self.signer.address()
+    }
 
-        let number_of_blobs = 0u8;
-        let parent_meta_hash = B256::ZERO;
-        let tx_bytes = Bytes::from(compress(block.txs.clone())?);
-        let block_params = vec![BlockParams {
-            numTransactions: block.txs.len() as u16,
-            timeShift: 0,
-            signalSlots: vec![],
-        }];
-        info!("Create propose batch params");
-        let propose_batch_params = create_propose_batch_params(
-            self.address,
-            tx_bytes,
-            block_params,
-            parent_meta_hash,
-            block.anchor_block_id,
-            block.last_block_timestamp,
-            self.address,
-            number_of_blobs,
-        );
-
+    pub async fn send(&self, propose_batch_params: Bytes) -> ConfirmationResult<()> {
         debug!("Create tx");
         let tx = TransactionRequest::default()
             .with_to(self.taiko_inbox)
@@ -124,31 +103,53 @@ impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
 }
 
 #[derive(Debug)]
+pub struct InstantConfirmationStrategy<Client: ITaikoL1Client> {
+    sender: ConfirmationSender<Client>,
+}
+
+impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
+    pub const fn new(sender: ConfirmationSender<Client>) -> Self {
+        Self { sender }
+    }
+
+    pub async fn confirm(&self, block: SimpleBlock) -> ConfirmationResult<()> {
+        debug!("Compression");
+
+        let number_of_blobs = 0u8;
+        let parent_meta_hash = B256::ZERO;
+        let tx_bytes = Bytes::from(compress(block.txs.clone())?);
+        let block_params = vec![BlockParams {
+            numTransactions: block.txs.len() as u16,
+            timeShift: 0,
+            signalSlots: vec![],
+        }];
+        info!("Create propose batch params");
+        let propose_batch_params = create_propose_batch_params(
+            self.sender.address(),
+            tx_bytes,
+            block_params,
+            parent_meta_hash,
+            block.anchor_block_id,
+            block.last_block_timestamp,
+            self.sender.address(),
+            number_of_blobs,
+        );
+
+        self.sender.send(propose_batch_params).await
+    }
+}
+
+#[derive(Debug)]
 pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
-    client: Client,
-    address: Address,
-    chain_id: ChainId,
-    taiko_inbox: Address,
-    signer: LocalSigner<SigningKey>,
+    sender: ConfirmationSender<Client>,
     blocks: RefCell<Vec<SimpleBlock>>,
     max_blocks: usize,
 }
 
 impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
-    pub const fn new(
-        client: Client,
-        address: Address,
-        chain_id: ChainId,
-        taiko_inbox: Address,
-        signer: LocalSigner<SigningKey>,
-        max_blocks: usize,
-    ) -> Self {
+    pub const fn new(sender: ConfirmationSender<Client>, max_blocks: usize) -> Self {
         Self {
-            client,
-            address,
-            chain_id,
-            taiko_inbox,
-            signer,
+            sender,
             blocks: RefCell::new(vec![]),
             max_blocks,
         }
@@ -181,46 +182,17 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         let tx_bytes = Bytes::from(compress(txs.clone())?);
         info!("Create propose batch params");
         let propose_batch_params = create_propose_batch_params(
-            self.address,
+            self.sender.address(),
             tx_bytes,
             block_params,
             parent_meta_hash,
             block.anchor_block_id,
             block.last_block_timestamp,
-            self.address,
+            self.sender.address(),
             number_of_blobs,
         );
 
-        debug!("Create tx");
-        let tx = TransactionRequest::default()
-            .with_to(self.taiko_inbox)
-            .with_input(propose_batch_params.clone())
-            .with_from(self.signer.address());
-        let signer_str = self.signer.address().to_string();
-        let (nonce, gas_limit, fee_estimate) = join!(
-            self.client.get_nonce(&signer_str),
-            self.client.estimate_gas(tx),
-            self.client.estimate_eip1559_fees(),
-        );
-        let fee_estimate = fee_estimate?;
-
-        debug!("sign tx {} {:?} {:?}", self.taiko_inbox, nonce, gas_limit);
-        if gas_limit.is_err() {
-            error!("Failed to estimate gas for block confirmation.");
-        }
-        let signed_tx = get_signed_eip1559_tx(
-            self.chain_id,
-            self.taiko_inbox,
-            propose_batch_params,
-            nonce?,
-            gas_limit?,
-            fee_estimate.max_fee_per_gas,
-            fee_estimate.max_priority_fee_per_gas,
-            &self.signer,
-        )?;
-
-        info!("signed propose batch tx {signed_tx:?}");
-        Ok(())
+        self.sender.send(propose_batch_params).await
     }
 }
 

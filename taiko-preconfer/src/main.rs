@@ -10,7 +10,7 @@ use preconfirmation::{
     preconf::{
         Preconfer,
         config::Config,
-        confirmation_strategy::InstantConfirmationStrategy,
+        confirmation_strategy::{ConfirmationSender, InstantConfirmationStrategy},
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
@@ -322,13 +322,12 @@ async fn main() -> ApplicationResult<()> {
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
 
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
-    let confirmation_strategy = InstantConfirmationStrategy::new(
+    let confirmation_strategy = InstantConfirmationStrategy::new(ConfirmationSender::new(
         taiko_l1_client,
-        preconfer.address(),
         l1_chain_id,
         Address::from_str(&config.taiko_inbox_address)?,
         signer,
-    );
+    ));
 
     let slot_stream = create_subslot_stream(&config)?;
     let l1_header_stream =
