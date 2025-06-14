@@ -11,7 +11,7 @@ use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::taiko::taiko_l2_client::ITaikoL2Client;
 use crate::time_provider::ITimeProvider;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct SimpleBlock {
     pub header: RpcHeader,
     pub txs: Vec<TxEnvelope>,
