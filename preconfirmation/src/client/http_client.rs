@@ -97,9 +97,10 @@ pub async fn get_mempool_txs<Client: HttpClient>(
         locals,
         max_transactions_lists
     ]);
-    client
+    let mempool_tx_lists: Option<Vec<MempoolTxList>> = client
         .request(TAIKO_TX_POOL_CONTENT.to_string(), params)
-        .await
+        .await?;
+    Ok(mempool_tx_lists.unwrap_or_default())
 }
 
 #[allow(clippy::too_many_arguments)]
