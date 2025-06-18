@@ -1,5 +1,6 @@
 use std::fmt::{Debug, Formatter, Result as FmtResult};
 
+#[derive(Clone)]
 pub struct Secret {
     secret: String,
 }
@@ -13,6 +14,10 @@ impl Secret {
 impl Secret {
     pub fn read(&self) -> String {
         self.secret.clone()
+    }
+
+    pub fn read_slice(&self) -> &str {
+        self.secret.as_ref()
     }
 }
 
@@ -36,9 +41,12 @@ mod tests {
 
     #[test]
     fn secret_can_be_read_explicitly() {
-        let secret_str = "secret".to_string();
+        let secret_raw_str = "secret";
+        let secret_str = secret_raw_str.to_string();
         let secret = Secret::new(secret_str.clone());
         let secret_real = secret.read();
         assert_eq!(secret_real, secret_str);
+        let secret_real_raw = secret.read_slice();
+        assert_eq!(secret_real_raw, secret_raw_str);
     }
 }

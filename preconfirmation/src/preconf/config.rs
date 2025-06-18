@@ -29,6 +29,7 @@ pub struct Config {
     pub golden_touch_address: String,
     pub golden_touch_private_key: String,
     pub private_key: Secret,
+    pub jwt_secret: Secret,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -67,6 +68,7 @@ impl Config {
             golden_touch_address: std::env::var("GOLDEN_TOUCH_ADDRESS")?,
             golden_touch_private_key: std::env::var("GOLDEN_TOUCH_PRIVATE_KEY")?,
             private_key: Secret::new(std::env::var("PRIVATE_KEY")?),
+            jwt_secret: Secret::new(std::env::var("JWT_SECRET")?),
         })
     }
 }

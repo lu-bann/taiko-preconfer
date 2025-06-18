@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
@@ -6,6 +8,7 @@ use alloy_primitives::{Address, ChainId, ruint::FromUintError};
 use alloy_provider::Provider;
 use alloy_provider::utils::Eip1559Estimation;
 use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
+use alloy_rpc_types_engine::Claims;
 use alloy_transport::TransportErrorKind;
 use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::{Error as EcdsaError, SigningKey};
@@ -14,9 +17,11 @@ use thiserror::Error;
 use tracing::debug;
 
 use crate::client::{HttpError, RpcClient, flatten_mempool_txs, get_mempool_txs, get_nonce};
+use crate::encode_util::hex_decode;
 use crate::preconf::preconf_blocks::{
     BuildPreconfBlockRequest, BuildPreconfBlockResponse, create_executable_data,
 };
+use crate::secret::Secret;
 use crate::taiko::{
     anchor::create_anchor_transaction,
     contracts::{Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
@@ -28,6 +33,9 @@ use crate::taiko::{
 pub enum TaikoL2ClientError {
     #[error("{0}")]
     Rpc(#[from] RpcError<TransportErrorKind>),
+
+    #[error("{0}")]
+    FromHex(#[from] hex::FromHexError),
 
     #[error("{0}")]
     Http(#[from] HttpError),
@@ -46,6 +54,9 @@ pub enum TaikoL2ClientError {
 
     #[error("{0}")]
     Reqwest(#[from] reqwest::Error),
+
+    #[error("{0}")]
+    JsonWebToken(#[from] jsonwebtoken::errors::Error),
 
     #[error("Reqwest error: code={code} error={error}")]
     InvalidReqwest { code: u16, error: String },
@@ -105,9 +116,11 @@ pub struct TaikoL2Client {
     chain_id: ChainId,
     golden_touch_signing_key: SigningKey,
     preconfirmation_url: String,
+    jwt_secret: Secret,
 }
 
 impl TaikoL2Client {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         auth_client: RpcClient,
         taiko_anchor: TaikoAnchorInstance,
@@ -116,6 +129,7 @@ impl TaikoL2Client {
         chain_id: ChainId,
         golden_touch_signing_key: SigningKey,
         preconfirmation_url: String,
+        jwt_secret: Secret,
     ) -> Self {
         Self {
             auth_client,
@@ -125,6 +139,7 @@ impl TaikoL2Client {
             chain_id,
             golden_touch_signing_key,
             preconfirmation_url,
+            jwt_secret,
         }
     }
 }
@@ -231,7 +246,11 @@ impl ITaikoL2Client for TaikoL2Client {
             end_of_sequencing,
         };
         let client = reqwest::Client::new();
-        let request_builder = client.post(&self.preconfirmation_url);
+
+        let jwt_secret = self.get_jwt_secret()?;
+        let request_builder = client
+            .post(&self.preconfirmation_url)
+            .header("Authorization", jwt_secret);
         let response = request_builder.json(&req).send().await?;
         let status = response.status();
         if !status.is_success() {
@@ -239,12 +258,29 @@ impl ITaikoL2Client for TaikoL2Client {
                 code: status.as_u16(),
                 error: response.text().await?,
             });
-            //            info!("{}", response.text().await?);
-            //            let response = client.post(url).json(&req).send().await?;
-            //            return Err(response.error_for_status().unwrap_err().into());
         }
 
         let response: BuildPreconfBlockResponse = response.json().await?;
         Ok(response.block_header)
+    }
+}
+
+impl TaikoL2Client {
+    fn get_jwt_secret(&self) -> TaikoL2ClientResult<String> {
+        let secret_bytes = hex_decode(self.jwt_secret.read_slice())?;
+        let now = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let claims = Claims {
+            iat: now,
+            exp: Some(now + 3600),
+        };
+        let jwt_token = jsonwebtoken::encode(
+            &jsonwebtoken::Header::new(jsonwebtoken::Algorithm::HS256),
+            &claims,
+            &jsonwebtoken::EncodingKey::from_secret(&secret_bytes),
+        )?;
+        Ok(format!("Bearer {}", jwt_token))
     }
 }
