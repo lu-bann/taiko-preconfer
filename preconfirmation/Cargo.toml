@@ -24,6 +24,7 @@ c-kzg = { workspace = true }
 futures = { workspace = true }
 hex = { workspace = true }
 http-body-util = { workspace = true }
+jsonwebtoken = { workspace = true }
 k256 = { workspace = true }
 libdeflater = { workspace = true }
 reqwest = { workspace = true }

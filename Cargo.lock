@@ -2598,6 +2598,7 @@ dependencies = [
  "futures",
  "hex",
  "http-body-util",
+ "jsonwebtoken",
  "k256",
  "libdeflater",
  "mockall",

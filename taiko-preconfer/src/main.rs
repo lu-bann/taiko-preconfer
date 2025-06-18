@@ -207,9 +207,7 @@ fn get_config() -> ApplicationResult<Config> {
 }
 
 async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client> {
-    let jwt_secret =
-        JwtSecret::from_hex("654c8ed1da58823433eb6285234435ed52418fa9141548bca1403cc0ad519432")
-            .unwrap();
+    let jwt_secret = JwtSecret::from_hex(config.jwt_secret.read()).unwrap();
     let auth_client = RpcClient::new(get_alloy_auth_client(
         &config.l2_auth_client_url,
         jwt_secret,
@@ -233,6 +231,7 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client
         chain_id,
         get_signing_key(&config.golden_touch_private_key),
         preconfirmation_url,
+        config.jwt_secret.clone(),
     ))
 }
 
@@ -306,6 +305,7 @@ async fn main() -> ApplicationResult<()> {
 
     let shared_last_l1_block_number = Arc::new(RwLock::new(0u64));
     let preconfer_address = signer.address();
+    info!("Preconfer address: {}", preconfer_address);
     let preconfer = Preconfer::new(
         config.anchor_id_lag,
         taiko_l1_client,
