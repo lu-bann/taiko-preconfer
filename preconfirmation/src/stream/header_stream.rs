@@ -12,10 +12,10 @@ pub fn get_header_stream(
     client_stream: impl Stream<Item = Header>,
     stream: impl Stream<Item = Header>,
 ) -> impl Stream<Item = Header> {
-    let mut last_header_number = 0u64;
+    let mut last_header_number = -1_i128;
     stream.merge(client_stream).filter(move |header: &Header| {
-        if header.number > last_header_number {
-            last_header_number = header.number;
+        if header.number as i128 > last_header_number {
+            last_header_number = header.number as i128;
             true
         } else {
             false
@@ -28,11 +28,11 @@ pub fn get_polling_stream(
     polling_duration: Duration,
 ) -> impl Stream<Item = Header> {
     stream! {
-        let mut last_header_number = 0u64;
+        let mut last_header_number = -1_i128;
         loop {
             if let Ok(header) =  get_latest_header(&client).await {
-                if header.number > last_header_number {
-                    last_header_number = header.number;
+                if header.number as i128 > last_header_number {
+                    last_header_number = header.number as i128;
                     yield header;
                 }
             }
