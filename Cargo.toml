@@ -16,7 +16,7 @@ alloy-provider = { version = "1.0.9", features = [
     "reqwest", "ws"
 ], default-features = false }
 alloy-rlp = "0.3.12"
-alloy-rpc-client = "1.0.9"
+alloy-rpc-client = "1.0.12"
 alloy-rpc-types = "1.0.12"
 alloy-rpc-types-engine = "1.0.9"
 alloy-signer = "1.0.12"
