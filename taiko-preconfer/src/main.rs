@@ -248,16 +248,25 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
     Ok(TaikoL1Client::new(l1_provider, chain_id))
 }
 
-async fn store_header_l1(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
-    info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
+async fn store_header(
+    header: Header,
+    current: Arc<RwLock<Header>>,
+    msg: String,
+) -> ApplicationResult<()> {
+    info!(
+        "{msg} 🗣 #{:<10} timestamp={}",
+        header.number, header.timestamp
+    );
     *current.write().await = header;
     Ok(())
 }
 
+async fn store_header_l1(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
+    store_header(header, current, "L1".to_string()).await
+}
+
 async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
-    info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
-    *current.write().await = header;
-    Ok(())
+    store_header(header, current, "L2".to_string()).await
 }
 
 fn store_header_boxed_l1<'a>(
@@ -337,8 +346,16 @@ async fn main() -> ApplicationResult<()> {
         create_header_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
 
     let _ = join!(
-        stream_headers(l1_header_stream, store_header_boxed_l1, shared_last_l1_header),
-        stream_headers(l2_header_stream, store_header_boxed_l2, shared_last_l2_header),
+        stream_headers(
+            l1_header_stream,
+            store_header_boxed_l1,
+            shared_last_l1_header
+        ),
+        stream_headers(
+            l2_header_stream,
+            store_header_boxed_l2,
+            shared_last_l2_header
+        ),
         trigger_from_stream(
             slot_stream,
             preconfer,

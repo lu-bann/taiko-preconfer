@@ -10,6 +10,7 @@ use alloy_provider::{
 };
 use alloy_rpc_types::TransactionRequest;
 use thiserror::Error;
+use tracing::info;
 
 use crate::client::{get_header_by_id, get_latest_header, get_nonce};
 
@@ -103,13 +104,15 @@ impl ITaikoL1Client for TaikoL1Client {
     }
 
     async fn send(&self, tx: TransactionRequest) -> TaikoL1ClientResult<()> {
-        self.provider
+        let receipt = self
+            .provider
             .send_transaction(tx)
             .await?
             .with_required_confirmations(2)
             .with_timeout(Some(std::time::Duration::from_secs(60)))
-            .watch()
+            .get_receipt()
             .await?;
+        info!("receipt: {receipt:?}");
         Ok(())
     }
 }
