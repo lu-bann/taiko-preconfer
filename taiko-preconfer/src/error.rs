@@ -34,6 +34,9 @@ pub enum ApplicationError {
 
     #[error("{0}")]
     FromHex(#[from] alloy_primitives::hex::FromHexError),
+
+    #[error("{0}")]
+    Signer(#[from] alloy_signer_local::LocalSignerError),
 }
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;

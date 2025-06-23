@@ -1,9 +1,10 @@
 use alloy_consensus::Header;
+use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer::k256::ecdsa::SigningKey;
-use alloy_signer_local::LocalSigner;
+use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     client::{RpcClient, get_alloy_auth_client, get_alloy_client},
@@ -236,41 +237,28 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client
 }
 
 async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client> {
+    let signer = PrivateKeySigner::from_str(&config.private_key.read())?;
+    let wallet = EthereumWallet::from(signer);
+
     let l1_provider = ProviderBuilder::new()
+        .wallet(wallet)
         .connect(&config.l1_client_url)
         .await?;
     let chain_id = l1_provider.get_chain_id().await?;
     Ok(TaikoL1Client::new(l1_provider, chain_id))
 }
 
-async fn store_header_number(header: Header, current: Arc<RwLock<u64>>) -> ApplicationResult<()> {
-    info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
-    info!("{:?}", SlotModel::holesky().get_slot(header.timestamp));
-    *current.write().await = header.number;
-    Ok(())
-}
-
-async fn store_header(
-    header: Header,
-    current: Arc<RwLock<Option<Header>>>,
-) -> ApplicationResult<()> {
+async fn store_header(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
     info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
-    *current.write().await = Some(header);
+    *current.write().await = header;
     Ok(())
 }
 
 fn store_header_boxed<'a>(
     header: Header,
-    current: Arc<RwLock<Option<Header>>>,
+    current: Arc<RwLock<Header>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
     to_boxed(header, current, store_header)
-}
-
-fn store_header_number_boxed<'a>(
-    header: Header,
-    current: Arc<RwLock<u64>>,
-) -> BoxFuture<'a, ApplicationResult<()>> {
-    to_boxed(header, current, store_header_number)
 }
 
 #[tokio::main]
@@ -284,8 +272,9 @@ async fn main() -> ApplicationResult<()> {
 
     let signer =
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
-    let shared_header = Arc::new(RwLock::new(None));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
+    let latest_l2_header = taiko_l2_client.get_latest_header().await?;
+    let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let l1_provider = ProviderBuilder::new()
         .connect(&config.l1_client_url)
@@ -297,23 +286,23 @@ async fn main() -> ApplicationResult<()> {
 
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
     let taiko_sequencing_monitor = TaikoSequencingMonitor::new(
-        shared_header.clone(),
+        shared_last_l2_header.clone(),
         config.poll_period,
         TaikoStatusMonitor::new(preconfirmation_url),
     );
-    let l1_chain_id = taiko_l1_client.chain_id();
 
-    let shared_last_l1_block_number = Arc::new(RwLock::new(0u64));
+    let latest_l1_header = taiko_l1_client.get_latest_header().await?;
+    let shared_last_l1_header = Arc::new(RwLock::new(latest_l1_header));
     let preconfer_address = signer.address();
     info!("Preconfer address: {}", preconfer_address);
     let preconfer = Preconfer::new(
         config.anchor_id_lag,
-        taiko_l1_client,
+        taiko_l1_client.clone(),
         taiko_l2_client,
         preconfer_address,
         SystemTimeProvider::new(),
-        shared_last_l1_block_number.clone(),
-        shared_header.clone(),
+        shared_last_l1_header.clone(),
+        shared_last_l2_header.clone(),
         config.golden_touch_address.clone(),
     );
 
@@ -321,10 +310,8 @@ async fn main() -> ApplicationResult<()> {
     let handover_slots = config.handover_window_slots as u64;
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
 
-    let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let confirmation_strategy = InstantConfirmationStrategy::new(ConfirmationSender::new(
         taiko_l1_client,
-        l1_chain_id,
         Address::from_str(&config.taiko_inbox_address)?,
         signer,
     ));
@@ -336,12 +323,8 @@ async fn main() -> ApplicationResult<()> {
         create_header_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
 
     let _ = join!(
-        stream_headers(
-            l1_header_stream,
-            store_header_number_boxed,
-            shared_last_l1_block_number
-        ),
-        stream_headers(l2_header_stream, store_header_boxed, shared_header),
+        stream_headers(l1_header_stream, store_header_boxed, shared_last_l1_header),
+        stream_headers(l2_header_stream, store_header_boxed, shared_last_l2_header),
         trigger_from_stream(
             slot_stream,
             preconfer,

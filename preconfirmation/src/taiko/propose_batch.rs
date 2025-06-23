@@ -7,7 +7,7 @@ use crate::taiko::contracts::taiko_wrapper::{BatchParams, BlobParams, BlockParam
 #[allow(clippy::too_many_arguments)]
 pub fn create_propose_batch_params(
     proposer: Address,
-    txs: Bytes,
+    tx_bytes: usize,
     blocks: Vec<BlockParams>,
     parent_meta_hash: B256,
     anchor_block_id: u64,
@@ -27,7 +27,7 @@ pub fn create_propose_batch_params(
             firstBlobIndex: 0,
             numBlobs: number_of_blobs,
             byteOffset: 0,
-            byteSize: txs.len() as u32,
+            byteSize: tx_bytes as u32,
             createdIn: 0,
         },
         blocks,

@@ -1,13 +1,28 @@
 use alloy_consensus::Header;
+use alloy_network::EthereumWallet;
 use alloy_primitives::ChainId;
-use alloy_provider::{Provider, utils::Eip1559Estimation};
+use alloy_provider::{
+    Identity, Provider, RootProvider,
+    fillers::{
+        BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
+    },
+    utils::Eip1559Estimation,
+};
 use alloy_rpc_types::TransactionRequest;
 use thiserror::Error;
 
-use crate::{
-    client::{get_header_by_id, get_nonce},
-    taiko::contracts::Provider as TaikoProvider,
-};
+use crate::client::{get_header_by_id, get_latest_header, get_nonce};
+
+type TaikoProvider = FillProvider<
+    JoinFill<
+        JoinFill<
+            Identity,
+            JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+        >,
+        WalletFiller<EthereumWallet>,
+    >,
+    RootProvider,
+>;
 
 #[derive(Debug, Error)]
 pub enum TaikoL1ClientError {
@@ -22,6 +37,9 @@ pub enum TaikoL1ClientError {
 
     #[error("{0}")]
     FromUInt128(#[from] alloy_primitives::ruint::FromUintError<u128>),
+
+    #[error("{0}")]
+    PendingTransaction(#[from] alloy_provider::PendingTransactionError),
 }
 
 pub type TaikoL1ClientResult<T> = Result<T, TaikoL1ClientError>;
@@ -32,6 +50,8 @@ pub trait ITaikoL1Client {
 
     fn get_header(&self, id: u64) -> impl Future<Output = TaikoL1ClientResult<Header>>;
 
+    fn get_latest_header(&self) -> impl Future<Output = TaikoL1ClientResult<Header>>;
+
     fn estimate_gas(
         &self,
         tx: TransactionRequest,
@@ -41,8 +61,11 @@ pub trait ITaikoL1Client {
     -> impl Future<Output = TaikoL1ClientResult<Eip1559Estimation>>;
 
     fn chain_id(&self) -> ChainId;
+
+    fn send(&self, tx: TransactionRequest) -> impl Future<Output = TaikoL1ClientResult<()>>;
 }
 
+#[derive(Debug, Clone)]
 pub struct TaikoL1Client {
     provider: TaikoProvider,
     chain_id: ChainId,
@@ -63,6 +86,10 @@ impl ITaikoL1Client for TaikoL1Client {
         Ok(get_header_by_id(self.provider.client(), id).await?)
     }
 
+    async fn get_latest_header(&self) -> TaikoL1ClientResult<Header> {
+        Ok(get_latest_header(self.provider.client()).await?)
+    }
+
     async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoL1ClientResult<u64> {
         Ok(self.provider.estimate_gas(tx).await?)
     }
@@ -73,5 +100,16 @@ impl ITaikoL1Client for TaikoL1Client {
 
     fn chain_id(&self) -> ChainId {
         self.chain_id
+    }
+
+    async fn send(&self, tx: TransactionRequest) -> TaikoL1ClientResult<()> {
+        self.provider
+            .send_transaction(tx)
+            .await?
+            .with_required_confirmations(2)
+            .with_timeout(Some(std::time::Duration::from_secs(60)))
+            .watch()
+            .await?;
+        Ok(())
     }
 }

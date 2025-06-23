@@ -22,9 +22,6 @@ pub enum PreconferError {
 
     #[error("{0}")]
     TryLock(#[from] tokio::sync::TryLockError),
-
-    #[error("Missing parent header")]
-    MissingParentHeader,
 }
 
 pub type PreconferResult<T> = Result<T, PreconferError>;
