@@ -47,7 +47,7 @@ pub struct Preconfer<
     address: Address,
     time_provider: TimeProvider,
     last_l1_header: Arc<RwLock<Header>>,
-    parent_header: Arc<RwLock<Header>>,
+    last_l2_header: Arc<RwLock<Header>>,
     golden_touch_address: String,
 }
 
@@ -62,7 +62,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         address: Address,
         time_provider: TimeProvider,
         last_l1_header: Arc<RwLock<Header>>,
-        parent_header: Arc<RwLock<Header>>,
+        last_l2_header: Arc<RwLock<Header>>,
         golden_touch_address: String,
     ) -> Self {
         Self {
@@ -72,7 +72,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
             address,
             time_provider,
             last_l1_header,
-            parent_header,
+            last_l2_header,
             golden_touch_address,
         }
     }
@@ -82,19 +82,19 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
     }
 
     pub async fn build_block(&self) -> PreconferResult<Option<SimpleBlock>> {
-        let parent_header = self.parent_header.read().await.clone();
-        trace!("build_block: parent_header={parent_header:?}");
+        let last_l2_header = self.last_l2_header.read().await.clone();
+        trace!("build_block: last_l2_header={last_l2_header:?}");
 
-        info!("Start preconfirming block: #{}", parent_header.number + 1,);
+        info!("Start preconfirming block: #{}", last_l2_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
-        debug!("now={} parent={}", now, parent_header.timestamp);
+        debug!("now={} parent={}", now, last_l2_header.timestamp);
 
         let last_l1_header = self.last_l1_header.read().await.clone();
         let anchor_block_id = get_anchor_id(last_l1_header.number, self.anchor_id_lag);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
             self.l2_client.get_nonce(&self.golden_touch_address),
-            self.l2_client.get_base_fee(parent_header.gas_used, now),
+            self.l2_client.get_base_fee(last_l2_header.gas_used, now),
         );
 
         let base_fee: u128 = base_fee?;
@@ -113,7 +113,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         let anchor_tx = self.l2_client.get_signed_anchor_tx(
             anchor_block_id,
             anchor_header?.state_root,
-            parent_header.gas_used as u32,
+            last_l2_header.gas_used as u32,
             golden_touch_nonce?,
             base_fee,
         )?;
@@ -126,7 +126,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
                 self.address,
                 base_fee as u64,
                 now, // after await, recompute?
-                &parent_header,
+                &last_l2_header,
                 txs.clone(),
             )
             .await?;
@@ -229,7 +229,7 @@ mod tests {
         let preconfer_address = Address::random();
 
         let anchor_id_lag = 4u64;
-        let parent_header = Arc::new(RwLock::new(get_header(
+        let last_l2_header = Arc::new(RwLock::new(get_header(
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
         )));
@@ -245,7 +245,7 @@ mod tests {
             preconfer_address,
             time_provider,
             last_l1_header,
-            parent_header,
+            last_l2_header,
             golden_touch_addr,
         );
 
@@ -291,7 +291,7 @@ mod tests {
         let preconfer_address = Address::random();
 
         let anchor_id_lag = 4u64;
-        let parent_header = Arc::new(RwLock::new(get_header(
+        let last_l2_header = Arc::new(RwLock::new(get_header(
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
         )));
@@ -307,7 +307,7 @@ mod tests {
             preconfer_address,
             time_provider,
             last_l1_header,
-            parent_header,
+            last_l2_header,
             golden_touch_addr,
         );
 
