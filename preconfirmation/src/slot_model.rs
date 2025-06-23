@@ -4,7 +4,7 @@ use alloy_eips::merge::{EPOCH_DURATION, SLOT_DURATION};
 
 use crate::slot::Slot;
 
-pub const HOLESKY_GENESIS_TIMESTAMP: u64 = 1_695_902_100;
+pub const HOLESKY_GENESIS_TIMESTAMP: u64 = 1_695_902_400;
 pub const TAIKO_HOLESKY_GENESIS_TIMESTAMP: u64 = 1_711_697_940;
 
 #[derive(Debug)]
