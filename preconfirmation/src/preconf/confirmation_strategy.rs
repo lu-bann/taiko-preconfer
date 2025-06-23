@@ -1,11 +1,9 @@
 use std::{cell::RefCell, num::TryFromIntError};
 
-use alloy_consensus::{SignableTransaction, TxEip1559, TxEnvelope};
-use alloy_primitives::{Address, B256, Bytes, ChainId};
+use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::network::TransactionBuilder as _;
 use alloy_rpc_types::TransactionRequest;
-use alloy_signer::SignerSync;
-use alloy_signer_local::{LocalSigner, PrivateKeySigner};
+use alloy_signer_local::LocalSigner;
 use k256::ecdsa::SigningKey;
 use thiserror::Error;
 use tokio::join;
@@ -14,7 +12,8 @@ use tracing::{debug, error, info};
 use crate::{
     compression::compress,
     taiko::{
-        contracts::taiko_wrapper::BlockParams, propose_batch::create_propose_batch_params,
+        contracts::taiko_wrapper::{BlockParams, TaikoWrapper},
+        propose_batch::create_propose_batch_params,
         taiko_l1_client::ITaikoL1Client,
     },
 };
@@ -44,7 +43,6 @@ pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
 #[derive(Debug)]
 pub struct ConfirmationSender<Client: ITaikoL1Client> {
     client: Client,
-    chain_id: ChainId,
     taiko_inbox: Address,
     signer: LocalSigner<SigningKey>,
 }
@@ -52,13 +50,11 @@ pub struct ConfirmationSender<Client: ITaikoL1Client> {
 impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
     pub const fn new(
         client: Client,
-        chain_id: ChainId,
         taiko_inbox: Address,
         signer: LocalSigner<SigningKey>,
     ) -> Self {
         Self {
             client,
-            chain_id,
             taiko_inbox,
             signer,
         }
@@ -68,36 +64,32 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
         self.signer.address()
     }
 
-    pub async fn send(&self, propose_batch_params: Bytes) -> ConfirmationResult<()> {
+    pub async fn send(&self, tx: TransactionRequest) -> ConfirmationResult<()> {
         debug!("Create tx");
-        let tx = TransactionRequest::default()
-            .with_to(self.taiko_inbox)
-            .with_input(propose_batch_params.clone())
-            .with_from(self.signer.address());
+        let tx = tx
+            .with_from(self.signer.address())
+            .with_to(self.taiko_inbox);
         let signer_str = self.signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
             self.client.get_nonce(&signer_str),
-            self.client.estimate_gas(tx),
+            self.client.estimate_gas(tx.clone()),
             self.client.estimate_eip1559_fees(),
         );
+
         let fee_estimate = fee_estimate?;
 
-        debug!("sign tx {} {:?} {:?}", self.taiko_inbox, nonce, gas_limit);
+        info!("sign tx {} {:?} {:?}", self.taiko_inbox, nonce, gas_limit);
         if gas_limit.is_err() {
             error!("Failed to estimate gas for block confirmation.");
         }
-        let signed_tx = get_signed_eip1559_tx(
-            self.chain_id,
-            self.taiko_inbox,
-            propose_batch_params,
-            nonce?,
-            gas_limit?,
-            fee_estimate.max_fee_per_gas,
-            fee_estimate.max_priority_fee_per_gas,
-            &self.signer,
-        )?;
+        let tx = tx
+            .with_gas_limit(gas_limit?)
+            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas)
+            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas)
+            .nonce(nonce?);
 
-        info!("signed propose batch tx {signed_tx:?}");
+        info!("propose batch tx {tx:?}");
+        self.client.send(tx).await?;
         Ok(())
     }
 }
@@ -126,7 +118,7 @@ impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
         info!("Create propose batch params");
         let propose_batch_params = create_propose_batch_params(
             self.sender.address(),
-            tx_bytes,
+            tx_bytes.len(),
             block_params,
             parent_meta_hash,
             block.anchor_block_id,
@@ -135,7 +127,15 @@ impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
             number_of_blobs,
         );
 
-        self.sender.send(propose_batch_params).await
+        println!("params");
+        println!("{:?}", propose_batch_params);
+        println!("tx_list");
+        println!("{:?}", tx_bytes);
+        let tx = TransactionRequest::default().with_call(&TaikoWrapper::proposeBatchCall {
+            _params: propose_batch_params,
+            _txList: tx_bytes,
+        });
+        self.sender.send(tx).await
     }
 }
 
@@ -183,7 +183,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         info!("Create propose batch params");
         let propose_batch_params = create_propose_batch_params(
             self.sender.address(),
-            tx_bytes,
+            tx_bytes.len(),
             block_params,
             parent_meta_hash,
             block.anchor_block_id,
@@ -192,35 +192,14 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             number_of_blobs,
         );
 
-        self.sender.send(propose_batch_params).await
+        println!("params");
+        println!("{:?}", propose_batch_params);
+        println!("tx_list");
+        println!("{:?}", tx_bytes);
+        let tx = TransactionRequest::default().with_call(&TaikoWrapper::proposeBatchCall {
+            _params: propose_batch_params,
+            _txList: tx_bytes,
+        });
+        self.sender.send(tx).await
     }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn get_signed_eip1559_tx(
-    chain_id: ChainId,
-    to: Address,
-    input: Bytes,
-    nonce: u64,
-    gas_limit: u64,
-    max_fee_per_gas: u128,
-    max_priority_fee_per_gas: u128,
-    signer: &PrivateKeySigner,
-) -> ConfirmationResult<TxEnvelope> {
-    let tx = TxEip1559 {
-        chain_id,
-        nonce,
-        gas_limit,
-        max_fee_per_gas,
-        max_priority_fee_per_gas,
-        to: to.into(),
-        input,
-        value: Default::default(),
-        access_list: Default::default(),
-    };
-
-    let sig = signer.sign_hash_sync(&tx.signature_hash())?;
-    let signed = tx.into_signed(sig);
-
-    Ok(signed.into())
 }

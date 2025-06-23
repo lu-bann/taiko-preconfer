@@ -6,7 +6,7 @@ use tracing::{debug, info, trace};
 
 use alloy_primitives::Address;
 
-use crate::preconf::{PreconferError, PreconferResult};
+use crate::preconf::PreconferResult;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::taiko::taiko_l2_client::ITaikoL2Client;
 use crate::time_provider::ITimeProvider;
@@ -46,8 +46,8 @@ pub struct Preconfer<
     l2_client: L2Client,
     address: Address,
     time_provider: TimeProvider,
-    last_l1_block_number: Arc<RwLock<u64>>,
-    parent_header: Arc<RwLock<Option<Header>>>,
+    last_l1_header: Arc<RwLock<Header>>,
+    parent_header: Arc<RwLock<Header>>,
     golden_touch_address: String,
 }
 
@@ -61,8 +61,8 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         l2_client: L2Client,
         address: Address,
         time_provider: TimeProvider,
-        last_l1_block_number: Arc<RwLock<u64>>,
-        parent_header: Arc<RwLock<Option<Header>>>,
+        last_l1_header: Arc<RwLock<Header>>,
+        parent_header: Arc<RwLock<Header>>,
         golden_touch_address: String,
     ) -> Self {
         Self {
@@ -71,7 +71,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
             l2_client,
             address,
             time_provider,
-            last_l1_block_number,
+            last_l1_header,
             parent_header,
             golden_touch_address,
         }
@@ -83,18 +83,14 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
 
     pub async fn build_block(&self) -> PreconferResult<Option<SimpleBlock>> {
         let parent_header = self.parent_header.read().await.clone();
-        if parent_header.is_none() {
-            return Err(PreconferError::MissingParentHeader);
-        }
-        let parent_header = parent_header.unwrap();
         trace!("build_block: parent_header={parent_header:?}");
 
         info!("Start preconfirming block: #{}", parent_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
         debug!("now={} parent={}", now, parent_header.timestamp);
 
-        let last_l1_block_number = *self.last_l1_block_number.read().await;
-        let anchor_block_id = get_anchor_id(last_l1_block_number, self.anchor_id_lag);
+        let last_l1_header = self.last_l1_header.read().await.clone();
+        let anchor_block_id = get_anchor_id(last_l1_header.number, self.anchor_id_lag);
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
             self.l2_client.get_nonce(&self.golden_touch_address),
@@ -140,7 +136,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
             header,
             txs,
             anchor_block_id,
-            parent_header.timestamp,
+            last_l1_header.timestamp,
         )))
     }
 }
@@ -233,11 +229,14 @@ mod tests {
         let preconfer_address = Address::random();
 
         let anchor_id_lag = 4u64;
-        let parent_header = Arc::new(RwLock::new(Some(get_header(
+        let parent_header = Arc::new(RwLock::new(get_header(
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
-        ))));
-        let last_l1_block_number = Arc::new(RwLock::new(DUMMY_BLOCK_NUMBER));
+        )));
+        let last_l1_header = Arc::new(RwLock::new(get_header(
+            DUMMY_BLOCK_NUMBER,
+            last_block_timestamp,
+        )));
         let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = Preconfer::new(
             anchor_id_lag,
@@ -245,7 +244,7 @@ mod tests {
             l2_client,
             preconfer_address,
             time_provider,
-            last_l1_block_number,
+            last_l1_header,
             parent_header,
             golden_touch_addr,
         );
@@ -292,11 +291,14 @@ mod tests {
         let preconfer_address = Address::random();
 
         let anchor_id_lag = 4u64;
-        let parent_header = Arc::new(RwLock::new(Some(get_header(
+        let parent_header = Arc::new(RwLock::new(get_header(
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
-        ))));
-        let last_l1_block_number = Arc::new(RwLock::new(DUMMY_BLOCK_NUMBER));
+        )));
+        let last_l1_header = Arc::new(RwLock::new(get_header(
+            DUMMY_BLOCK_NUMBER,
+            last_block_timestamp,
+        )));
         let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = Preconfer::new(
             anchor_id_lag,
@@ -304,40 +306,11 @@ mod tests {
             l2_client,
             preconfer_address,
             time_provider,
-            last_l1_block_number,
+            last_l1_header,
             parent_header,
             golden_touch_addr,
         );
 
         assert!(preconfer.build_block().await.unwrap().is_none());
-    }
-
-    #[tokio::test]
-    async fn build_block_throws_when_parent_header_is_available() {
-        let l1_client = MockITaikoL1Client::new();
-        let l2_client = MockITaikoL2Client::new();
-        let time_provider = MockITimeProvider::new();
-
-        let preconfer_address = Address::random();
-        let anchor_id_lag = 4u64;
-        let parent_header = Arc::new(RwLock::new(None));
-        let last_l1_block_number = Arc::new(RwLock::new(DUMMY_BLOCK_NUMBER));
-        let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
-        let preconfer = Preconfer::new(
-            anchor_id_lag,
-            l1_client,
-            l2_client,
-            preconfer_address,
-            time_provider,
-            last_l1_block_number,
-            parent_header,
-            golden_touch_addr,
-        );
-
-        let err = preconfer.build_block().await.unwrap_err();
-        match err {
-            PreconferError::MissingParentHeader => {}
-            _ => panic!("unexpected"),
-        }
     }
 }
