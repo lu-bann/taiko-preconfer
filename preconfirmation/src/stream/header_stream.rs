@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use alloy_consensus::Header;
+use alloy_primitives::B256;
 use alloy_rpc_client::RpcClient;
 use async_stream::stream;
 use futures::{Stream, future::BoxFuture, pin_mut};
@@ -13,9 +14,11 @@ pub fn get_header_stream(
     stream: impl Stream<Item = Header>,
 ) -> impl Stream<Item = Header> {
     let mut last_header_number = -1_i128;
+    let mut last_hash = B256::ZERO;
     stream.merge(client_stream).filter(move |header: &Header| {
-        if header.number as i128 > last_header_number {
+        if header.number as i128 != last_header_number || header.mix_hash != last_hash {
             last_header_number = header.number as i128;
+            last_hash = header.mix_hash;
             true
         } else {
             false
@@ -29,10 +32,12 @@ pub fn get_polling_stream(
 ) -> impl Stream<Item = Header> {
     stream! {
         let mut last_header_number = -1_i128;
+        let mut last_hash = B256::ZERO;
         loop {
             if let Ok(header) =  get_latest_header(&client).await {
-                if header.number as i128 > last_header_number {
+                if header.number as i128 != last_header_number || header.mix_hash != last_hash {
                     last_header_number = header.number as i128;
+                    last_hash = header.mix_hash;
                     yield header;
                 }
             }
@@ -77,7 +82,7 @@ mod tests {
 
     use async_stream::stream;
 
-    use crate::test_util::get_header;
+    use crate::test_util::{get_header, get_header_with_mixhash};
 
     use super::*;
 
@@ -166,51 +171,32 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_header_stream_creates_increasing_stream() {
+    async fn test_get_header_stream_creates_considers_duplicate_block_numbers_if_hashes_differ() {
         let timestamp = 5;
         let header_delay = Duration::from_millis(10);
-        let provider_delay = Duration::from_secs(1);
-        let first_number = 3;
-        let second_number = 4;
-        let third_number = 5;
-        let fourth_number = 8;
+        let number = 3;
+        let mixhash = B256::ZERO;
+        let other_mixhash = B256::left_padding_from(&[1]);
         let client_stream = pin!(stream! {
-            let number = first_number;
-            yield get_header(number, timestamp);
+            yield get_header_with_mixhash(number, timestamp, mixhash);
             tokio::time::sleep(header_delay).await;
-            let number = first_number - 1;
-            yield get_header(number, timestamp);
-            tokio::time::sleep(header_delay).await;
-            let number = third_number;
-            yield get_header(number, timestamp);
-            tokio::time::sleep(provider_delay).await;
+            yield get_header_with_mixhash(number, timestamp, other_mixhash);
         });
         let stream = pin!(stream! {
             tokio::time::sleep(header_delay/2).await;
-            let number = second_number;
-            yield get_header(number, timestamp);
-            tokio::time::sleep(header_delay).await;
-            let number = first_number;
-            yield get_header(number, timestamp);
-            tokio::time::sleep(header_delay).await;
-            let number = fourth_number;
-            yield get_header(number, timestamp);
-            tokio::time::sleep(provider_delay).await;
+            yield get_header_with_mixhash(number, timestamp, mixhash);
         });
         let mut header_stream = get_header_stream(client_stream, stream);
-        let timeout = Duration::from_millis(30);
         let received = header_stream.next().await.unwrap();
-        assert_eq!(received, get_header(first_number, timestamp));
-        let received = header_stream.next().await.unwrap();
-        assert_eq!(received, get_header(second_number, timestamp));
-        let received = header_stream.next().await.unwrap();
-        assert_eq!(received, get_header(third_number, timestamp));
-        let received = header_stream.next().await.unwrap();
-        assert_eq!(received, get_header(fourth_number, timestamp));
-        assert!(
-            tokio::time::timeout(timeout, header_stream.next())
-                .await
-                .is_err()
+        assert_eq!(
+            received,
+            get_header_with_mixhash(number, timestamp, mixhash)
         );
+        let received = header_stream.next().await.unwrap();
+        assert_eq!(
+            received,
+            get_header_with_mixhash(number, timestamp, other_mixhash)
+        );
+        assert_eq!(header_stream.next().await, None);
     }
 }

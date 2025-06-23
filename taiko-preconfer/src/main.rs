@@ -254,8 +254,13 @@ async fn store_header(
     msg: String,
 ) -> ApplicationResult<()> {
     info!(
-        "{msg} 🗣 #{:<10} timestamp={}",
-        header.number, header.timestamp
+        "{msg} 🗣 #{:<10} timestamp={} now={}",
+        header.number,
+        header.timestamp,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs()
     );
     *current.write().await = header;
     Ok(())
