@@ -248,17 +248,30 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
     Ok(TaikoL1Client::new(l1_provider, chain_id))
 }
 
-async fn store_header(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
+async fn store_header_l1(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
+    info!("L1 🗣 #{:<10} {}", header.number, header.timestamp);
+    *current.write().await = header;
+    Ok(())
+}
+
+async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
     info!("L2 🗣 #{:<10} {}", header.number, header.timestamp);
     *current.write().await = header;
     Ok(())
 }
 
-fn store_header_boxed<'a>(
+fn store_header_boxed_l1<'a>(
     header: Header,
     current: Arc<RwLock<Header>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
-    to_boxed(header, current, store_header)
+    to_boxed(header, current, store_header_l1)
+}
+
+fn store_header_boxed_l2<'a>(
+    header: Header,
+    current: Arc<RwLock<Header>>,
+) -> BoxFuture<'a, ApplicationResult<()>> {
+    to_boxed(header, current, store_header_l2)
 }
 
 #[tokio::main]
@@ -274,6 +287,7 @@ async fn main() -> ApplicationResult<()> {
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let latest_l2_header = taiko_l2_client.get_latest_header().await?;
+    info!("Starting with l2 header: {}", latest_l2_header.number);
     let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let l1_provider = ProviderBuilder::new()
@@ -323,8 +337,8 @@ async fn main() -> ApplicationResult<()> {
         create_header_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
 
     let _ = join!(
-        stream_headers(l1_header_stream, store_header_boxed, shared_last_l1_header),
-        stream_headers(l2_header_stream, store_header_boxed, shared_last_l2_header),
+        stream_headers(l1_header_stream, store_header_boxed_l1, shared_last_l1_header),
+        stream_headers(l2_header_stream, store_header_boxed_l2, shared_last_l2_header),
         trigger_from_stream(
             slot_stream,
             preconfer,
