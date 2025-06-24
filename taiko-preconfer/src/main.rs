@@ -9,7 +9,7 @@ use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     client::{RpcClient, get_alloy_auth_client, get_alloy_client},
     preconf::{
-        Preconfer,
+        BlockBuilder,
         config::Config,
         confirmation_strategy::{ConfirmationSender, InstantConfirmationStrategy},
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
@@ -93,7 +93,7 @@ async fn trigger_from_stream<
     TimeProvider: ITimeProvider,
 >(
     stream: impl Stream<Item = SubSlot>,
-    preconfer: Preconfer<L1Client, L2Client, TimeProvider>,
+    preconfer: BlockBuilder<L1Client, L2Client, TimeProvider>,
     preconfirmation_slot_model: PreconfirmationSlotModel,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     whitelist: TaikoWhitelistInstance,
@@ -323,7 +323,7 @@ async fn main() -> ApplicationResult<()> {
     let shared_last_l1_header = Arc::new(RwLock::new(latest_l1_header));
     let preconfer_address = signer.address();
     info!("Preconfer address: {}", preconfer_address);
-    let preconfer = Preconfer::new(
+    let preconfer = BlockBuilder::new(
         config.anchor_id_lag,
         taiko_l1_client.clone(),
         taiko_l2_client,

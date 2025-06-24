@@ -27,7 +27,7 @@ pub enum ApplicationError {
     TryFromInt(#[from] std::num::TryFromIntError),
 
     #[error("{0}")]
-    Preconfer(#[from] preconfirmation::preconf::PreconferError),
+    BlockBuilder(#[from] preconfirmation::preconf::BlockBuilderError),
 
     #[error("{0}")]
     SystemTime(#[from] std::time::SystemTimeError),

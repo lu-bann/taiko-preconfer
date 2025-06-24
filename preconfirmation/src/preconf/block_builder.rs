@@ -6,7 +6,7 @@ use tracing::{debug, info, trace};
 
 use alloy_primitives::Address;
 
-use crate::preconf::PreconferResult;
+use crate::preconf::BlockBuilderResult;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::taiko::taiko_l2_client::ITaikoL2Client;
 use crate::time_provider::ITimeProvider;
@@ -36,7 +36,7 @@ impl SimpleBlock {
 }
 
 #[derive(Debug)]
-pub struct Preconfer<
+pub struct BlockBuilder<
     L1Client: ITaikoL1Client,
     L2Client: ITaikoL2Client,
     TimeProvider: ITimeProvider,
@@ -52,7 +52,7 @@ pub struct Preconfer<
 }
 
 impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>
-    Preconfer<L1Client, L2Client, TimeProvider>
+    BlockBuilder<L1Client, L2Client, TimeProvider>
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
@@ -81,7 +81,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         self.address
     }
 
-    pub async fn build_block(&self) -> PreconferResult<Option<SimpleBlock>> {
+    pub async fn build_block(&self) -> BlockBuilderResult<Option<SimpleBlock>> {
         let last_l2_header = self.last_l2_header.read().await.clone();
         trace!("build_block: last_l2_header={last_l2_header:?}");
 
@@ -238,7 +238,7 @@ mod tests {
             last_block_timestamp,
         )));
         let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
-        let preconfer = Preconfer::new(
+        let preconfer = BlockBuilder::new(
             anchor_id_lag,
             l1_client,
             l2_client,
@@ -300,7 +300,7 @@ mod tests {
             last_block_timestamp,
         )));
         let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
-        let preconfer = Preconfer::new(
+        let preconfer = BlockBuilder::new(
             anchor_id_lag,
             l1_client,
             l2_client,
