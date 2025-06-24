@@ -340,7 +340,7 @@ async fn main() -> ApplicationResult<()> {
 
     let confirmation_strategy = InstantConfirmationStrategy::new(ConfirmationSender::new(
         taiko_l1_client,
-        Address::from_str(&config.taiko_inbox_address)?,
+        Address::from_str(&config.taiko_preconf_router_address)?,
         signer,
     ));
 
