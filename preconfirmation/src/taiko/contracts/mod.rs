@@ -18,4 +18,5 @@ pub type Provider = FillProvider<
     RootProvider,
 >;
 pub type TaikoAnchorInstance = TaikoAnchor::TaikoAnchorInstance<Provider>;
+pub type TaikoInboxInstance = TaikoInbox::TaikoInboxInstance<Provider>;
 pub type TaikoWhitelistInstance = PreconfWhitelist::PreconfWhitelistInstance<Provider>;
