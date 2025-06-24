@@ -57,7 +57,8 @@ impl<StatusMonitor: IStatusMonitor> TaikoSequencingMonitor<StatusMonitor> {
     pub async fn ready(&self) -> Result<(), reqwest::Error> {
         loop {
             let status: SequencingStatus = self.monitor.status().await?;
-            if is_end_of_sequencing_status(&status, &*self.last_header.read().await) {
+            let last_header = self.last_header.read().await;
+            if is_end_of_sequencing_status_unsafe(&status, &last_header) {
                 return Ok(());
             }
             debug!("Out of sync. status={:?} {:?}", status, self.last_header);
@@ -66,23 +67,18 @@ impl<StatusMonitor: IStatusMonitor> TaikoSequencingMonitor<StatusMonitor> {
     }
 }
 
-fn is_end_of_sequencing_status(status: &SequencingStatus, header: &Header) -> bool {
+fn is_end_of_sequencing_status_unsafe(status: &SequencingStatus, header: &Header) -> bool {
     status.end_of_sequencing_block_hash == header.hash_slow()
         && status.highest_unsafe_l2_payload_block_id == header.number
 }
 #[cfg(test)]
 mod tests {
+    use super::*;
     use std::{sync::Arc, time::Duration};
 
     use tokio::sync::RwLock;
 
-    use crate::{
-        preconf::sequencing_monitor::{
-            MockIStatusMonitor, SequencingStatus, TaikoSequencingMonitor,
-            is_end_of_sequencing_status,
-        },
-        test_util::get_header,
-    };
+    use crate::test_util::get_header;
 
     const TEST_DURATION: Duration = Duration::from_millis(1);
 
@@ -95,7 +91,7 @@ mod tests {
             highest_unsafe_l2_payload_block_id: block_number,
             end_of_sequencing_block_hash: header.hash_slow(),
         };
-        assert!(is_end_of_sequencing_status(&status, &header));
+        assert!(is_end_of_sequencing_status_unsafe(&status, &header));
     }
 
     #[test]
@@ -108,7 +104,7 @@ mod tests {
             highest_unsafe_l2_payload_block_id,
             end_of_sequencing_block_hash: header.hash_slow(),
         };
-        assert!(!is_end_of_sequencing_status(&status, &header));
+        assert!(!is_end_of_sequencing_status_unsafe(&status, &header));
     }
 
     #[test]
@@ -122,7 +118,7 @@ mod tests {
             highest_unsafe_l2_payload_block_id: block_number,
             end_of_sequencing_block_hash,
         };
-        assert!(!is_end_of_sequencing_status(&status, &header));
+        assert!(!is_end_of_sequencing_status_unsafe(&status, &header));
     }
 
     #[tokio::test]
