@@ -78,9 +78,9 @@ where
 
 #[cfg(test)]
 mod tests {
-    use std::{pin::pin, time::Duration};
-
     use async_stream::stream;
+    use std::{pin::pin, sync::Arc, time::Duration};
+    use tokio::sync::Notify;
 
     use crate::test_util::{get_header, get_header_with_mixhash};
 
@@ -90,13 +90,17 @@ mod tests {
     async fn test_get_header_stream_can_receive_value_from_second_stream() {
         let number = 3;
         let timestamp = 5;
-        let provider_delay = Duration::from_secs(1);
+
+        let trigger_client_stream = Arc::new(Notify::new());
+        let client_stream_start = trigger_client_stream.clone();
+
         let client_stream = pin!(stream! {
-            tokio::time::sleep(provider_delay).await;
+            client_stream_start.notified().await;
             yield get_header(number, timestamp);
         });
         let stream = pin!(stream! {
             yield get_header(number, timestamp);
+            trigger_client_stream.notify_one();
         });
         let mut header_stream = get_header_stream(client_stream, stream);
         let received = header_stream.next().await;
@@ -107,12 +111,16 @@ mod tests {
     async fn test_get_header_stream_can_receive_value_from_first_stream() {
         let number = 3;
         let timestamp = 5;
-        let provider_delay = Duration::from_secs(1);
+
+        let trigger_stream = Arc::new(Notify::new());
+        let stream_start = trigger_stream.clone();
+
         let client_stream = pin!(stream! {
             yield get_header(number, timestamp);
+            trigger_stream.notify_one();
         });
         let stream = pin!(stream! {
-            tokio::time::sleep(provider_delay).await;
+            stream_start.notified().await;
             yield get_header(number, timestamp);
         });
         let mut header_stream = get_header_stream(client_stream, stream);
@@ -124,13 +132,16 @@ mod tests {
     async fn test_get_header_stream_does_not_receive_value_from_any_stream() {
         let number = 3;
         let timestamp = 5;
-        let provider_delay = Duration::from_secs(1);
+
+        let trigger_stream = Arc::new(Notify::new());
+        let trigger_client_stream = Arc::new(Notify::new());
+
         let client_stream = pin!(stream! {
-            tokio::time::sleep(provider_delay).await;
+            trigger_client_stream.notified().await;
             yield get_header(number, timestamp);
         });
         let stream = pin!(stream! {
-            tokio::time::sleep(provider_delay).await;
+            trigger_stream.notified().await;
             yield get_header(number, timestamp);
         });
         let mut header_stream = get_header_stream(client_stream, stream);
@@ -143,48 +154,52 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_get_header_stream_filters_duplicate_block_numbers() {
+    async fn test_get_header_stream_filters_duplicate_blocks() {
         let number = 3;
         let timestamp_1 = 5;
         let timestamp_2 = 7;
-        let provider_delay = Duration::from_secs(1);
+
+        let trigger_stream = Arc::new(Notify::new());
+        let stream_start = trigger_stream.clone();
+
         let client_stream = pin!(stream! {
             yield get_header(number, timestamp_1);
-            tokio::time::sleep(provider_delay).await;
+            trigger_stream.notify_one();
         });
         let stream = pin!(stream! {
-            tokio::time::sleep(Duration::from_millis(1)).await;
+            stream_start.notified().await;
             yield get_header(number, timestamp_2);
-            tokio::time::sleep(provider_delay).await;
         });
         let mut header_stream = get_header_stream(client_stream, stream);
-        let timeout = Duration::from_millis(30);
-        let received = tokio::time::timeout(timeout, header_stream.next())
-            .await
-            .unwrap();
+        let received = header_stream.next().await;
         assert_eq!(received, Some(get_header(number, timestamp_1)));
-        assert!(
-            tokio::time::timeout(timeout, header_stream.next())
-                .await
-                .is_err()
-        );
+        let received = header_stream.next().await;
+        assert_eq!(received, None);
     }
 
     #[tokio::test]
     async fn test_get_header_stream_creates_considers_duplicate_block_numbers_if_hashes_differ() {
         let timestamp = 5;
-        let header_delay = Duration::from_millis(10);
         let number = 3;
         let mixhash = B256::ZERO;
         let other_mixhash = B256::left_padding_from(&[1]);
+
+        let trigger_client_stream = Arc::new(Notify::new());
+        let client_stream_start = trigger_client_stream.clone();
+
+        let trigger_stream = Arc::new(Notify::new());
+        let stream_start = trigger_stream.clone();
+
         let client_stream = pin!(stream! {
             yield get_header_with_mixhash(number, timestamp, mixhash);
-            tokio::time::sleep(header_delay).await;
+            trigger_stream.notify_one();
+            client_stream_start.notified().await;
             yield get_header_with_mixhash(number, timestamp, other_mixhash);
         });
         let stream = pin!(stream! {
-            tokio::time::sleep(header_delay/2).await;
+            stream_start.notified().await;
             yield get_header_with_mixhash(number, timestamp, mixhash);
+            trigger_client_stream.notify_one();
         });
         let mut header_stream = get_header_stream(client_stream, stream);
         let received = header_stream.next().await.unwrap();
