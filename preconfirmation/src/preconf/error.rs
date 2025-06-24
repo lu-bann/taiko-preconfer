@@ -1,7 +1,7 @@
 use thiserror::Error;
 
 #[derive(Debug, Error)]
-pub enum PreconferError {
+pub enum BlockBuilderError {
     #[error("{0}")]
     Compression(#[from] libdeflater::CompressionError),
 
@@ -24,4 +24,4 @@ pub enum PreconferError {
     TryLock(#[from] tokio::sync::TryLockError),
 }
 
-pub type PreconferResult<T> = Result<T, PreconferError>;
+pub type BlockBuilderResult<T> = Result<T, BlockBuilderError>;

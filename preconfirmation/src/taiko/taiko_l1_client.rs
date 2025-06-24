@@ -9,6 +9,7 @@ use alloy_provider::{
     utils::Eip1559Estimation,
 };
 use alloy_rpc_types::TransactionRequest;
+use std::time::SystemTime;
 use thiserror::Error;
 use tracing::info;
 
@@ -104,6 +105,8 @@ impl ITaikoL1Client for TaikoL1Client {
     }
 
     async fn send(&self, tx: TransactionRequest) -> TaikoL1ClientResult<()> {
+        info!("Send tx");
+        let start = SystemTime::now();
         let receipt = self
             .provider
             .send_transaction(tx)
@@ -112,7 +115,9 @@ impl ITaikoL1Client for TaikoL1Client {
             .with_timeout(Some(std::time::Duration::from_secs(60)))
             .get_receipt()
             .await?;
-        info!("receipt: {receipt:?}");
+        let end = SystemTime::now();
+        let elapsed = end.duration_since(start).unwrap().as_millis();
+        info!("receipt: {receipt:?}, elapsed={elapsed} ms");
         Ok(())
     }
 }

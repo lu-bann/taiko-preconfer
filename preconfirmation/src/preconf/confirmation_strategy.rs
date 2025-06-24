@@ -78,7 +78,10 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
 
         let fee_estimate = fee_estimate?;
 
-        info!("sign tx {} {:?} {:?}", self.taiko_inbox, nonce, gas_limit);
+        info!(
+            "sign tx {} {:?} {:?} {:?}",
+            self.taiko_inbox, nonce, gas_limit, fee_estimate
+        );
         if gas_limit.is_err() {
             error!("Failed to estimate gas for block confirmation.");
         }
