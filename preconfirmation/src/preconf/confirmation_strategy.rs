@@ -163,14 +163,23 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         if self.blocks.borrow().len() < self.max_blocks {
             return Ok(());
         }
+        self.send().await
+    }
 
+    pub async fn send(&self) -> ConfirmationResult<()> {
+        if self.blocks.borrow().is_empty() {
+            return Ok(());
+        }
+        let blocks = self.blocks.borrow().clone();
         debug!("Compression");
         let number_of_blobs = 0u8;
 
         let mut txs = Vec::new();
         let mut block_params = Vec::new();
-        let mut last_timestamp = self.blocks.borrow().first().unwrap().header.timestamp;
-        for block in self.blocks.take().into_iter() {
+        let mut last_timestamp = blocks.first().unwrap().header.timestamp;
+        let mut last_l1_anchor_block_id = 0;
+        let mut last_l1_block_timestamp = 0;
+        for block in blocks.into_iter() {
             let tx_len = block.txs.len() as u16;
             txs.extend(block.txs.into_iter());
             block_params.push(BlockParams {
@@ -179,6 +188,9 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
                 signalSlots: vec![],
             });
             last_timestamp = block.header.timestamp;
+            last_l1_anchor_block_id = std::cmp::max(last_l1_anchor_block_id, block.anchor_block_id);
+            last_l1_block_timestamp =
+                std::cmp::max(last_l1_block_timestamp, block.last_block_timestamp);
         }
 
         let parent_meta_hash = B256::ZERO;
@@ -189,8 +201,8 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             tx_bytes.len(),
             block_params,
             parent_meta_hash,
-            block.anchor_block_id,
-            block.last_block_timestamp,
+            last_l1_anchor_block_id,
+            last_l1_block_timestamp,
             self.sender.address(),
             number_of_blobs,
         );
@@ -203,6 +215,8 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             _params: propose_batch_params,
             _txList: tx_bytes,
         });
-        self.sender.send(tx).await
+        self.sender.send(tx).await?;
+        let _ = self.blocks.take();
+        Ok(())
     }
 }

@@ -12,7 +12,7 @@ use preconfirmation::{
     preconf::{
         BlockBuilder,
         config::Config,
-        confirmation_strategy::{ConfirmationSender, InstantConfirmationStrategy},
+        confirmation_strategy::{BlockConstrainedConfirmationStrategy, ConfirmationSender},
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
@@ -88,7 +88,7 @@ async fn trigger_from_stream<
     preconfirmation_slot_model: PreconfirmationSlotModel,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     whitelist: TaikoWhitelistInstance,
-    confirmation_strategy: InstantConfirmationStrategy<L1Client>,
+    confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
@@ -139,6 +139,14 @@ async fn trigger_from_stream<
                 }
             } else {
                 info!("Not active operator. Skip block building.");
+            }
+            if preconfirmation_slot_model.can_confirm(&subslot.slot)
+                && preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot)
+            {
+                let _ = log_error(
+                    confirmation_strategy.send().await,
+                    "Failed to send blocks at start of handover period",
+                );
             }
 
             if preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot) {
@@ -329,11 +337,15 @@ async fn main() -> ApplicationResult<()> {
     let handover_slots = config.handover_window_slots as u64;
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
 
-    let confirmation_strategy = InstantConfirmationStrategy::new(ConfirmationSender::new(
-        taiko_l1_client,
-        Address::from_str(&config.taiko_preconf_router_address)?,
-        signer,
-    ));
+    let max_blocks = 2;
+    let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
+        ConfirmationSender::new(
+            taiko_l1_client,
+            Address::from_str(&config.taiko_preconf_router_address)?,
+            signer,
+        ),
+        max_blocks,
+    );
 
     let slot_stream = create_subslot_stream(&config)?;
     let l1_header_stream =
