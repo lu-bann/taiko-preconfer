@@ -7,7 +7,8 @@ use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
-    client::{RpcClient, get_alloy_auth_client, get_alloy_client},
+    client::{RpcClient, get_alloy_auth_client, get_alloy_client, reqwest::get_header_by_id},
+    log_util::log_error,
     preconf::{
         BlockBuilder,
         config::Config,
@@ -18,11 +19,11 @@ use preconfirmation::{
     slot::SubSlot,
     slot_model::SlotModel,
     stream::{
-        get_header_stream, get_next_slot_start, get_polling_stream, get_slot_stream,
-        get_subslot_stream, stream_headers, to_boxed,
+        get_header_stream, get_l2_head_stream, get_next_slot_start, get_polling_stream,
+        get_slot_stream, get_subslot_stream, stream_headers, to_boxed,
     },
     taiko::{
-        contracts::{TaikoAnchorInstance, TaikoWhitelistInstance},
+        contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
         hekla::get_basefee_config_v2,
         sign::get_signing_key,
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
@@ -36,20 +37,10 @@ use std::{
     time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::{join, sync::RwLock};
-use tracing::{debug, error, info, trace};
+use tracing::{debug, info, trace};
 
 mod error;
 use crate::error::ApplicationResult;
-
-fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
-    match result {
-        Err(err) => {
-            error!("{msg}: {}", err.to_string());
-            None
-        }
-        Ok(value) => Some(value),
-    }
-}
 
 fn set_active_operator_if_necessary(
     current_preconfer: &Address,
@@ -347,8 +338,32 @@ async fn main() -> ApplicationResult<()> {
     let slot_stream = create_subslot_stream(&config)?;
     let l1_header_stream =
         create_header_stream(&config.l1_client_url, &config.l1_ws_url, config.poll_period).await?;
-    let l2_header_stream =
-        create_header_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
+    let l2_provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(&config.l2_ws_url))
+        .await?;
+    let taiko_inbox = TaikoInboxInstance::new(
+        Address::from_str(&config.taiko_inbox_address).unwrap(),
+        l2_provider.clone(),
+    );
+    let l2_block_stream = l2_provider.subscribe_full_blocks().into_stream().await?;
+    let batch_proposed_stream = taiko_inbox
+        .BatchProposed_filter()
+        .subscribe()
+        .await?
+        .into_stream()
+        .map(|result| result.map(|(batch_proposed, _log)| batch_proposed));
+    let unconfirmed_l2_blocks = Arc::new(RwLock::new(vec![]));
+    let get_header_call = |id: u64| {
+        let url = config.l2_client_url.clone();
+        async move { get_header_by_id(url.clone(), id).await }
+    };
+    let l2_header_stream = get_l2_head_stream(
+        l2_block_stream,
+        batch_proposed_stream,
+        unconfirmed_l2_blocks,
+        get_header_call,
+    )
+    .await;
 
     let _ = join!(
         stream_headers(
