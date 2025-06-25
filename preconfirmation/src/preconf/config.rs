@@ -6,7 +6,7 @@ use thiserror::Error;
 
 use crate::secret::Secret;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Config {
     pub l1_genesis_time: SystemTime,
     pub l1_slot_time: Duration,
