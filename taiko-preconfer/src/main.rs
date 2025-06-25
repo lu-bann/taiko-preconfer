@@ -3,6 +3,7 @@ use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
+use alloy_rpc_types_eth::Block;
 use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
@@ -19,8 +20,9 @@ use preconfirmation::{
     slot::SubSlot,
     slot_model::SlotModel,
     stream::{
-        get_header_stream, get_l2_head_stream, get_next_slot_start, get_polling_stream,
-        get_slot_stream, get_subslot_stream, stream_headers, to_boxed,
+        get_block_polling_stream, get_block_stream, get_header_polling_stream, get_header_stream,
+        get_l2_head_stream, get_next_slot_start, get_slot_stream, get_subslot_stream,
+        stream_headers, to_boxed,
     },
     taiko::{
         contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
@@ -192,13 +194,32 @@ async fn create_header_stream(
     poll_period: Duration,
 ) -> ApplicationResult<impl Stream<Item = Header>> {
     let client = get_alloy_client(client_url, false)?;
-    let polling_stream = get_polling_stream(client, poll_period);
+    let polling_stream = get_header_polling_stream(client, poll_period);
 
     let ws = WsConnect::new(ws_url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
     let subscription = provider.subscribe_blocks().await?;
     let ws_stream = subscription.into_stream().map(|header| header.inner);
     Ok(get_header_stream(polling_stream, ws_stream))
+}
+
+async fn create_block_stream(
+    client_url: &str,
+    ws_url: &str,
+    poll_period: Duration,
+) -> ApplicationResult<impl Stream<Item = Block>> {
+    let client = get_alloy_client(client_url, false)?;
+    let full_tx = true;
+    let polling_stream = get_block_polling_stream(client, poll_period, full_tx);
+
+    let ws = WsConnect::new(ws_url);
+    let provider = ProviderBuilder::new().connect_ws(ws).await?;
+    let ws_stream = provider
+        .subscribe_full_blocks()
+        .into_stream()
+        .await?
+        .filter_map(|res| async move { res.ok() });
+    Ok(get_block_stream(polling_stream, ws_stream))
 }
 
 fn get_config() -> ApplicationResult<Config> {
@@ -357,13 +378,16 @@ async fn main() -> ApplicationResult<()> {
         Address::from_str(&config.taiko_inbox_address).unwrap(),
         l2_provider.clone(),
     );
-    let l2_block_stream = l2_provider.subscribe_full_blocks().into_stream().await?;
+    let l2_block_stream =
+        create_block_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
     let batch_proposed_stream = taiko_inbox
         .BatchProposed_filter()
         .subscribe()
         .await?
         .into_stream()
-        .map(|result| result.map(|(batch_proposed, _log)| batch_proposed));
+        .filter_map(
+            |result| async move { result.map(|(batch_proposed, _log)| batch_proposed).ok() },
+        );
     let unconfirmed_l2_blocks = Arc::new(RwLock::new(vec![]));
     let get_header_call = |id: u64| {
         let url = config.l2_client_url.clone();

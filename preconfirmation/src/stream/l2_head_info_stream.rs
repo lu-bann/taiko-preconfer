@@ -17,10 +17,8 @@ enum StreamData {
 }
 
 pub async fn get_l2_head_stream<F, FnFut>(
-    l2_block_stream: impl Stream<
-        Item = Result<Block, alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>>,
-    >,
-    confirmed_header_stream: impl Stream<Item = alloy_sol_types::Result<TaikoInbox::BatchProposed>>,
+    l2_block_stream: impl Stream<Item = Block>,
+    confirmed_header_stream: impl Stream<Item = TaikoInbox::BatchProposed>,
     unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>>,
     get_header: F,
 ) -> impl Stream<Item = Header>
@@ -29,9 +27,8 @@ where
     F: Fn(u64) -> FnFut,
 {
     stream! {
-        let merged_stream = l2_block_stream.filter_map(|block| block.ok()).map(|block| StreamData::Unconfirmed(Box::new(block))).merge(
+        let merged_stream = l2_block_stream.map(|block| StreamData::Unconfirmed(Box::new(block))).merge(
             confirmed_header_stream
-            .filter_map(|result| result.ok())
             .map(|batch_proposed| StreamData::Confirmed(Box::new(batch_proposed))));
 
         let latest_batch_proposed: Arc<RwLock<Option<TaikoInbox::BatchProposed>>> = Arc::new(RwLock::new(None));
@@ -232,14 +229,14 @@ mod tests {
 
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield Ok(get_test_batch_proposed(1, 2));
+            yield get_test_batch_proposed(1, 2);
         });
         let block1 = get_test_block(1, 3);
         let block2 = get_test_block(2, 5);
         let expected_unconfirmed_l2_blocks = vec![block1.clone(), block2.clone()];
         let l2_block_stream = pin!(stream! {
-            yield Ok(block1);
-            yield Ok(block2);
+            yield block1;
+            yield block2;
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
         let f = |id: u64| async move { Ok(get_header(id, 0u64)) };
@@ -268,16 +265,16 @@ mod tests {
         let l2_block_stream_trigger = l2_block_stream_start.clone();
 
         let confirmation_stream = pin!(stream! {
-            yield Ok(get_test_batch_proposed(2, 2));
+            yield get_test_batch_proposed(2, 2);
             l2_block_stream_trigger.notify_one();
         });
         let block3 = get_test_block(3, 3);
         let expected_unconfirmed_l2_blocks = vec![block3.clone()];
         let l2_block_stream = pin!(stream! {
             l2_block_stream_start.notified().await;
-            yield Ok(get_test_block(1, 3));
-            yield Ok(get_test_block(2, 5));
-            yield Ok(block3);
+            yield get_test_block(1, 3);
+            yield get_test_block(2, 5);
+            yield block3;
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
         let f = |id: u64| async move { Ok(get_header(id, 0u64)) };
@@ -309,7 +306,7 @@ mod tests {
         let block_params = vec![get_test_block_params(0, 0), get_test_block_params(0, 1)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield Ok(get_test_batch_proposed_with_txs(2, 2, block_params, vec![]));
+            yield get_test_batch_proposed_with_txs(2, 2, block_params, vec![]);
         });
         let block1 = get_test_block(1, 3);
         let block2 = get_test_block(2, 5);
@@ -318,9 +315,9 @@ mod tests {
             vec![block1.clone(), block2.clone(), block3.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![block3.clone()];
         let l2_block_stream = pin!(stream! {
-            yield Ok(block1);
-            yield Ok(block2);
-            yield Ok(block3);
+            yield block1;
+            yield block2;
+            yield block3;
             confirmation_stream_trigger.notify_one();
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
@@ -363,7 +360,7 @@ mod tests {
         let block_params = vec![get_test_block_params(1, 0)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield Ok(get_test_batch_proposed_with_txs(1, 2, block_params, proposed_txs));
+            yield get_test_batch_proposed_with_txs(1, 2, block_params, proposed_txs);
         });
         let block1 = get_test_block_with_txs(1, 3, txs);
         let block2 = get_test_block(2, 5);
@@ -371,8 +368,8 @@ mod tests {
             vec![block1.clone(), block2.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![block2.clone()];
         let l2_block_stream = pin!(stream! {
-            yield Ok(block1);
-            yield Ok(block2);
+            yield block1;
+            yield block2;
             confirmation_stream_trigger.notify_one();
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
@@ -413,7 +410,7 @@ mod tests {
         let block_params = vec![get_test_block_params(1, 0)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield Ok(get_test_batch_proposed_with_txs(1, 2, block_params, proposed_txs));
+            yield get_test_batch_proposed_with_txs(1, 2, block_params, proposed_txs);
         });
         let block1 = get_test_block_with_txs(1, 3, txs);
         let block2 = get_test_block(2, 5);
@@ -421,8 +418,8 @@ mod tests {
             vec![block1.clone(), block2.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![];
         let l2_block_stream = pin!(stream! {
-            yield Ok(block1);
-            yield Ok(block2);
+            yield block1;
+            yield block2;
             confirmation_stream_trigger.notify_one();
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
@@ -466,7 +463,7 @@ mod tests {
         let block_params = vec![get_test_block_params(2, 0)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield Ok(get_test_batch_proposed_with_txs(1, 2, block_params, proposed_txs));
+            yield get_test_batch_proposed_with_txs(1, 2, block_params, proposed_txs);
         });
         let block1 = get_test_block_with_txs(1, 3, txs);
         let block2 = get_test_block(2, 5);
@@ -474,8 +471,8 @@ mod tests {
             vec![block1.clone(), block2.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![block2.clone()];
         let l2_block_stream = pin!(stream! {
-            yield Ok(block1);
-            yield Ok(block2);
+            yield block1;
+            yield block2;
             confirmation_stream_trigger.notify_one();
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
@@ -525,7 +522,7 @@ mod tests {
         let block_params = vec![get_test_block_params(2, 0), get_test_block_params(2, 1)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield Ok(get_test_batch_proposed_with_txs(2, 2, block_params, proposed_txs));
+            yield get_test_batch_proposed_with_txs(2, 2, block_params, proposed_txs);
         });
         let block1 = get_test_block_with_txs(1, 3, txs1);
         let block2 = get_test_block_with_txs(2, 5, txs2);
@@ -534,9 +531,9 @@ mod tests {
             vec![block1.clone(), block2.clone(), block3.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![block3.clone()];
         let l2_block_stream = pin!(stream! {
-            yield Ok(block1);
-            yield Ok(block2);
-            yield Ok(block3);
+            yield block1;
+            yield block2;
+            yield block3;
             confirmation_stream_trigger.notify_one();
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
@@ -578,7 +575,7 @@ mod tests {
         let block_params = vec![get_test_block_params(0, 0)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield Ok(get_test_batch_proposed_with_txs(2, 2, block_params, vec![]));
+            yield get_test_batch_proposed_with_txs(2, 2, block_params, vec![]);
         });
         let block1 = get_test_block(1, 3);
         let block2 = get_test_block(2, 5);
@@ -586,9 +583,9 @@ mod tests {
         let expected_unconfirmed_l2_blocks_before_confirmation =
             vec![block1.clone(), block2.clone(), block3.clone()];
         let l2_block_stream = pin!(stream! {
-            yield Ok(block1);
-            yield Ok(block2);
-            yield Ok(block3);
+            yield block1;
+            yield block2;
+            yield block3;
             confirmation_stream_trigger.notify_one();
         });
         let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));

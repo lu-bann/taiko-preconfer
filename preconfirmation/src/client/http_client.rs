@@ -135,8 +135,8 @@ pub fn flatten_mempool_txs(tx_lists: Vec<MempoolTxList>) -> Vec<TxEnvelope> {
         .collect()
 }
 
-pub async fn get_block<Client: HttpClient>(
-    client: &Client,
+pub async fn get_block(
+    client: &RpcClientInner,
     block_number: BlockNumberOrTag,
     full_tx: bool,
 ) -> Result<Block, HttpError> {
@@ -145,6 +145,10 @@ pub async fn get_block<Client: HttpClient>(
         .request(GET_BLOCK_BY_NUMBER.to_string(), params.clone())
         .await?;
     block.ok_or(HttpError::Rpc(alloy_json_rpc::RpcError::NullResp))
+}
+
+pub async fn get_latest_block(client: &RpcClientInner, full_tx: bool) -> Result<Block, HttpError> {
+    get_block(client, BlockNumberOrTag::Latest, full_tx).await
 }
 
 #[cfg(test)]
