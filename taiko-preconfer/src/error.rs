@@ -36,6 +36,9 @@ pub enum ApplicationError {
     FromHex(#[from] alloy_primitives::hex::FromHexError),
 
     #[error("{0}")]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error("{0}")]
     Signer(#[from] alloy_signer_local::LocalSignerError),
 }
 

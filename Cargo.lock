@@ -3546,6 +3546,7 @@ dependencies = [
  "dotenv",
  "futures",
  "preconfirmation",
+ "reqwest",
  "thiserror",
  "tokio",
  "tracing",
