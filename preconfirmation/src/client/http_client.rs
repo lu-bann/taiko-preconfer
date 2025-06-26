@@ -151,6 +151,14 @@ pub async fn get_latest_block(client: &RpcClientInner, full_tx: bool) -> Result<
     get_block(client, BlockNumberOrTag::Latest, full_tx).await
 }
 
+pub async fn get_block_by_id(
+    client: &RpcClientInner,
+    id: u64,
+    full_tx: bool,
+) -> Result<Block, HttpError> {
+    get_block(client, BlockNumberOrTag::Number(id), full_tx).await
+}
+
 #[cfg(test)]
 mod tests {
     use alloy_primitives::{B256, hex::FromHex};
