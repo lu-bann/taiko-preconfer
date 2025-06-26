@@ -289,6 +289,6 @@ impl TaikoL2Client {
             &claims,
             &jsonwebtoken::EncodingKey::from_secret(&secret_bytes),
         )?;
-        Ok(format!("Bearer {}", jwt_token))
+        Ok(format!("Bearer {jwt_token}"))
     }
 }

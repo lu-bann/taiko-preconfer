@@ -13,7 +13,7 @@ pub fn hex_to_u64(s: &str) -> Result<u64, std::num::ParseIntError> {
 }
 
 pub fn u64_to_hex(value: u64) -> String {
-    format!("{:#x}", value)
+    format!("{value:#x}")
 }
 
 #[cfg(test)]

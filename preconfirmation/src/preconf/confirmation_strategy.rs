@@ -131,9 +131,9 @@ impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
         );
 
         println!("params");
-        println!("{:?}", propose_batch_params);
+        println!("{propose_batch_params:?}");
         println!("tx_list");
-        println!("{:?}", tx_bytes);
+        println!("{tx_bytes:?}");
         let tx = TransactionRequest::default().with_call(&TaikoWrapper::proposeBatchCall {
             _params: propose_batch_params,
             _txList: tx_bytes,
@@ -208,9 +208,9 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         );
 
         println!("params");
-        println!("{:?}", propose_batch_params);
+        println!("{propose_batch_params:?}");
         println!("tx_list");
-        println!("{:?}", tx_bytes);
+        println!("{tx_bytes:?}");
         let tx = TransactionRequest::default().with_call(&TaikoWrapper::proposeBatchCall {
             _params: propose_batch_params,
             _txList: tx_bytes,
