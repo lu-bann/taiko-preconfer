@@ -73,7 +73,7 @@ pub fn get_block_polling_stream(
         let mut last_header_number = -1_i128;
         let mut last_hash = B256::ZERO;
         loop {
-            if let Ok(block) =  get_latest_block(&client, full_tx).await {
+            if let Ok(block) = get_latest_block(&client, full_tx).await {
                 if block.header.number as i128 != last_header_number || block.header.mix_hash != last_hash {
                     last_header_number = block.header.number as i128;
                     last_hash = block.header.mix_hash;
