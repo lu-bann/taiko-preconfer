@@ -9,7 +9,6 @@ use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     client::{RpcClient, get_alloy_auth_client, get_alloy_client, reqwest::get_header_by_id},
-    log_util::log_error,
     preconf::{
         BlockBuilder,
         config::Config,
@@ -32,6 +31,7 @@ use preconfirmation::{
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
+    util::log_error,
 };
 use std::{str::FromStr, time::Duration};
 use std::{
