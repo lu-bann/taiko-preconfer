@@ -141,7 +141,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
     }
 }
 
-fn get_anchor_id(current_block_number: u64, lag: u64) -> u64 {
+pub fn get_anchor_id(current_block_number: u64, lag: u64) -> u64 {
     current_block_number - std::cmp::min(current_block_number, lag)
 }
 
