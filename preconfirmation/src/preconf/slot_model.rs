@@ -1,5 +1,6 @@
 use crate::slot::Slot;
 
+#[derive(Debug, Clone)]
 pub struct SlotModel {
     next_active_epoch: Option<u64>,
     handover_slots: u64,
