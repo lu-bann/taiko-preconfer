@@ -2,7 +2,6 @@ pub mod blob;
 pub mod client;
 pub mod compression;
 pub mod encode_util;
-pub mod log_util;
 pub mod preconf;
 pub mod secret;
 pub mod slot;
@@ -12,4 +11,5 @@ pub mod taiko;
 #[cfg(test)]
 pub mod test_util;
 pub mod time_provider;
+pub mod util;
 pub mod verification;

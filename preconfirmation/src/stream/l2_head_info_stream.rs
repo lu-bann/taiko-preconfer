@@ -9,7 +9,7 @@ use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
 use tracing::info;
 
-use crate::{compression::compress, log_util::log_error, taiko::contracts::TaikoInbox};
+use crate::{compression::compress, taiko::contracts::TaikoInbox, util::log_error};
 
 enum StreamData {
     Unconfirmed(Box<Block>),
