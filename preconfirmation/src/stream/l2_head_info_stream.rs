@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{sync::Arc, time::Duration};
 
 use alloy_consensus::Header;
 use alloy_rpc_types_eth::Block;
@@ -8,7 +8,9 @@ use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
-use crate::{util::log_error, verification::ILastBatchVerifier};
+use crate::{
+    taiko::contracts::TaikoInboxInstance, util::log_error, verification::ILastBatchVerifier,
+};
 
 enum StreamData {
     Unconfirmed(Box<Block>),
@@ -28,6 +30,41 @@ async fn update_unconfirmed_blocks(block: Block, unconfirmed_l2_blocks: &Arc<RwL
         unconfirmed.push(block);
     }
     unconfirmed.sort_by(|a, b| a.header.number.cmp(&b.header.number));
+}
+
+pub fn get_id_stream(
+    client_stream: impl Stream<Item = u64>,
+    stream: impl Stream<Item = u64>,
+) -> impl Stream<Item = u64> {
+    let mut last_id = 0u64;
+    stream.merge(client_stream).filter(move |id: &u64| {
+        if id != &last_id {
+            last_id = *id;
+            true
+        } else {
+            false
+        }
+    })
+}
+
+pub fn get_confirmed_id_polling_stream(
+    taiko_inbox: TaikoInboxInstance,
+    polling_duration: Duration,
+) -> impl Stream<Item = Result<u64, crate::verification::TaikoInboxError>> {
+    stream! {
+        let mut confirmed_id = 0u64;
+        loop {
+            let stats2 = taiko_inbox.getStats2().call().await?;
+            if stats2.numBatches > 0 {
+                let batch = taiko_inbox.getBatch(stats2.numBatches - 1).call().await?;
+                if batch.lastBlockId > confirmed_id {
+                    confirmed_id = batch.lastBlockId;
+                    yield Ok(confirmed_id);
+                }
+            }
+            tokio::time::sleep(polling_duration).await;
+        }
+    }
 }
 
 pub async fn get_l2_head_stream<F, FnFut, Verifier>(
