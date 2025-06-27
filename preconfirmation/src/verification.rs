@@ -4,7 +4,7 @@ use alloy_provider::Provider;
 use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolValue;
 use thiserror::Error;
-use tracing::debug;
+use tracing::{debug, info};
 
 use crate::{
     compression::compress,
@@ -38,12 +38,12 @@ pub enum TaikoInboxError {
     Http(#[from] crate::client::HttpError),
 }
 
-pub async fn get_latest_confirmed_block_id(
+pub async fn get_latest_confirmed_batch(
     taiko_inbox: &TaikoInboxInstance,
-) -> Result<u64, TaikoInboxError> {
+) -> Result<TaikoInbox::Batch, TaikoInboxError> {
     let stats2 = taiko_inbox.getStats2().call().await?;
     let batch = taiko_inbox.getBatch(stats2.numBatches - 1).call().await?;
-    Ok(batch.lastBlockId)
+    Ok(batch)
 }
 
 pub async fn verify_last_batch(
@@ -164,6 +164,7 @@ pub fn compute_batch_meta_hash(
             }
         })
         .collect();
+    info!("last timestamp {last_timestamp}");
 
     let txs = get_tx_envelopes_from_blocks(blocks);
     debug!("txs: {txs:?}");
@@ -195,7 +196,7 @@ pub fn compute_batch_meta_hash(
         anchorBlockHash: anchor_hash,
         baseFeeConfig: base_fee_config,
     };
-    debug!("info: {info:?}");
+    info!("info: {info:?}");
     let meta = TaikoInbox::BatchMetadata {
         infoHash: keccak256(info.abi_encode()),
         proposer: preconfer_address,
