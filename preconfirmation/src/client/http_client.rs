@@ -12,7 +12,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use thiserror::Error;
 
-use crate::encode_util::hex_to_u64;
+use crate::util::hex_to_u64;
 
 pub const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
 pub const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";

@@ -33,7 +33,7 @@ mod tests {
     use alloy_primitives::{Bytes, FixedBytes, address};
 
     use super::*;
-    use crate::{encode_util::hex_decode, taiko::hekla::get_basefee_config_v2};
+    use crate::{taiko::hekla::get_basefee_config_v2, util::hex_decode};
 
     #[test]
     fn test_create_anchor_transaction() {

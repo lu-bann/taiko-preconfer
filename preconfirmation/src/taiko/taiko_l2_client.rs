@@ -19,7 +19,6 @@ use tracing::debug;
 use crate::client::{
     HttpError, RpcClient, flatten_mempool_txs, get_latest_header, get_mempool_txs, get_nonce,
 };
-use crate::encode_util::hex_decode;
 use crate::preconf::preconf_blocks::{
     BuildPreconfBlockRequest, BuildPreconfBlockResponse, create_executable_data,
 };
@@ -30,6 +29,7 @@ use crate::taiko::{
     hekla::GAS_LIMIT,
     sign::get_signed,
 };
+use crate::util::hex_decode;
 
 #[derive(Debug, Error)]
 pub enum TaikoL2ClientError {
