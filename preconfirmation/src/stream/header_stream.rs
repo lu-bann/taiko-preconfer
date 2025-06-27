@@ -7,7 +7,6 @@ use alloy_rpc_types_eth::Block;
 use async_stream::stream;
 use futures::{Stream, future::BoxFuture, pin_mut};
 use tokio_stream::StreamExt;
-use tracing::info;
 
 use crate::client::{get_latest_block, get_latest_header};
 
@@ -55,7 +54,7 @@ pub fn get_header_polling_stream(
         let mut last_header_number = -1_i128;
         let mut last_hash = B256::ZERO;
         loop {
-            if let Ok(header) =  get_latest_header(&client).await {
+            if let Ok(header) = get_latest_header(&client).await {
                 if header.number as i128 != last_header_number || header.hash_slow() != last_hash {
                     last_header_number = header.number as i128;
                     last_hash = header.hash_slow();
@@ -80,7 +79,6 @@ pub fn get_block_polling_stream(
                 if block.header.number as i128 != last_header_number || block.header.hash_slow() != last_hash {
                     last_header_number = block.header.number as i128;
                     last_hash = block.header.hash_slow();
-                    info!("Received header {:?}", block.header);
                     yield block;
                 }
             }
