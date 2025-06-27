@@ -22,9 +22,10 @@ use preconfirmation::{
     slot::{Slot, SubSlot},
     slot_model::SlotModel,
     stream::{
-        get_block_polling_stream, get_block_stream, get_header_polling_stream, get_header_stream,
-        get_l2_head_stream, get_next_slot_start, get_slot_stream, get_subslot_stream,
-        stream_headers, stream_l2_headers, to_boxed,
+        get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
+        get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
+        get_next_slot_start, get_slot_stream, get_subslot_stream, stream_headers,
+        stream_l2_headers, to_boxed,
     },
     taiko::{
         contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
@@ -481,6 +482,11 @@ async fn main() -> ApplicationResult<()> {
                 .map(|(batch_proposed, _log)| batch_proposed.info.lastBlockId)
                 .ok()
         });
+    let confirmed_id_polling_stream =
+        get_confirmed_id_polling_stream(taiko_inbox.clone(), config.poll_period)
+            .filter_map(|id| async { id.ok() });
+    let id_stream = get_id_stream(confirmed_id_polling_stream, batch_proposed_stream);
+
     let get_header_call = |id: u64| {
         let url = config.l2_client_url.clone();
         async move { get_header_by_id(url.clone(), id).await }
@@ -488,7 +494,7 @@ async fn main() -> ApplicationResult<()> {
     let last_batch_verifier = LastBatchVerifier::new(taiko_inbox, preconfer_address);
     let l2_header_stream = get_l2_head_stream(
         l2_block_stream,
-        batch_proposed_stream,
+        id_stream,
         unconfirmed_l2_blocks,
         get_header_call,
         Some(latest_confirmed_block_id),
