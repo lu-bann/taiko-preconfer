@@ -1,7 +1,7 @@
 use alloy_consensus::Header;
 use serde::{Deserialize, Serialize};
 
-use crate::encode_util::u64_to_hex;
+use crate::util::u64_to_hex;
 
 #[derive(Debug, Serialize)]
 pub struct JsonRequest {

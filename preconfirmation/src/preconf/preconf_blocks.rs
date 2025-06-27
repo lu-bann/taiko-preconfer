@@ -57,16 +57,3 @@ pub fn create_executable_data(
         transactions: Bytes::from(compress(txs)?),
     })
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_left_pad() {
-        let input: Vec<u8> = vec![3, 2, 1];
-        let padded = pad_left::<5>(&input);
-        let expected = Bytes::from([0, 0, 3, 2, 1]);
-        assert_eq!(padded, expected);
-    }
-}

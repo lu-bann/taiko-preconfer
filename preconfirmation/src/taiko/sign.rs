@@ -6,7 +6,7 @@ use k256::{
     elliptic_curve::FieldBytes,
 };
 
-use crate::encode_util::hex_decode;
+use crate::util::hex_decode;
 
 pub fn get_signing_key(private_key: &str) -> SigningKey {
     let pkey_bytes = hex_decode(private_key).unwrap();
@@ -64,8 +64,8 @@ mod tests {
 
     use super::*;
     use crate::{
-        encode_util::hex_decode,
         taiko::{contracts::TaikoAnchor, hekla::get_basefee_config_v2},
+        util::hex_decode,
     };
 
     const TEST_ANCHOR_ADDRESS: Address = address!("0x1670090000000000000000000000000000010001");

@@ -1,7 +1,6 @@
 pub mod blob;
 pub mod client;
 pub mod compression;
-pub mod encode_util;
 pub mod preconf;
 pub mod secret;
 pub mod slot;
