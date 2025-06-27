@@ -4,6 +4,7 @@ use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::Header;
 use libdeflater::CompressionError;
 use serde::{Deserialize, Serialize};
+use tracing::info;
 
 use crate::{compression::compress, util::pad_left};
 
@@ -46,6 +47,9 @@ pub fn create_executable_data(
     timestamp: u64,
     txs: Vec<TxEnvelope>,
 ) -> Result<ExecutableData, CompressionError> {
+    let transactions = Bytes::from(compress(txs)?);
+
+    info!("tx hash {}", alloy_primitives::keccak256(&transactions));
     Ok(ExecutableData {
         base_fee_per_gas,
         block_number,
@@ -54,6 +58,6 @@ pub fn create_executable_data(
         gas_limit,
         parent_hash,
         timestamp,
-        transactions: Bytes::from(compress(txs)?),
+        transactions,
     })
 }

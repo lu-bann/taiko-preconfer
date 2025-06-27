@@ -27,6 +27,82 @@ pub fn create_anchor_transaction(
     })
 }
 
+pub fn compute_valid_anchor_id(
+    block_number: u64,
+    max_offset: u64,
+    desired_offset: u64,
+    last_anchor_id: u64,
+) -> u64 {
+    let min_anchor_id = std::cmp::max(
+        std::cmp::max(block_number, max_offset) - max_offset,
+        last_anchor_id,
+    );
+    let desired_anchor_id = block_number - desired_offset;
+    std::cmp::max(desired_anchor_id, min_anchor_id)
+}
+
+#[derive(Debug, Clone)]
+pub struct ValidAnchorId {
+    max_offset: u64,
+    desired_offset: u64,
+    block_number: u64,
+    current_anchor_id: u64,
+    last_anchor_id: u64,
+}
+
+impl ValidAnchorId {
+    pub const fn new(max_offset: u64, desired_offset: u64) -> Self {
+        Self {
+            max_offset,
+            desired_offset,
+            block_number: 0,
+            current_anchor_id: 0,
+            last_anchor_id: 0,
+        }
+    }
+
+    pub fn update(&mut self) {
+        self.current_anchor_id = compute_valid_anchor_id(
+            self.block_number,
+            self.max_offset,
+            self.desired_offset,
+            self.last_anchor_id,
+        );
+    }
+
+    pub fn is_valid_after(&self, offset: u64) -> bool {
+        self.current_anchor_id
+            == compute_valid_anchor_id(
+                self.block_number + offset,
+                self.max_offset,
+                self.desired_offset,
+                self.last_anchor_id,
+            )
+    }
+
+    pub fn is_valid(&self) -> bool {
+        self.is_valid_after(0)
+    }
+
+    pub fn update_block_number(&mut self, block_number: u64) {
+        self.block_number = block_number;
+    }
+
+    pub fn update_last_anchor_id(&mut self, last_anchor_id: u64) {
+        self.last_anchor_id = last_anchor_id;
+    }
+
+    pub fn get(&self) -> u64 {
+        self.current_anchor_id
+    }
+
+    pub fn get_and_update(&mut self) -> u64 {
+        let anchor_id = self.current_anchor_id;
+        self.update();
+        anchor_id
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use alloy_consensus::Transaction;
@@ -69,5 +145,38 @@ mod tests {
             anchor_transaction.eip1559().unwrap().to,
             TxKind::Call(taiko_anchor_address)
         )
+    }
+
+    #[test]
+    fn compute_valid_anchor_when_desired_anchor_id_is_within_bounds() {
+        let block_number = 5;
+        let max_offset = 12;
+        let desired_offset = 2;
+        let last_anchor_id = 3;
+        let anchor_block_id =
+            compute_valid_anchor_id(block_number, max_offset, desired_offset, last_anchor_id);
+        assert_eq!(anchor_block_id, 3);
+    }
+
+    #[test]
+    fn compute_valid_anchor_when_desired_anchor_id_behind_last_anchor() {
+        let block_number = 5;
+        let max_offset = 12;
+        let desired_offset = 2;
+        let last_anchor_id = 4;
+        let anchor_block_id =
+            compute_valid_anchor_id(block_number, max_offset, desired_offset, last_anchor_id);
+        assert_eq!(anchor_block_id, 4);
+    }
+
+    #[test]
+    fn compute_valid_anchor_when_desired_anchor_id_more_than_max_offset_behind_current_block() {
+        let block_number = 5;
+        let max_offset = 1;
+        let desired_offset = 2;
+        let last_anchor_id = 3;
+        let anchor_block_id =
+            compute_valid_anchor_id(block_number, max_offset, desired_offset, last_anchor_id);
+        assert_eq!(anchor_block_id, 4);
     }
 }

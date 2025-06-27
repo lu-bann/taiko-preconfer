@@ -25,10 +25,10 @@ use preconfirmation::{
     stream::{
         get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
         get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
-        get_next_slot_start, get_slot_stream, get_subslot_stream, stream_headers,
-        stream_l2_headers, to_boxed,
+        get_next_slot_start, get_slot_stream, get_subslot_stream, stream_l2_headers, to_boxed,
     },
     taiko::{
+        anchor::ValidAnchorId,
         contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
         hekla::get_basefee_config_v2,
         sign::get_signing_key,
@@ -37,7 +37,7 @@ use preconfirmation::{
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
     util::log_error,
-    verification::{LastBatchVerifier, get_latest_confirmed_block_id},
+    verification::{LastBatchVerifier, get_latest_confirmed_batch},
 };
 use std::{str::FromStr, time::Duration};
 use std::{
@@ -80,7 +80,24 @@ fn set_active_operator_for_next_period(
     }
 }
 
-async fn trigger_from_stream<
+async fn stream_l1_headers<
+    'a,
+    E,
+    T: Fn(Header, Arc<RwLock<Header>>, Arc<RwLock<ValidAnchorId>>) -> BoxFuture<'a, Result<(), E>>,
+>(
+    stream: impl Stream<Item = Header>,
+    f: T,
+    current: Arc<RwLock<Header>>,
+    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
+) -> Result<(), E> {
+    pin_mut!(stream);
+    while let Some(header) = stream.next().await {
+        f(header, current.clone(), valid_anchor_id.clone()).await?;
+    }
+    Ok(())
+}
+
+async fn preconfirmation_loop<
     L1Client: ITaikoL1Client,
     L2Client: ITaikoL2Client,
     TimeProvider: ITimeProvider,
@@ -336,21 +353,42 @@ async fn store_header(
     msg: String,
 ) -> ApplicationResult<()> {
     info!(
-        "{msg} 🗣 #{:<10} timestamp={} now={} state_root={:?}",
+        "{msg} 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
         header.number,
         header.timestamp,
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
             .as_secs(),
-        header.state_root
+        header.state_root,
+        header.gas_used
     );
     *current.write().await = header;
     Ok(())
 }
 
-async fn store_header_l1(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
-    store_header(header, current, "L1".to_string()).await
+async fn store_header_l1(
+    header: Header,
+    current: Arc<RwLock<Header>>,
+    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
+) -> ApplicationResult<()> {
+    info!(
+        "L1 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
+        header.number,
+        header.timestamp,
+        SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_secs(),
+        header.state_root,
+        header.gas_used
+    );
+    valid_anchor_id
+        .write()
+        .await
+        .update_block_number(header.number);
+    *current.write().await = header;
+    Ok(())
 }
 
 async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
@@ -360,8 +398,9 @@ async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> Applic
 fn store_header_boxed_l1<'a>(
     header: Header,
     current: Arc<RwLock<Header>>,
+    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
-    to_boxed(header, current, store_header_l1)
+    Box::pin(store_header_l1(header, current, valid_anchor_id))
 }
 
 fn store_header_boxed_l2<'a>(
@@ -416,17 +455,39 @@ async fn main() -> ApplicationResult<()> {
         TaikoStatusMonitor::new(preconfirmation_url),
     );
 
+    let l1_provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(&config.l1_ws_url))
+        .await?;
+    let taiko_inbox = TaikoInboxInstance::new(
+        Address::from_str(&config.taiko_inbox_address).unwrap(),
+        l1_provider.clone(),
+    );
+
+    let max_anchor_id_offset = taiko_inbox
+        .pacayaConfig()
+        .call()
+        .await
+        .unwrap()
+        .maxAnchorHeightOffset;
+    let valid_anchor_id = Arc::new(RwLock::new(ValidAnchorId::new(
+        max_anchor_id_offset,
+        config.anchor_id_lag,
+    )));
+
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
+    valid_anchor_id
+        .write()
+        .await
+        .update_block_number(latest_l1_header.number);
     let shared_last_l1_header = Arc::new(RwLock::new(latest_l1_header));
     let preconfer_address = signer.address();
     info!("Preconfer address: {}", preconfer_address);
-    let preconfer = BlockBuilder::new(
-        config.anchor_id_lag,
+    let block_builder = BlockBuilder::new(
+        valid_anchor_id.clone(),
         taiko_l1_client.clone(),
         taiko_l2_client,
         preconfer_address,
         SystemTimeProvider::new(),
-        shared_last_l1_header.clone(),
         shared_last_l2_header.clone(),
         config.golden_touch_address.clone(),
     );
@@ -435,14 +496,21 @@ async fn main() -> ApplicationResult<()> {
     let handover_slots = config.handover_window_slots as u64;
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
 
-    let l1_provider = ProviderBuilder::new()
-        .connect_ws(WsConnect::new(&config.l1_ws_url))
-        .await?;
-    let taiko_inbox = TaikoInboxInstance::new(
-        Address::from_str(&config.taiko_inbox_address).unwrap(),
-        l1_provider.clone(),
+    println!("anchor {max_anchor_id_offset}");
+
+    let latest_confirmed_batch = get_latest_confirmed_batch(&taiko_inbox).await?;
+    let latest_confirmed_block_id = latest_confirmed_batch.lastBlockId;
+    println!("latest batch {latest_confirmed_batch:?}");
+    valid_anchor_id
+        .write()
+        .await
+        .update_last_anchor_id(latest_confirmed_batch.anchorBlockId);
+    valid_anchor_id.write().await.update();
+    println!(
+        "current valid anchor: {}",
+        valid_anchor_id.read().await.get()
     );
-    let latest_confirmed_block_id = get_latest_confirmed_block_id(&taiko_inbox).await?;
+
     let mut unconfirmed_l2_blocks = vec![];
     let l2_client = get_alloy_client(&config.l2_client_url, false)?;
     for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
@@ -462,9 +530,9 @@ async fn main() -> ApplicationResult<()> {
             signer,
         ),
         unconfirmed_l2_blocks.clone(),
-        shared_last_l1_header.clone(),
         max_blocks,
-        config.anchor_id_lag,
+        valid_anchor_id.clone(),
+        taiko_inbox.clone(),
     );
 
     let subslot_stream = create_subslot_stream(&config)?;
@@ -474,15 +542,26 @@ async fn main() -> ApplicationResult<()> {
 
     let l2_block_stream =
         create_block_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
+    let anchor_id_update_valid_anchor = valid_anchor_id.clone();
     let batch_proposed_stream = taiko_inbox
         .BatchProposed_filter()
         .subscribe()
         .await?
         .into_stream()
-        .filter_map(|result| async move {
-            result
-                .map(|(batch_proposed, _log)| batch_proposed.info.lastBlockId)
-                .ok()
+        .filter_map(|result| {
+            let anchor_id_update_valid_anchor = anchor_id_update_valid_anchor.clone();
+            async move {
+                match result {
+                    Ok((batch_proposed, _log)) => {
+                        anchor_id_update_valid_anchor
+                            .write()
+                            .await
+                            .update_last_anchor_id(batch_proposed.info.anchorBlockId);
+                        Some(batch_proposed.info.lastBlockId)
+                    }
+                    Err(_) => None,
+                }
+            }
         });
     let confirmed_id_polling_stream =
         get_confirmed_id_polling_stream(taiko_inbox.clone(), config.poll_period)
@@ -505,19 +584,20 @@ async fn main() -> ApplicationResult<()> {
     .await;
 
     let _ = join!(
-        stream_headers(
+        stream_l1_headers(
             l1_header_stream,
             store_header_boxed_l1,
-            shared_last_l1_header
+            shared_last_l1_header,
+            valid_anchor_id,
         ),
         stream_l2_headers(
             l2_header_stream,
             store_header_boxed_l2,
             shared_last_l2_header
         ),
-        trigger_from_stream(
+        preconfirmation_loop(
             subslot_stream,
-            preconfer,
+            block_builder,
             preconfirmation_slot_model.clone(),
             taiko_sequencing_monitor,
             whitelist.clone(),

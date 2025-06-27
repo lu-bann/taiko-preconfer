@@ -14,7 +14,7 @@ use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::{Error as EcdsaError, SigningKey};
 use libdeflater::CompressionError;
 use thiserror::Error;
-use tracing::debug;
+use tracing::info;
 
 use crate::client::{
     HttpError, RpcClient, flatten_mempool_txs, get_latest_header, get_mempool_txs, get_nonce,
@@ -246,7 +246,7 @@ impl ITaikoL2Client for TaikoL2Client {
             timestamp,
             txs,
         )?;
-        debug!("executable data {executable_data:?}");
+        info!("executable data {executable_data:?}");
         let end_of_sequencing = false;
 
         let req = BuildPreconfBlockRequest {

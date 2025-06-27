@@ -1,5 +1,6 @@
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_sol_types::SolType;
+use tracing::info;
 
 use super::contracts::taiko_wrapper::ProposeBatchParams;
 use crate::taiko::contracts::taiko_wrapper::{BatchParams, BlobParams, BlockParams};
@@ -32,6 +33,7 @@ pub fn create_propose_batch_params(
         },
         blocks,
     };
+    info!("batch params: {:?}", batch_params);
 
     let propose_batch_wrapper = ProposeBatchParams {
         bytesX: Bytes::new(),
