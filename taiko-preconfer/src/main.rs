@@ -9,8 +9,9 @@ use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     client::{
-        RpcClient, get_alloy_auth_client, get_alloy_client, get_block_by_id,
-        reqwest::{get_header_by_id, get_latest_header},
+        RpcClient, get_alloy_auth_client, get_alloy_client,
+        get_block_by_id as alloy_get_block_by_id,
+        reqwest::{get_block_by_id, get_latest_header},
     },
     preconf::{
         BlockBuilder,
@@ -397,6 +398,7 @@ async fn main() -> ApplicationResult<()> {
     );
     info!("{other_latest:?}");
     let latest_l2_header_number = latest_l2_header.number;
+
     let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let l1_provider = ProviderBuilder::new()
@@ -444,7 +446,7 @@ async fn main() -> ApplicationResult<()> {
     let mut unconfirmed_l2_blocks = vec![];
     let l2_client = get_alloy_client(&config.l2_client_url, false)?;
     for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
-        let block = get_block_by_id(&l2_client, block_id, true).await?;
+        let block = alloy_get_block_by_id(&l2_client, block_id, true).await?;
         unconfirmed_l2_blocks.push(block);
     }
     info!(
@@ -487,9 +489,9 @@ async fn main() -> ApplicationResult<()> {
             .filter_map(|id| async { id.ok() });
     let id_stream = get_id_stream(confirmed_id_polling_stream, batch_proposed_stream);
 
-    let get_header_call = |id: u64| {
+    let get_header_call = |id: Option<u64>| {
         let url = config.l2_client_url.clone();
-        async move { get_header_by_id(url.clone(), id).await }
+        async move { get_block_by_id(url.clone(), id).await }
     };
     let last_batch_verifier = LastBatchVerifier::new(taiko_inbox, preconfer_address);
     let l2_header_stream = get_l2_head_stream(
