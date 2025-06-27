@@ -39,12 +39,20 @@ impl SlotModel {
         )
     }
 
+    pub const fn generic(genesis_timestamp: u64, slot_duration: Duration) -> Self {
+        Self::new(genesis_timestamp, slot_duration, EPOCH_DURATION)
+    }
+
     pub fn get_slot(&self, timestamp: u64) -> Slot {
         let diff = timestamp - self.genesis_timestamp;
         Slot {
             epoch: diff / self.epoch_duration.as_secs(),
             slot: (diff % self.epoch_duration.as_secs()) / self.slot_duration.as_secs(),
         }
+    }
+
+    pub fn get_timestamp(&self, slot: u64) -> u64 {
+        self.genesis_timestamp + self.slot_duration.as_secs() * slot
     }
 }
 
@@ -55,6 +63,33 @@ mod tests {
     const TEST_GENESIS_TIMESTAMP: u64 = 12345;
     const TEST_SLOT_DURATION: Duration = Duration::from_secs(10);
     const TEST_EPOCH_DURATION: Duration = Duration::from_secs(50);
+
+    #[test]
+    fn slot_model_get_timestamp_for_slot_0() {
+        let model = SlotModel::new(
+            TEST_GENESIS_TIMESTAMP,
+            TEST_SLOT_DURATION,
+            TEST_EPOCH_DURATION,
+        );
+
+        let ts = model.get_timestamp(0);
+        assert_eq!(ts, TEST_GENESIS_TIMESTAMP);
+    }
+
+    #[test]
+    fn slot_model_get_timestamp_for_slot_3() {
+        let model = SlotModel::new(
+            TEST_GENESIS_TIMESTAMP,
+            TEST_SLOT_DURATION,
+            TEST_EPOCH_DURATION,
+        );
+
+        let ts = model.get_timestamp(3);
+        assert_eq!(
+            ts,
+            TEST_GENESIS_TIMESTAMP + TEST_SLOT_DURATION.as_secs() * 3
+        );
+    }
 
     #[test]
     fn slot_model_epoch_0_slot_0() {
