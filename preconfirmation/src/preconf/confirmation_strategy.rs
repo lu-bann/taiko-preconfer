@@ -21,8 +21,6 @@ use crate::{
     util::get_tx_envelopes_from_block,
 };
 
-use super::SimpleBlock;
-
 #[derive(Debug, Error)]
 pub enum ConfirmationError {
     #[error("{0}")]
@@ -97,51 +95,6 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
         info!("propose batch tx {tx:?}");
         self.client.send(tx).await?;
         Ok(())
-    }
-}
-
-#[derive(Debug)]
-pub struct InstantConfirmationStrategy<Client: ITaikoL1Client> {
-    sender: ConfirmationSender<Client>,
-}
-
-impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
-    pub const fn new(sender: ConfirmationSender<Client>) -> Self {
-        Self { sender }
-    }
-
-    pub async fn confirm(&self, block: SimpleBlock) -> ConfirmationResult<()> {
-        debug!("Compression");
-
-        let number_of_blobs = 0u8;
-        let parent_meta_hash = B256::ZERO;
-        let tx_bytes = Bytes::from(compress(block.txs.clone())?);
-        let block_params = vec![BlockParams {
-            numTransactions: block.txs.len() as u16,
-            timeShift: 0,
-            signalSlots: vec![],
-        }];
-        info!("Create propose batch params");
-        let propose_batch_params = create_propose_batch_params(
-            self.sender.address(),
-            tx_bytes.len(),
-            block_params,
-            parent_meta_hash,
-            block.anchor_block_id,
-            block.last_block_timestamp,
-            self.sender.address(),
-            number_of_blobs,
-        );
-
-        println!("params");
-        println!("{propose_batch_params:?}");
-        println!("tx_list");
-        println!("{tx_bytes:?}");
-        let tx = TransactionRequest::default().with_call(&TaikoWrapper::proposeBatchCall {
-            _params: propose_batch_params,
-            _txList: tx_bytes,
-        });
-        self.sender.send(tx).await
     }
 }
 

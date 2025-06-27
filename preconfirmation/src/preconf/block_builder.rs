@@ -1,5 +1,4 @@
-use alloy_consensus::{Header, TxEnvelope};
-use alloy_rpc_types::Header as RpcHeader;
+use alloy_consensus::Header;
 use std::sync::Arc;
 use tokio::{join, sync::RwLock};
 use tracing::{debug, info, trace};
@@ -10,30 +9,6 @@ use crate::preconf::BlockBuilderResult;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::taiko::taiko_l2_client::ITaikoL2Client;
 use crate::time_provider::ITimeProvider;
-
-#[derive(Debug, Clone)]
-pub struct SimpleBlock {
-    pub header: RpcHeader,
-    pub txs: Vec<TxEnvelope>,
-    pub anchor_block_id: u64,
-    pub last_block_timestamp: u64,
-}
-
-impl SimpleBlock {
-    pub const fn new(
-        header: RpcHeader,
-        txs: Vec<TxEnvelope>,
-        anchor_block_id: u64,
-        last_block_timestamp: u64,
-    ) -> Self {
-        Self {
-            header,
-            txs,
-            anchor_block_id,
-            last_block_timestamp,
-        }
-    }
-}
 
 #[derive(Debug)]
 pub struct BlockBuilder<
@@ -81,7 +56,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         self.address
     }
 
-    pub async fn build_block(&self) -> BlockBuilderResult<Option<SimpleBlock>> {
+    pub async fn build_block(&self) -> BlockBuilderResult<()> {
         let last_l2_header = self.last_l2_header.read().await.clone();
         trace!("build_block: last_l2_header={last_l2_header:?}");
 
@@ -108,7 +83,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         trace!("{:?}", txs);
         if txs.is_empty() {
             info!("Empty mempool: skipping block building.");
-            return Ok(None);
+            return Ok(());
         }
 
         let anchor_tx = self.l2_client.get_signed_anchor_tx(
@@ -123,25 +98,19 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         info!("Publish preconfirmed block with {} transactions", txs.len());
         info!("last h {last_l2_header:?}");
         info! {"last header {} {}", last_l2_header.number, last_l2_header.hash_slow()};
-        info! {"last header2 {} {}", self.last_l2_header.read().await.number, self.last_l2_header.read().await.hash_slow()};
         let header = self
             .l2_client
             .publish_preconfirmed_transactions(
                 self.address,
                 base_fee as u64,
-                now, // after await, recompute?
+                now,
                 &last_l2_header,
                 txs.clone(),
             )
             .await?;
         trace!("Preconfirmed block header: {header:?}");
 
-        Ok(Some(SimpleBlock::new(
-            header,
-            txs,
-            anchor_block_id,
-            last_l1_header.timestamp,
-        )))
+        Ok(())
     }
 }
 
@@ -151,7 +120,7 @@ pub fn get_anchor_id(current_block_number: u64, lag: u64) -> u64 {
 
 #[cfg(test)]
 mod tests {
-    use alloy_consensus::TxEip1559;
+    use alloy_consensus::{TxEip1559, TxEnvelope};
     use alloy_primitives::U256;
 
     use alloy_signer::Signature;
@@ -253,9 +222,7 @@ mod tests {
             golden_touch_addr,
         );
 
-        let preconfirmed_block = preconfer.build_block().await.unwrap().unwrap();
-        assert_eq!(preconfirmed_block.txs.len(), 2);
-        assert_eq!(preconfirmed_block.txs[0].signature().r(), U256::ONE);
+        assert!(preconfer.build_block().await.is_ok());
     }
 
     #[tokio::test]
@@ -315,6 +282,6 @@ mod tests {
             golden_touch_addr,
         );
 
-        assert!(preconfer.build_block().await.unwrap().is_none());
+        assert!(preconfer.build_block().await.is_ok());
     }
 }
