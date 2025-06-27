@@ -5,7 +5,7 @@ use alloy_rpc_types::Header;
 use libdeflater::CompressionError;
 use serde::{Deserialize, Serialize};
 
-use crate::compression::compress;
+use crate::{compression::compress, util::pad_left};
 
 pub const PRECONF_BLOCKS: &str = "preconfBlocks";
 
@@ -56,15 +56,6 @@ pub fn create_executable_data(
         timestamp,
         transactions: Bytes::from(compress(txs)?),
     })
-}
-
-pub fn pad_left<const N: usize>(bytes: &[u8]) -> Bytes {
-    let mut padded = [0u8; N];
-
-    let start = N - bytes.len();
-    padded[start..].copy_from_slice(bytes);
-
-    Bytes::from(padded)
 }
 
 #[cfg(test)]

@@ -103,6 +103,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
             .l2_client
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
+        info!("mempool {:?}", txs);
         debug!("#txs in mempool: {}", txs.len());
         trace!("{:?}", txs);
         if txs.is_empty() {
@@ -120,6 +121,9 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         txs.insert(0, anchor_tx);
 
         info!("Publish preconfirmed block with {} transactions", txs.len());
+        info!("last h {last_l2_header:?}");
+        info! {"last header {} {}", last_l2_header.number, last_l2_header.hash_slow()};
+        info! {"last header2 {} {}", self.last_l2_header.read().await.number, self.last_l2_header.read().await.hash_slow()};
         let header = self
             .l2_client
             .publish_preconfirmed_transactions(
