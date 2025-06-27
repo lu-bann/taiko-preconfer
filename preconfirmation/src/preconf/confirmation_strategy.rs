@@ -1,12 +1,14 @@
-use std::{cell::RefCell, num::TryFromIntError};
+use std::{num::TryFromIntError, sync::Arc};
 
+use alloy_consensus::Header;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::network::TransactionBuilder as _;
 use alloy_rpc_types::TransactionRequest;
+use alloy_rpc_types_eth::Block;
 use alloy_signer_local::LocalSigner;
 use k256::ecdsa::SigningKey;
 use thiserror::Error;
-use tokio::join;
+use tokio::{join, sync::RwLock};
 use tracing::{debug, error, info};
 
 use crate::{
@@ -16,6 +18,7 @@ use crate::{
         propose_batch::create_propose_batch_params,
         taiko_l1_client::ITaikoL1Client,
     },
+    util::get_tx_envelopes_from_block,
 };
 
 use super::SimpleBlock;
@@ -40,7 +43,7 @@ pub enum ConfirmationError {
 
 pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ConfirmationSender<Client: ITaikoL1Client> {
     client: Client,
     taiko_inbox: Address,
@@ -87,8 +90,8 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
         }
         let tx = tx
             .with_gas_limit(gas_limit?)
-            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas)
-            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas)
+            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas * 2)
+            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas * 2)
             .nonce(nonce?);
 
         info!("propose batch tx {tx:?}");
@@ -142,57 +145,86 @@ impl<Client: ITaikoL1Client> InstantConfirmationStrategy<Client> {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     sender: ConfirmationSender<Client>,
-    blocks: RefCell<Vec<SimpleBlock>>,
+    blocks: Arc<RwLock<Vec<Block>>>,
+    last_l1_header: Arc<RwLock<Header>>,
     max_blocks: usize,
+    anchor_id_lag: u64,
 }
 
 impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
-    pub const fn new(sender: ConfirmationSender<Client>, max_blocks: usize) -> Self {
+    pub const fn new(
+        sender: ConfirmationSender<Client>,
+        blocks: Arc<RwLock<Vec<Block>>>,
+        last_l1_header: Arc<RwLock<Header>>,
+        max_blocks: usize,
+        anchor_id_lag: u64,
+    ) -> Self {
         Self {
             sender,
-            blocks: RefCell::new(vec![]),
+            blocks,
+            last_l1_header,
             max_blocks,
+            anchor_id_lag,
         }
     }
 
-    pub async fn confirm(&self, block: SimpleBlock) -> ConfirmationResult<()> {
-        self.blocks.borrow_mut().push(block.clone());
-        if self.blocks.borrow().len() < self.max_blocks {
+    pub async fn send(&self, force_send: bool) -> ConfirmationResult<()> {
+        info!("send force={force_send}");
+        info!("blocks: {}", self.blocks.read().await.len());
+        if self.blocks.read().await.is_empty()
+            || (self.blocks.read().await.len() < self.max_blocks && !force_send)
+        {
             return Ok(());
         }
-        self.send().await
-    }
-
-    pub async fn send(&self) -> ConfirmationResult<()> {
-        if self.blocks.borrow().is_empty() {
-            return Ok(());
-        }
-        let blocks = self.blocks.borrow().clone();
-        debug!("Compression");
+        let blocks = self.blocks.read().await.clone();
+        info!("Compression");
         let number_of_blobs = 0u8;
 
         let mut txs = Vec::new();
         let mut block_params = Vec::new();
+        info!("First block");
         let mut last_timestamp = blocks.first().unwrap().header.timestamp;
-        let mut last_l1_anchor_block_id = 0;
-        let mut last_l1_block_timestamp = 0;
+        info!("Get txs from blocks");
         for block in blocks.into_iter() {
-            let tx_len = block.txs.len() as u16;
-            txs.extend(block.txs.into_iter());
-            block_params.push(BlockParams {
-                numTransactions: tx_len,
-                timeShift: (block.header.timestamp - last_timestamp).try_into()?,
-                signalSlots: vec![],
-            });
-            last_timestamp = block.header.timestamp;
-            last_l1_anchor_block_id = std::cmp::max(last_l1_anchor_block_id, block.anchor_block_id);
-            last_l1_block_timestamp =
-                std::cmp::max(last_l1_block_timestamp, block.last_block_timestamp);
+            info!("block {} {}", block.header.number, block.header.timestamp);
+            info!("block txs {}", block.transactions.len());
+            let tx_len = block.transactions.len() as u16;
+            let timestamp = block.header.timestamp;
+            let number = block.header.number;
+            info!("read txs");
+            txs.extend(get_tx_envelopes_from_block(block).into_iter());
+            //            txs.extend(block.txs.into_iter());
+            info!(
+                "ts {} {} {}",
+                timestamp,
+                last_timestamp,
+                timestamp - last_timestamp
+            );
+            if let Ok(time_shift) = (timestamp - last_timestamp).try_into() {
+                block_params.push(BlockParams {
+                    numTransactions: tx_len,
+                    timeShift: time_shift,
+                    signalSlots: vec![],
+                });
+                last_timestamp = timestamp;
+            } else {
+                info!(
+                    "Block {} is too far away from previous block. Splitting confirmation step.",
+                    number
+                );
+                break;
+            }
         }
+        info!("txs: {txs:?}");
 
+        info!("get anchor id");
+        let anchor_block_id = crate::preconf::get_anchor_id(
+            self.last_l1_header.read().await.number,
+            self.anchor_id_lag,
+        );
         let parent_meta_hash = B256::ZERO;
         let tx_bytes = Bytes::from(compress(txs.clone())?);
         info!("Create propose batch params");
@@ -201,8 +233,8 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             tx_bytes.len(),
             block_params,
             parent_meta_hash,
-            last_l1_anchor_block_id,
-            last_l1_block_timestamp,
+            anchor_block_id,
+            self.last_l1_header.read().await.timestamp,
             self.sender.address(),
             number_of_blobs,
         );
@@ -216,7 +248,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             _txList: tx_bytes,
         });
         self.sender.send(tx).await?;
-        let _ = self.blocks.take();
+        //        let _ = self.blocks.take();
         Ok(())
     }
 }

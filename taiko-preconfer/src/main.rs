@@ -8,7 +8,10 @@ use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
-    client::{RpcClient, get_alloy_auth_client, get_alloy_client, reqwest::get_header_by_id},
+    client::{
+        RpcClient, get_alloy_auth_client, get_alloy_client, get_block_by_id,
+        reqwest::{get_header_by_id, get_latest_header},
+    },
     preconf::{
         BlockBuilder,
         config::Config,
@@ -16,12 +19,12 @@ use preconfirmation::{
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
-    slot::SubSlot,
+    slot::{Slot, SubSlot},
     slot_model::SlotModel,
     stream::{
         get_block_polling_stream, get_block_stream, get_header_polling_stream, get_header_stream,
         get_l2_head_stream, get_next_slot_start, get_slot_stream, get_subslot_stream,
-        stream_headers, to_boxed,
+        stream_headers, stream_l2_headers, to_boxed,
     },
     taiko::{
         contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
@@ -32,6 +35,7 @@ use preconfirmation::{
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
     util::log_error,
+    verification::{LastBatchVerifier, get_latest_confirmed_block_id},
 };
 use std::{str::FromStr, time::Duration};
 use std::{
@@ -48,18 +52,16 @@ fn set_active_operator_if_necessary(
     current_preconfer: &Address,
     preconfer_address: &Address,
     preconfirmation_slot_model: &mut PreconfirmationSlotModel,
-    subslot: &SubSlot,
+    slot: &Slot,
 ) {
-    if !preconfirmation_slot_model.can_preconfirm(&subslot.slot)
-        && current_preconfer == preconfer_address
-    {
-        let epoch = if preconfirmation_slot_model.within_handover_period(subslot.slot.slot) {
-            subslot.slot.epoch + 1
+    if !preconfirmation_slot_model.can_preconfirm(slot) && current_preconfer == preconfer_address {
+        let epoch = if preconfirmation_slot_model.within_handover_period(slot.slot) {
+            slot.epoch + 1
         } else {
-            subslot.slot.epoch
+            slot.epoch
         };
         preconfirmation_slot_model.set_next_active_epoch(epoch);
-        info!("Set active epoch to {} for slot {:?}", epoch, subslot);
+        info!("Set active epoch to {} for slot {:?}", epoch, slot);
     }
 }
 
@@ -67,16 +69,12 @@ fn set_active_operator_for_next_period(
     next_preconfer: &Address,
     preconfer_address: &Address,
     preconfirmation_slot_model: &mut PreconfirmationSlotModel,
-    subslot: &SubSlot,
+    slot: &Slot,
 ) {
     info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
     if next_preconfer == preconfer_address {
-        preconfirmation_slot_model.set_next_active_epoch(subslot.slot.epoch + 1);
-        info!(
-            "Set active epoch to {} for slot {:?}",
-            subslot.slot.epoch + 1,
-            subslot
-        );
+        preconfirmation_slot_model.set_next_active_epoch(slot.epoch + 1);
+        info!("Set active epoch to {} for slot {:?}", slot.epoch + 1, slot);
     }
 }
 
@@ -86,16 +84,15 @@ async fn trigger_from_stream<
     TimeProvider: ITimeProvider,
 >(
     stream: impl Stream<Item = SubSlot>,
-    preconfer: BlockBuilder<L1Client, L2Client, TimeProvider>,
+    builder: BlockBuilder<L1Client, L2Client, TimeProvider>,
     preconfirmation_slot_model: PreconfirmationSlotModel,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     whitelist: TaikoWhitelistInstance,
-    confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
-    let preconfer_address = preconfer.address();
+    let preconfer_address = builder.address();
 
     loop {
         if let Some(subslot) = stream.next().await {
@@ -109,7 +106,7 @@ async fn trigger_from_stream<
                     &current_preconfer,
                     &preconfer_address,
                     &mut preconfirmation_slot_model,
-                    &subslot,
+                    &subslot.slot,
                 );
             }
 
@@ -126,29 +123,9 @@ async fn trigger_from_stream<
                     }
                 }
 
-                if let Some(result) =
-                    log_error(preconfer.build_block().await, "Error building block")
-                {
-                    match result {
-                        None => info!("No block created in slot {:?}", subslot),
-                        Some(block) => {
-                            log_error(
-                                confirmation_strategy.confirm(block).await,
-                                "Failed to confirm block",
-                            );
-                        }
-                    }
-                }
+                log_error(builder.build_block().await, "Error building block");
             } else {
                 info!("Not active operator. Skip block building.");
-            }
-            if preconfirmation_slot_model.can_confirm(&subslot.slot)
-                && preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot)
-            {
-                let _ = log_error(
-                    confirmation_strategy.send().await,
-                    "Failed to send blocks at start of handover period",
-                );
             }
 
             if preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot) {
@@ -160,7 +137,70 @@ async fn trigger_from_stream<
                         &next_preconfer,
                         &preconfer_address,
                         &mut preconfirmation_slot_model,
-                        &subslot,
+                        &subslot.slot,
+                    );
+                }
+            }
+        }
+    }
+}
+
+async fn confirmation_loop<L1Client: ITaikoL1Client>(
+    stream: impl Stream<Item = Slot>,
+    preconfirmation_slot_model: PreconfirmationSlotModel,
+    whitelist: TaikoWhitelistInstance,
+    confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
+    preconfer_address: Address,
+) -> ApplicationResult<()> {
+    let mut preconfirmation_slot_model = preconfirmation_slot_model;
+    pin_mut!(stream);
+
+    loop {
+        if let Some(slot) = stream.next().await {
+            info!("Received slot: {:?}", slot);
+
+            if let Some(current_preconfer) = log_error(
+                whitelist.getOperatorForCurrentEpoch().call().await,
+                "Failed to read current preconfer",
+            ) {
+                set_active_operator_if_necessary(
+                    &current_preconfer,
+                    &preconfer_address,
+                    &mut preconfirmation_slot_model,
+                    &slot,
+                );
+            }
+
+            if preconfirmation_slot_model.can_preconfirm(&slot)
+                && preconfirmation_slot_model.can_confirm(&slot)
+            {
+                let force_send = false;
+                log_error(
+                    confirmation_strategy.send(force_send).await,
+                    "Failed to send blocks",
+                );
+            }
+            if preconfirmation_slot_model.can_confirm(&slot)
+                && !preconfirmation_slot_model.can_preconfirm(&slot)
+                && preconfirmation_slot_model.is_first_preconfirmation_slot(&slot)
+            {
+                let force_send = true;
+                let _ = log_error(
+                    confirmation_strategy.send(force_send).await,
+                    "Failed to send blocks at start of handover period",
+                );
+            }
+
+            if preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot) {
+                if let Some(next_preconfer) = log_error(
+                    whitelist.getOperatorForNextEpoch().call().await,
+                    "Failed to read preconfer for next epoch",
+                ) {
+                    set_active_operator_for_next_period(
+                        &next_preconfer,
+                        &preconfer_address,
+                        &mut preconfirmation_slot_model,
+                        &slot,
                     );
                 }
             }
@@ -186,6 +226,26 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
         get_slot_stream(start, next_slot_count, config.l2_slot_time, slots_per_epoch)?,
         subslots_per_slot,
     ))
+}
+
+fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = Slot>> {
+    let taiko_slot_model = SlotModel::taiko_holesky(config.l1_slot_time);
+
+    let time_provider = SystemTimeProvider::new();
+    let start = get_next_slot_start(&config.l1_slot_time, &time_provider)?;
+    let timestamp = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs();
+    let taiko_slot = taiko_slot_model.get_slot(timestamp);
+
+    let next_slot_count = taiko_slot.epoch * config.l1_slots_per_epoch + taiko_slot.slot + 1;
+    Ok(get_slot_stream(
+        start,
+        next_slot_count,
+        config.l1_slot_time,
+        config.l1_slots_per_epoch,
+    )?)
 }
 
 async fn create_header_stream(
@@ -274,13 +334,14 @@ async fn store_header(
     msg: String,
 ) -> ApplicationResult<()> {
     info!(
-        "{msg} 🗣 #{:<10} timestamp={} now={}",
+        "{msg} 🗣 #{:<10} timestamp={} now={} state_root={:?}",
         header.number,
         header.timestamp,
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
-            .as_secs()
+            .as_secs(),
+        header.state_root
     );
     *current.write().await = header;
     Ok(())
@@ -321,7 +382,20 @@ async fn main() -> ApplicationResult<()> {
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let latest_l2_header = taiko_l2_client.get_latest_header().await?;
-    info!("Starting with l2 header: {}", latest_l2_header.number);
+    let other_latest = get_latest_header(config.l2_client_url.clone()).await?;
+    info!(
+        "Starting with l2 header: {} {}",
+        latest_l2_header.number,
+        latest_l2_header.hash_slow()
+    );
+    info!("{latest_l2_header:?}");
+    info!(
+        "other l2 header: {} {}",
+        other_latest.number,
+        other_latest.hash_slow()
+    );
+    info!("{other_latest:?}");
+    let latest_l2_header_number = latest_l2_header.number;
     let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
     let taiko_l1_client = get_taiko_l1_client(&config).await?;
     let l1_provider = ProviderBuilder::new()
@@ -358,26 +432,43 @@ async fn main() -> ApplicationResult<()> {
     let handover_slots = config.handover_window_slots as u64;
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
 
-    let max_blocks = 2;
-    let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
-        ConfirmationSender::new(
-            taiko_l1_client,
-            Address::from_str(&config.taiko_preconf_router_address)?,
-            signer,
-        ),
-        max_blocks,
-    );
-
-    let slot_stream = create_subslot_stream(&config)?;
-    let l1_header_stream =
-        create_header_stream(&config.l1_client_url, &config.l1_ws_url, config.poll_period).await?;
-    let l2_provider = ProviderBuilder::new()
-        .connect_ws(WsConnect::new(&config.l2_ws_url))
+    let l1_provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(&config.l1_ws_url))
         .await?;
     let taiko_inbox = TaikoInboxInstance::new(
         Address::from_str(&config.taiko_inbox_address).unwrap(),
-        l2_provider.clone(),
+        l1_provider.clone(),
     );
+    let latest_confirmed_block_id = get_latest_confirmed_block_id(&taiko_inbox).await?;
+    let mut unconfirmed_l2_blocks = vec![];
+    let l2_client = get_alloy_client(&config.l2_client_url, false)?;
+    for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
+        let block = get_block_by_id(&l2_client, block_id, true).await?;
+        unconfirmed_l2_blocks.push(block);
+    }
+    info!(
+        "Picked up {} unconfirmed blocks at startup",
+        unconfirmed_l2_blocks.len()
+    );
+    let unconfirmed_l2_blocks = Arc::new(RwLock::new(unconfirmed_l2_blocks));
+    let max_blocks = 2;
+    let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
+        ConfirmationSender::new(
+            taiko_l1_client.clone(),
+            Address::from_str(&config.taiko_preconf_router_address)?,
+            signer,
+        ),
+        unconfirmed_l2_blocks.clone(),
+        shared_last_l1_header.clone(),
+        max_blocks,
+        config.anchor_id_lag,
+    );
+
+    let subslot_stream = create_subslot_stream(&config)?;
+    let slot_stream = create_slot_stream(&config)?;
+    let l1_header_stream =
+        create_header_stream(&config.l1_client_url, &config.l1_ws_url, config.poll_period).await?;
+
     let l2_block_stream =
         create_block_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
     let batch_proposed_stream = taiko_inbox
@@ -385,19 +476,23 @@ async fn main() -> ApplicationResult<()> {
         .subscribe()
         .await?
         .into_stream()
-        .filter_map(
-            |result| async move { result.map(|(batch_proposed, _log)| batch_proposed).ok() },
-        );
-    let unconfirmed_l2_blocks = Arc::new(RwLock::new(vec![]));
+        .filter_map(|result| async move {
+            result
+                .map(|(batch_proposed, _log)| batch_proposed.info.lastBlockId)
+                .ok()
+        });
     let get_header_call = |id: u64| {
         let url = config.l2_client_url.clone();
         async move { get_header_by_id(url.clone(), id).await }
     };
+    let last_batch_verifier = LastBatchVerifier::new(taiko_inbox, preconfer_address);
     let l2_header_stream = get_l2_head_stream(
         l2_block_stream,
         batch_proposed_stream,
         unconfirmed_l2_blocks,
         get_header_call,
+        Some(latest_confirmed_block_id),
+        last_batch_verifier,
     )
     .await;
 
@@ -407,20 +502,26 @@ async fn main() -> ApplicationResult<()> {
             store_header_boxed_l1,
             shared_last_l1_header
         ),
-        stream_headers(
+        stream_l2_headers(
             l2_header_stream,
             store_header_boxed_l2,
             shared_last_l2_header
         ),
         trigger_from_stream(
-            slot_stream,
+            subslot_stream,
             preconfer,
-            preconfirmation_slot_model,
+            preconfirmation_slot_model.clone(),
             taiko_sequencing_monitor,
-            whitelist,
-            confirmation_strategy,
+            whitelist.clone(),
             config.handover_start_buffer
         ),
+        confirmation_loop(
+            slot_stream,
+            preconfirmation_slot_model,
+            whitelist,
+            confirmation_strategy,
+            preconfer_address,
+        )
     );
 
     Ok(())

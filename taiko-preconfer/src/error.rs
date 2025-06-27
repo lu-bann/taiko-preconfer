@@ -40,6 +40,12 @@ pub enum ApplicationError {
 
     #[error("{0}")]
     Signer(#[from] alloy_signer_local::LocalSignerError),
+
+    #[error("{0}")]
+    InboxError(#[from] preconfirmation::verification::TaikoInboxError),
+
+    #[error("{0}")]
+    Http(#[from] preconfirmation::client::HttpError),
 }
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;
