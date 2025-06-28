@@ -12,11 +12,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value as JsonValue, json};
 use thiserror::Error;
 
-use crate::util::hex_to_u64;
-
 pub const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
 pub const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
-pub const GET_TRANSACTION_COUNT: &str = "eth_getTransactionCount";
 pub const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
 pub const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
 
@@ -39,14 +36,6 @@ pub trait HttpClient {
         method: String,
         params: serde_json::Value,
     ) -> impl Future<Output = Result<Resp, HttpError>>;
-}
-
-pub async fn get_nonce(client: &RpcClientInner, address: &str) -> Result<u64, HttpError> {
-    let params = json!([address, "pending"]);
-    let transaction_count_hex_str: String = client
-        .request(GET_TRANSACTION_COUNT.to_string(), params)
-        .await?;
-    Ok(hex_to_u64(&transaction_count_hex_str)?)
 }
 
 pub async fn get_header(
@@ -145,18 +134,6 @@ pub async fn get_block(
         .request(GET_BLOCK_BY_NUMBER.to_string(), params.clone())
         .await?;
     block.ok_or(HttpError::Rpc(alloy_json_rpc::RpcError::NullResp))
-}
-
-pub async fn get_latest_block(client: &RpcClientInner, full_tx: bool) -> Result<Block, HttpError> {
-    get_block(client, BlockNumberOrTag::Latest, full_tx).await
-}
-
-pub async fn get_block_by_id(
-    client: &RpcClientInner,
-    id: u64,
-    full_tx: bool,
-) -> Result<Block, HttpError> {
-    get_block(client, BlockNumberOrTag::Number(id), full_tx).await
 }
 
 #[cfg(test)]

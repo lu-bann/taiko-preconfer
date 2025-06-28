@@ -33,11 +33,6 @@ impl HttpClient for RpcClient {
     }
 }
 
-pub fn get_alloy_client(url: &str, is_local: bool) -> Result<AlloyClient, url::ParseError> {
-    let transport = Http::new(Url::parse(url)?);
-    Ok(AlloyClient::new(transport, is_local))
-}
-
 pub fn get_alloy_auth_client(
     url: &str,
     jwt_secret: JwtSecret,

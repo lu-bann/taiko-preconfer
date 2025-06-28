@@ -2,13 +2,11 @@ use std::time::Duration;
 
 use alloy_consensus::Header;
 use alloy_primitives::B256;
-use alloy_rpc_client::RpcClient;
+use alloy_provider::Provider;
 use alloy_rpc_types_eth::Block;
 use async_stream::stream;
 use futures::{Stream, future::BoxFuture, pin_mut};
 use tokio_stream::StreamExt;
-
-use crate::client::{get_latest_block, get_latest_header};
 
 pub fn get_header_stream(
     client_stream: impl Stream<Item = Header>,
@@ -46,15 +44,16 @@ pub fn get_block_stream(
     })
 }
 
-pub fn get_header_polling_stream(
-    client: RpcClient,
+pub fn get_header_polling_stream<P: Provider>(
+    provider: P,
     polling_duration: Duration,
 ) -> impl Stream<Item = Header> {
     stream! {
         let mut last_header_number = -1_i128;
         let mut last_hash = B256::ZERO;
         loop {
-            if let Ok(header) = get_latest_header(&client).await {
+            if let Ok(Some(block)) = provider.get_block_by_number(alloy_eips::BlockNumberOrTag::Latest).await {
+                let header = block.header.inner;
                 if header.number as i128 != last_header_number || header.hash_slow() != last_hash {
                     last_header_number = header.number as i128;
                     last_hash = header.hash_slow();
@@ -66,16 +65,15 @@ pub fn get_header_polling_stream(
     }
 }
 
-pub fn get_block_polling_stream(
-    client: RpcClient,
+pub fn get_block_polling_stream<P: Provider>(
+    provider: P,
     polling_duration: Duration,
-    full_tx: bool,
 ) -> impl Stream<Item = Block> {
     stream! {
         let mut last_header_number = -1_i128;
         let mut last_hash = B256::ZERO;
         loop {
-            if let Ok(block) = get_latest_block(&client, full_tx).await {
+            if let Ok(Some(block)) = provider.get_block_by_number(alloy_eips::BlockNumberOrTag::Latest).full().await {
                 if block.header.number as i128 != last_header_number || block.header.hash_slow() != last_hash {
                     last_header_number = block.header.number as i128;
                     last_hash = block.header.hash_slow();
