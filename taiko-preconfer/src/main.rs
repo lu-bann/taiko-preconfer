@@ -1,15 +1,13 @@
-use std::{str::FromStr, sync::Arc, time::Duration};
+use std::{str::FromStr, sync::Arc};
 
-use alloy_consensus::Header;
 use alloy_network::EthereumWallet;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
-use alloy_rpc_types_eth::Block;
 use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
-use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
+use futures::{Stream, StreamExt};
 use preconfirmation::{
-    client::{RpcClient, get_alloy_auth_client, get_alloy_client, reqwest::get_block_by_id},
+    client::{RpcClient, get_alloy_auth_client, reqwest::get_block_by_id},
     preconf::{
         BlockBuilder,
         config::Config,
@@ -20,9 +18,8 @@ use preconfirmation::{
     slot::{Slot, SubSlot},
     slot_model::SlotModel,
     stream::{
-        get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
-        get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
-        get_next_slot_start, get_slot_stream, get_subslot_stream, stream_l2_headers, to_boxed,
+        get_confirmed_id_polling_stream, get_id_stream, get_l2_head_stream, get_next_slot_start,
+        get_slot_stream, get_subslot_stream,
     },
     taiko::{
         anchor::{ValidAnchor, to_anchor_base_fee_config},
@@ -32,29 +29,18 @@ use preconfirmation::{
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
-    util::{log_error, now_as_secs},
+    util::log_error,
     verification::{LastBatchVerifier, get_latest_confirmed_batch},
 };
 use tokio::{join, sync::RwLock};
 use tracing::info;
 
-use taiko_preconfer::{confirmation_loop, error::ApplicationResult, preconfirmation_loop};
-
-async fn stream_l1_headers<
-    'a,
-    E,
-    T: Fn(Header, Arc<RwLock<ValidAnchor<TaikoL1Client>>>) -> BoxFuture<'a, Result<(), E>>,
->(
-    stream: impl Stream<Item = Header>,
-    f: T,
-    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
-) -> Result<(), E> {
-    pin_mut!(stream);
-    while let Some(header) = stream.next().await {
-        f(header, valid_anchor.clone()).await?;
-    }
-    Ok(())
-}
+use taiko_preconfer::{
+    confirmation_loop,
+    error::ApplicationResult,
+    onchain_tracking_loop::{self, create_block_stream, create_header_stream},
+    preconfirmation_loop,
+};
 
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
     let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
@@ -92,40 +78,6 @@ fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = S
         config.l1_slot_time,
         config.l1_slots_per_epoch,
     )?)
-}
-
-async fn create_header_stream(
-    client_url: &str,
-    ws_url: &str,
-    poll_period: Duration,
-) -> ApplicationResult<impl Stream<Item = Header>> {
-    let client = get_alloy_client(client_url, false)?;
-    let polling_stream = get_header_polling_stream(client, poll_period);
-
-    let ws = WsConnect::new(ws_url);
-    let provider = ProviderBuilder::new().connect_ws(ws).await?;
-    let subscription = provider.subscribe_blocks().await?;
-    let ws_stream = subscription.into_stream().map(|header| header.inner);
-    Ok(get_header_stream(polling_stream, ws_stream))
-}
-
-async fn create_block_stream(
-    client_url: &str,
-    ws_url: &str,
-    poll_period: Duration,
-) -> ApplicationResult<impl Stream<Item = Block>> {
-    let client = get_alloy_client(client_url, false)?;
-    let full_tx = true;
-    let polling_stream = get_block_polling_stream(client, poll_period, full_tx);
-
-    let ws = WsConnect::new(ws_url);
-    let provider = ProviderBuilder::new().connect_ws(ws).await?;
-    let ws_stream = provider
-        .subscribe_full_blocks()
-        .into_stream()
-        .await?
-        .filter_map(|res| async move { res.ok() });
-    Ok(get_block_stream(polling_stream, ws_stream))
 }
 
 fn get_config() -> ApplicationResult<Config> {
@@ -175,61 +127,6 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
         .connect(&config.l1_client_url)
         .await?;
     Ok(TaikoL1Client::new(l1_provider))
-}
-
-async fn store_header(
-    header: Header,
-    current: Arc<RwLock<Header>>,
-    msg: String,
-) -> ApplicationResult<()> {
-    info!(
-        "{msg} 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
-        header.number,
-        header.timestamp,
-        now_as_secs(),
-        header.state_root,
-        header.gas_used
-    );
-    *current.write().await = header;
-    Ok(())
-}
-
-async fn store_valid_anchor(
-    header: Header,
-    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
-) -> ApplicationResult<()> {
-    info!(
-        "L1 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
-        header.number,
-        header.timestamp,
-        now_as_secs(),
-        header.state_root,
-        header.gas_used
-    );
-    valid_anchor
-        .write()
-        .await
-        .update_block_number(header.number)
-        .await?;
-    Ok(())
-}
-
-async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
-    store_header(header, current, "L2".to_string()).await
-}
-
-fn store_valid_anchor_boxed<'a>(
-    header: Header,
-    valid_anchor_id: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
-) -> BoxFuture<'a, ApplicationResult<()>> {
-    Box::pin(store_valid_anchor(header, valid_anchor_id))
-}
-
-fn store_header_boxed_l2<'a>(
-    header: Header,
-    current: Arc<RwLock<Header>>,
-) -> BoxFuture<'a, ApplicationResult<()>> {
-    to_boxed(header, current, store_header_l2)
 }
 
 #[tokio::main]
@@ -389,12 +286,12 @@ async fn main() -> ApplicationResult<()> {
     )
     .await;
 
-    let _ = join!(
-        stream_l1_headers(l1_header_stream, store_valid_anchor_boxed, valid_anchor_id,),
-        stream_l2_headers(
+    let (on_chain_result, preconfirmation_result, confirmation_result) = join!(
+        onchain_tracking_loop::run(
+            l1_header_stream,
             l2_header_stream,
-            store_header_boxed_l2,
-            shared_last_l2_header
+            shared_last_l2_header,
+            valid_anchor_id
         ),
         preconfirmation_loop::run(
             subslot_stream,
@@ -413,5 +310,7 @@ async fn main() -> ApplicationResult<()> {
         )
     );
 
-    Ok(())
+    on_chain_result?;
+    preconfirmation_result?;
+    confirmation_result
 }
