@@ -18,8 +18,10 @@ use preconfirmation::{
 };
 use tracing::{debug, info, trace};
 
-use crate::error::ApplicationResult;
-use crate::util::{set_active_operator_for_next_period, set_active_operator_if_necessary};
+use crate::{
+    error::ApplicationResult,
+    util::{set_active_operator_for_next_period, set_active_operator_if_necessary},
+};
 
 pub async fn run<
     L1Client: ITaikoL1Client,

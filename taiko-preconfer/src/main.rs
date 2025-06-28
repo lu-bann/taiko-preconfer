@@ -2,7 +2,6 @@ use std::{str::FromStr, sync::Arc, time::Duration};
 
 use alloy_consensus::Header;
 use alloy_network::EthereumWallet;
-use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_rpc_types_eth::Block;
@@ -39,11 +38,7 @@ use preconfirmation::{
 use tokio::{join, sync::RwLock};
 use tracing::info;
 
-mod error;
-use crate::error::ApplicationResult;
-mod util;
-use crate::util::{set_active_operator_for_next_period, set_active_operator_if_necessary};
-mod preconfirmation_loop;
+use taiko_preconfer::{confirmation_loop, error::ApplicationResult, preconfirmation_loop};
 
 async fn stream_l1_headers<
     'a,
@@ -59,78 +54,6 @@ async fn stream_l1_headers<
         f(header, valid_anchor.clone()).await?;
     }
     Ok(())
-}
-
-async fn confirmation_loop<L1Client: ITaikoL1Client>(
-    stream: impl Stream<Item = Slot>,
-    preconfirmation_slot_model: PreconfirmationSlotModel,
-    whitelist: TaikoWhitelistInstance,
-    confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
-    preconfer_address: Address,
-) -> ApplicationResult<()> {
-    let mut preconfirmation_slot_model = preconfirmation_slot_model;
-    pin_mut!(stream);
-    let slot_model = SlotModel::holesky();
-
-    loop {
-        if let Some(slot) = stream.next().await {
-            info!("Received slot: {:?}", slot);
-            let total_slot = slot.epoch * 32 + slot.slot;
-            info!("Total slot: {}", total_slot);
-            let can_confirm = preconfirmation_slot_model.can_confirm(&slot);
-            let can_preconfirm = preconfirmation_slot_model.can_preconfirm(&slot);
-            let within_handover_period =
-                preconfirmation_slot_model.within_handover_period(slot.slot);
-            let last_slot_before_handover_window =
-                preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot);
-            info!("Can confirm: {}", can_confirm);
-            info!("Can preconfirm: {}", can_preconfirm);
-            info!("within handover period: {}", within_handover_period);
-            let l1_slot_timestamp = slot_model.get_timestamp(total_slot + 1);
-            info!(
-                "L1 slot timestamp: {} {} {}",
-                total_slot * 12 + preconfirmation::slot_model::HOLESKY_GENESIS_TIMESTAMP,
-                l1_slot_timestamp,
-                preconfirmation::util::now_as_secs(),
-            );
-
-            if let Some(current_preconfer) = log_error(
-                whitelist.getOperatorForCurrentEpoch().call().await,
-                "Failed to read current preconfer",
-            ) {
-                set_active_operator_if_necessary(
-                    &current_preconfer,
-                    &preconfer_address,
-                    &mut preconfirmation_slot_model,
-                    &slot,
-                );
-            }
-
-            if true {
-                let force_send = within_handover_period;
-                log_error(
-                    confirmation_strategy
-                        .send(l1_slot_timestamp, force_send)
-                        .await,
-                    "Failed to send blocks",
-                );
-            }
-
-            if last_slot_before_handover_window {
-                if let Some(next_preconfer) = log_error(
-                    whitelist.getOperatorForNextEpoch().call().await,
-                    "Failed to read preconfer for next epoch",
-                ) {
-                    set_active_operator_for_next_period(
-                        &next_preconfer,
-                        &preconfer_address,
-                        &mut preconfirmation_slot_model,
-                        &slot,
-                    );
-                }
-            }
-        }
-    }
 }
 
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
@@ -481,7 +404,7 @@ async fn main() -> ApplicationResult<()> {
             whitelist.clone(),
             config.handover_start_buffer
         ),
-        confirmation_loop(
+        confirmation_loop::run(
             slot_stream,
             preconfirmation_slot_model,
             whitelist,
