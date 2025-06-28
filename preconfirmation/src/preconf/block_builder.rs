@@ -23,7 +23,7 @@ pub struct BlockBuilder<
     address: Address,
     time_provider: TimeProvider,
     last_l2_header: Arc<RwLock<Header>>,
-    golden_touch_address: String,
+    golden_touch_address: Address,
 }
 
 impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>
@@ -37,7 +37,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         address: Address,
         time_provider: TimeProvider,
         last_l2_header: Arc<RwLock<Header>>,
-        golden_touch_address: String,
+        golden_touch_address: Address,
     ) -> Self {
         Self {
             valid_anchor_id,
@@ -66,7 +66,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         info!("Anchor {anchor_block_id}");
         let (anchor_header, golden_touch_nonce, base_fee) = join!(
             self.l1_client.get_header(anchor_block_id),
-            self.l2_client.get_nonce(&self.golden_touch_address),
+            self.l2_client.get_nonce(self.golden_touch_address),
             self.l2_client.get_base_fee(last_l2_header.gas_used, now),
         );
 
@@ -114,7 +114,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
 #[cfg(test)]
 mod tests {
     use alloy_consensus::{TxEip1559, TxEnvelope};
-    use alloy_primitives::U256;
+    use alloy_primitives::{U256, address};
 
     use alloy_signer::Signature;
     use std::time::{Duration, UNIX_EPOCH};
@@ -206,7 +206,7 @@ mod tests {
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
         )));
-        let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
+        let golden_touch_addr = address!("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = BlockBuilder::new(
             valid_anchor_id,
             l1_client,
@@ -261,7 +261,7 @@ mod tests {
             DUMMY_BLOCK_NUMBER,
             last_block_timestamp,
         )));
-        let golden_touch_addr = String::from("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
+        let golden_touch_addr = address!("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = BlockBuilder::new(
             valid_anchor_id,
             l1_client,

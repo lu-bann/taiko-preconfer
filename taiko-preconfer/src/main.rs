@@ -360,8 +360,7 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
         .wallet(wallet)
         .connect(&config.l1_client_url)
         .await?;
-    let chain_id = l1_provider.get_chain_id().await?;
-    Ok(TaikoL1Client::new(l1_provider, chain_id))
+    Ok(TaikoL1Client::new(l1_provider))
 }
 
 async fn store_header(
@@ -484,7 +483,7 @@ async fn main() -> ApplicationResult<()> {
         preconfer_address,
         SystemTimeProvider::new(),
         shared_last_l2_header.clone(),
-        config.golden_touch_address.clone(),
+        Address::from_str(&config.golden_touch_address)?,
     );
 
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(

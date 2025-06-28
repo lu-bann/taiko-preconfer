@@ -15,7 +15,7 @@ use thiserror::Error;
 use tracing::info;
 
 use crate::client::{
-    HttpError, RpcClient, flatten_mempool_txs, get_latest_header, get_mempool_txs, get_nonce,
+    HttpError, RpcClient, flatten_mempool_txs, get_latest_header, get_mempool_txs,
 };
 use crate::preconf::preconf_blocks::{
     BuildPreconfBlockRequest, BuildPreconfBlockResponse, create_executable_data,
@@ -79,7 +79,7 @@ pub trait ITaikoL2Client {
         timestamp: u64,
     ) -> impl Future<Output = TaikoL2ClientResult<u128>>;
 
-    fn get_nonce(&self, address: &str) -> impl Future<Output = TaikoL2ClientResult<u64>>;
+    fn get_nonce(&self, address: Address) -> impl Future<Output = TaikoL2ClientResult<u64>>;
 
     fn get_latest_header(&self) -> impl Future<Output = TaikoL2ClientResult<Header>>;
 
@@ -183,8 +183,8 @@ impl ITaikoL2Client for TaikoL2Client {
         Ok(base_fee.basefee_.try_into()?)
     }
 
-    async fn get_nonce(&self, address: &str) -> TaikoL2ClientResult<u64> {
-        Ok(get_nonce(self.provider.client(), address).await?)
+    async fn get_nonce(&self, address: Address) -> TaikoL2ClientResult<u64> {
+        Ok(self.provider.get_transaction_count(address).await?)
     }
 
     async fn get_latest_header(&self) -> TaikoL2ClientResult<Header> {

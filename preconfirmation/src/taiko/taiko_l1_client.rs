@@ -1,6 +1,6 @@
 use alloy_consensus::Header;
 use alloy_network::EthereumWallet;
-use alloy_primitives::ChainId;
+use alloy_primitives::Address;
 use alloy_provider::{
     Identity, Provider, RootProvider,
     fillers::{
@@ -13,7 +13,7 @@ use std::time::SystemTime;
 use thiserror::Error;
 use tracing::info;
 
-use crate::client::{get_header_by_id, get_latest_header, get_nonce};
+use crate::client::{get_header_by_id, get_latest_header};
 
 type TaikoProvider = FillProvider<
     JoinFill<
@@ -54,7 +54,7 @@ pub type TaikoL1ClientResult<T> = Result<T, TaikoL1ClientError>;
 
 #[cfg_attr(test, mockall::automock)]
 pub trait ITaikoL1Client {
-    fn get_nonce(&self, address: &str) -> impl Future<Output = TaikoL1ClientResult<u64>>;
+    fn get_nonce(&self, address: Address) -> impl Future<Output = TaikoL1ClientResult<u64>>;
 
     fn get_header(&self, id: u64) -> impl Future<Output = TaikoL1ClientResult<Header>>;
 
@@ -68,26 +68,23 @@ pub trait ITaikoL1Client {
     fn estimate_eip1559_fees(&self)
     -> impl Future<Output = TaikoL1ClientResult<Eip1559Estimation>>;
 
-    fn chain_id(&self) -> ChainId;
-
     fn send(&self, tx: TransactionRequest) -> impl Future<Output = TaikoL1ClientResult<()>>;
 }
 
 #[derive(Debug, Clone)]
 pub struct TaikoL1Client {
     provider: TaikoProvider,
-    chain_id: ChainId,
 }
 
 impl TaikoL1Client {
-    pub const fn new(provider: TaikoProvider, chain_id: ChainId) -> Self {
-        Self { provider, chain_id }
+    pub const fn new(provider: TaikoProvider) -> Self {
+        Self { provider }
     }
 }
 
 impl ITaikoL1Client for TaikoL1Client {
-    async fn get_nonce(&self, address: &str) -> TaikoL1ClientResult<u64> {
-        Ok(get_nonce(self.provider.client(), address).await?)
+    async fn get_nonce(&self, address: Address) -> TaikoL1ClientResult<u64> {
+        Ok(self.provider.get_transaction_count(address).await?)
     }
 
     async fn get_header(&self, id: u64) -> TaikoL1ClientResult<Header> {
@@ -104,10 +101,6 @@ impl ITaikoL1Client for TaikoL1Client {
 
     async fn estimate_eip1559_fees(&self) -> TaikoL1ClientResult<Eip1559Estimation> {
         Ok(self.provider.estimate_eip1559_fees().await?)
-    }
-
-    fn chain_id(&self) -> ChainId {
-        self.chain_id
     }
 
     async fn send(&self, tx: TransactionRequest) -> TaikoL1ClientResult<()> {
