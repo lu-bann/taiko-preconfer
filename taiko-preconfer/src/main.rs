@@ -450,12 +450,12 @@ async fn main() -> ApplicationResult<()> {
         TaikoStatusMonitor::new(preconfirmation_url),
     );
 
-    let l1_provider = ProviderBuilder::new()
+    let l1_ws_provider = ProviderBuilder::new()
         .connect_ws(WsConnect::new(&config.l1_ws_url))
         .await?;
     let taiko_inbox = TaikoInboxInstance::new(
         Address::from_str(&config.taiko_inbox_address).unwrap(),
-        l1_provider.clone(),
+        l1_ws_provider.clone(),
     );
 
     let max_anchor_id_offset = taiko_inbox
@@ -487,9 +487,10 @@ async fn main() -> ApplicationResult<()> {
         config.golden_touch_address.clone(),
     );
 
-    let handover_slots = config.handover_window_slots as u64;
-    let preconfirmation_slot_model =
-        PreconfirmationSlotModel::new(handover_slots, config.l1_slots_per_epoch);
+    let preconfirmation_slot_model = PreconfirmationSlotModel::new(
+        config.handover_window_slots as u64,
+        config.l1_slots_per_epoch,
+    );
 
     let latest_confirmed_batch = get_latest_confirmed_batch(&taiko_inbox).await?;
     let latest_confirmed_block_id = latest_confirmed_batch.lastBlockId;
@@ -497,7 +498,6 @@ async fn main() -> ApplicationResult<()> {
         .write()
         .await
         .update_last_anchor_id(latest_confirmed_batch.anchorBlockId);
-    valid_anchor_id.write().await.update();
 
     let mut unconfirmed_l2_blocks = vec![];
     let l2_client = get_alloy_client(&config.l2_client_url, false)?;
@@ -510,7 +510,6 @@ async fn main() -> ApplicationResult<()> {
         unconfirmed_l2_blocks.len()
     );
     let unconfirmed_l2_blocks = Arc::new(RwLock::new(unconfirmed_l2_blocks));
-    let max_blocks = 2;
     let valid_timestamp = preconfirmation::util::ValidTimestamp::new(
         max_anchor_id_offset * config.l1_slot_time.as_secs(),
     );
@@ -522,7 +521,7 @@ async fn main() -> ApplicationResult<()> {
             signer,
         ),
         unconfirmed_l2_blocks.clone(),
-        max_blocks,
+        config.max_blocks_per_batch,
         valid_anchor_id.clone(),
         taiko_inbox.clone(),
         valid_timestamp,
