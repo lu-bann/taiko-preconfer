@@ -19,7 +19,7 @@ use preconfirmation::{
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
     slot::{Slot, SubSlot},
-    slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
+    slot_model::SlotModel,
     stream::{
         get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
         get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
@@ -37,40 +37,13 @@ use preconfirmation::{
     verification::{LastBatchVerifier, get_latest_confirmed_batch},
 };
 use tokio::{join, sync::RwLock};
-use tracing::{debug, info, trace};
+use tracing::info;
 
 mod error;
 use crate::error::ApplicationResult;
-
-fn set_active_operator_if_necessary(
-    current_preconfer: &Address,
-    preconfer_address: &Address,
-    preconfirmation_slot_model: &mut PreconfirmationSlotModel,
-    slot: &Slot,
-) {
-    if !preconfirmation_slot_model.can_preconfirm(slot) && current_preconfer == preconfer_address {
-        let epoch = if preconfirmation_slot_model.within_handover_period(slot.slot) {
-            slot.epoch + 1
-        } else {
-            slot.epoch
-        };
-        preconfirmation_slot_model.set_next_active_epoch(epoch);
-        info!("Set active epoch to {} for slot {:?}", epoch, slot);
-    }
-}
-
-fn set_active_operator_for_next_period(
-    next_preconfer: &Address,
-    preconfer_address: &Address,
-    preconfirmation_slot_model: &mut PreconfirmationSlotModel,
-    slot: &Slot,
-) {
-    info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
-    if next_preconfer == preconfer_address {
-        preconfirmation_slot_model.set_next_active_epoch(slot.epoch + 1);
-        info!("Set active epoch to {} for slot {:?}", slot.epoch + 1, slot);
-    }
-}
+mod util;
+use crate::util::{set_active_operator_for_next_period, set_active_operator_if_necessary};
+mod preconfirmation_loop;
 
 async fn stream_l1_headers<
     'a,
@@ -86,88 +59,6 @@ async fn stream_l1_headers<
         f(header, valid_anchor.clone()).await?;
     }
     Ok(())
-}
-
-async fn preconfirmation_loop<
-    L1Client: ITaikoL1Client,
-    L2Client: ITaikoL2Client,
-    TimeProvider: ITimeProvider,
->(
-    stream: impl Stream<Item = SubSlot>,
-    builder: BlockBuilder<L1Client, L2Client, TimeProvider>,
-    preconfirmation_slot_model: PreconfirmationSlotModel,
-    sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
-    whitelist: TaikoWhitelistInstance,
-    handover_timeout: Duration,
-) -> ApplicationResult<()> {
-    let mut preconfirmation_slot_model = preconfirmation_slot_model;
-    pin_mut!(stream);
-    let preconfer_address = builder.address();
-
-    loop {
-        if let Some(subslot) = stream.next().await {
-            info!("Received subslot: {:?}", subslot);
-            info!(
-                "L1 slot number {}",
-                subslot.slot.epoch * 32 + subslot.slot.slot
-            );
-            info!(
-                "L2 slot number {}",
-                subslot.slot.epoch * 64 + subslot.sub_slot
-            );
-            let slot_timestamp =
-                HOLESKY_GENESIS_TIMESTAMP + subslot.slot.epoch * 32 * 12 + subslot.sub_slot * 6 + 6;
-            info!(
-                "L2 slot timestamp {} {}",
-                slot_timestamp,
-                preconfirmation::util::now_as_secs()
-            );
-
-            if let Some(current_preconfer) = log_error(
-                whitelist.getOperatorForCurrentEpoch().call().await,
-                "Failed to read current preconfer",
-            ) {
-                set_active_operator_if_necessary(
-                    &current_preconfer,
-                    &preconfer_address,
-                    &mut preconfirmation_slot_model,
-                    &subslot.slot,
-                );
-            }
-
-            if preconfirmation_slot_model.can_preconfirm(&subslot.slot) {
-                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot) {
-                    trace!("First slot in window: {:?}", subslot.slot);
-                    if log_error(
-                        tokio::time::timeout(handover_timeout, sequencing_monitor.ready()).await,
-                        "State out of sync after handover period",
-                    )
-                    .is_some()
-                    {
-                        debug!("Last preconfer is done and l2 header is in sync");
-                    }
-                }
-
-                log_error(builder.build_block().await, "Error building block");
-            } else {
-                info!("Not active operator. Skip block building.");
-            }
-
-            if preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot) {
-                if let Some(next_preconfer) = log_error(
-                    whitelist.getOperatorForNextEpoch().call().await,
-                    "Failed to read preconfer for next epoch",
-                ) {
-                    set_active_operator_for_next_period(
-                        &next_preconfer,
-                        &preconfer_address,
-                        &mut preconfirmation_slot_model,
-                        &subslot.slot,
-                    );
-                }
-            }
-        }
-    }
 }
 
 async fn confirmation_loop<L1Client: ITaikoL1Client>(
@@ -582,7 +473,7 @@ async fn main() -> ApplicationResult<()> {
             store_header_boxed_l2,
             shared_last_l2_header
         ),
-        preconfirmation_loop(
+        preconfirmation_loop::run(
             subslot_stream,
             block_builder,
             preconfirmation_slot_model.clone(),
