@@ -6,7 +6,7 @@ use tracing::{debug, info, trace};
 use alloy_primitives::Address;
 
 use crate::preconf::BlockBuilderResult;
-use crate::taiko::anchor::ValidAnchorId;
+use crate::taiko::anchor::ValidAnchor;
 use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::taiko::taiko_l2_client::ITaikoL2Client;
 use crate::time_provider::ITimeProvider;
@@ -17,8 +17,7 @@ pub struct BlockBuilder<
     L2Client: ITaikoL2Client,
     TimeProvider: ITimeProvider,
 > {
-    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
-    l1_client: L1Client,
+    valid_anchor_id: Arc<RwLock<ValidAnchor<L1Client>>>,
     l2_client: L2Client,
     address: Address,
     time_provider: TimeProvider,
@@ -31,8 +30,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
 {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
-        l1_client: L1Client,
+        valid_anchor_id: Arc<RwLock<ValidAnchor<L1Client>>>,
         l2_client: L2Client,
         address: Address,
         time_provider: TimeProvider,
@@ -41,7 +39,6 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
     ) -> Self {
         Self {
             valid_anchor_id,
-            l1_client,
             l2_client,
             address,
             time_provider,
@@ -62,10 +59,10 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         let now = self.time_provider.timestamp_in_s();
         debug!("now={} parent={}", now, last_l2_header.timestamp);
 
-        let anchor_block_id = self.valid_anchor_id.read().await.get();
+        let (anchor_block_id, anchor_state_root) =
+            self.valid_anchor_id.read().await.id_and_state_root();
         info!("Anchor {anchor_block_id}");
-        let (anchor_header, golden_touch_nonce, base_fee) = join!(
-            self.l1_client.get_header(anchor_block_id),
+        let (golden_touch_nonce, base_fee) = join!(
             self.l2_client.get_nonce(self.golden_touch_address),
             self.l2_client.get_base_fee(last_l2_header.gas_used, now),
         );
@@ -86,7 +83,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
 
         let anchor_tx = self.l2_client.get_signed_anchor_tx(
             anchor_block_id,
-            anchor_header?.state_root,
+            anchor_state_root,
             last_l2_header.gas_used as u32,
             golden_touch_nonce?,
             base_fee,
@@ -133,11 +130,12 @@ mod tests {
     const DUMMY_TIMESTAMP: u64 = 987654321;
     const DUMMY_GAS: u64 = 30000;
 
-    fn test_valid_anchor_id() -> Arc<RwLock<ValidAnchorId>> {
+    fn test_valid_anchor_id() -> Arc<RwLock<ValidAnchor<MockITaikoL1Client>>> {
         let max_offset = 10;
         let desired_offset = 4;
         let anchor_id_update_tol = 10;
-        Arc::new(ValidAnchorId::new(max_offset, desired_offset, anchor_id_update_tol).into())
+        let client = MockITaikoL1Client::new();
+        Arc::new(ValidAnchor::new(max_offset, desired_offset, anchor_id_update_tol, client).into())
     }
 
     #[tokio::test]
@@ -145,11 +143,6 @@ mod tests {
         let l2_block_time_secs = 2000_u64;
         let last_block_timestamp = 1_000_000u64;
         let next_block_desired_timestamp = last_block_timestamp + l2_block_time_secs;
-
-        let mut l1_client = MockITaikoL1Client::new();
-        l1_client
-            .expect_get_header()
-            .return_once(|_| Box::pin(async { Ok(Header::default()) }));
 
         let mut l2_client = MockITaikoL2Client::new();
         l2_client
@@ -209,7 +202,6 @@ mod tests {
         let golden_touch_addr = address!("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = BlockBuilder::new(
             valid_anchor_id,
-            l1_client,
             l2_client,
             preconfer_address,
             time_provider,
@@ -225,11 +217,6 @@ mod tests {
         let l2_block_time_secs = 2000_u64;
         let last_block_timestamp = 1_000_000u64;
         let next_block_desired_timestamp = last_block_timestamp + l2_block_time_secs;
-
-        let mut l1_client = MockITaikoL1Client::new();
-        l1_client
-            .expect_get_header()
-            .return_once(|_| Box::pin(async { Ok(Header::default()) }));
 
         let mut l2_client = MockITaikoL2Client::new();
         l2_client
@@ -264,7 +251,6 @@ mod tests {
         let golden_touch_addr = address!("0x0000777735367b36bC9B61C50022d9D0700dB4Ec");
         let preconfer = BlockBuilder::new(
             valid_anchor_id,
-            l1_client,
             l2_client,
             preconfer_address,
             time_provider,

@@ -14,7 +14,7 @@ use tracing::{debug, error, info};
 use crate::{
     compression::compress,
     taiko::{
-        anchor::ValidAnchorId,
+        anchor::ValidAnchor,
         contracts::{
             TaikoInboxInstance,
             taiko_wrapper::{BlockParams, TaikoWrapper},
@@ -117,7 +117,7 @@ pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     sender: ConfirmationSender<Client>,
     blocks: Arc<RwLock<Vec<Block>>>,
     max_blocks: usize,
-    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
+    valid_anchor_id: Arc<RwLock<ValidAnchor<Client>>>,
     taiko_inbox: TaikoInboxInstance,
     valid_timestamp: ValidTimestamp,
 }
@@ -127,7 +127,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         sender: ConfirmationSender<Client>,
         blocks: Arc<RwLock<Vec<Block>>>,
         max_blocks: usize,
-        valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
+        valid_anchor_id: Arc<RwLock<ValidAnchor<Client>>>,
         taiko_inbox: TaikoInboxInstance,
         valid_timestamp: ValidTimestamp,
     ) -> Self {
@@ -271,7 +271,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             _params: propose_batch_params,
             _txList: tx_bytes,
         });
-        self.valid_anchor_id.write().await.update();
+        self.valid_anchor_id.write().await.update().await?;
         self.sender.send(tx).await?;
         Ok(())
     }
