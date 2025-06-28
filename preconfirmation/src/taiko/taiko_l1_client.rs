@@ -29,7 +29,7 @@ type TaikoProvider = FillProvider<
 #[derive(Debug, Error)]
 pub enum TaikoL1ClientError {
     #[error("{0}")]
-    Rpc(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
+    Rpc(String),
 
     #[error("{0}")]
     Http(#[from] crate::client::HttpError),
@@ -42,6 +42,12 @@ pub enum TaikoL1ClientError {
 
     #[error("{0}")]
     PendingTransaction(#[from] alloy_provider::PendingTransactionError),
+}
+
+impl From<alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>> for TaikoL1ClientError {
+    fn from(err: alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>) -> Self {
+        Self::Rpc(crate::util::parse_transport_error(err))
+    }
 }
 
 pub type TaikoL1ClientResult<T> = Result<T, TaikoL1ClientError>;

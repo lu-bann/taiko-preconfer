@@ -54,9 +54,176 @@ pub fn pad_left<const N: usize>(bytes: &[u8]) -> Bytes {
     Bytes::from(padded)
 }
 
+pub fn parse_transport_error(err: alloy_transport::TransportError) -> String {
+    match err {
+        alloy_transport::TransportError::ErrorResp(alloy_json_rpc::ErrorPayload {
+            code,
+            message,
+            data,
+        }) => {
+            if let Some(data) = data {
+                let data_str = data.to_string();
+                parse_taiko_sol_error(&data_str[1..(data_str.len() - 1)])
+            } else {
+                format!("{code} {message}")
+            }
+        }
+        err => err.to_string(),
+    }
+}
+
+pub fn parse_taiko_sol_error(code: &str) -> String {
+    match code {
+        "0x7f14daf8" => "AnchorBlockIdTooLarge()",
+        "0x46afbf54" => "AnchorBlockIdTooSmall()",
+        "0x83c7eca6" => "ArraySizesMismatch()",
+        "0x9e15e1bc" => "BatchNotFound()",
+        "0xc63c8bfd" => "BatchVerified()",
+        "0x8879ee78" => "BeyondCurrentFork()",
+        "0xf765f45e" => "BlobNotFound()",
+        "0xfeb32ebd" => "BlockNotFound()",
+        "0xf911438d" => "BlobNotSpecified()",
+        "0xab35696f" => "ContractPaused()",
+        "0x10213ad7" => "CustomProposerMissing()",
+        "0xc25c48e2" => "CustomProposerNotAllowed()",
+        "0x018ad7d6" => "EtherNotPaidAsBond()",
+        "0x324d6078" => "FirstBlockTimeShiftNotZero()",
+        "0x0db26169" => "ForkNotActivated()",
+        "0xe92c469f" => "InsufficientBond()",
+        "0x0f49f066" => "InvalidBlobCreatedIn()",
+        "0x2677ebff" => "InvalidBlobParams()",
+        "0xcd21cd43" => "InvalidGenesisBlockHash()",
+        "0xa86b6512" => "InvalidParams()",
+        "0xac97cfc7" => "InvalidTransitionBlockHash()",
+        "0x19ead341" => "InvalidTransitionParentHash()",
+        "0x6c0118eb" => "InvalidTransitionStateRoot()",
+        "0x419b53b7" => "MetaHashMismatch()",
+        "0x798ee6f1" => "MsgValueNotZero()",
+        "0x367b91ca" => "NoBlocksToProve()",
+        "0x09e29fae" => "NotFirstProposal()",
+        "0x5e9e4449" => "NotInboxWrapper()",
+        "0xff626f77" => "ParentMetaHashMismatch()",
+        "0xed6222ff" => "SameTransition()",
+        "0x8601a5fe" => "SignalNotSent()",
+        "0x21389b84" => "TimestampSmallerThanParent()",
+        "0x3d32ffdb" => "TimestampTooLarge()",
+        "0x1999aed2" => "TimestampTooSmall()",
+        "0xa464214b" => "TooManyBatches()",
+        "0x7f06d57a" => "TooManyBlocks()",
+        "0xc577d383" => "TooManySignals()",
+        "0x76be38bc" => "TransitionNotFound()",
+        "0x2b44f010" => "ZeroAnchorBlockHash()",
+        other => other,
+    }
+    .to_string()
+}
+
+pub fn is_not_outdated_timestamp(
+    last_l2_block_timestamp: u64,
+    l1_block_timestamp: u64,
+    previous_batch_timestamp: u64,
+    total_shift: u64,
+    max_offset: u64,
+) -> bool {
+    last_l2_block_timestamp >= previous_batch_timestamp
+        && last_l2_block_timestamp >= total_shift
+        && last_l2_block_timestamp + max_offset >= l1_block_timestamp + total_shift
+}
+
+#[derive(Debug)]
+pub struct ValidTimestamp {
+    max_offset: u64,
+}
+
+impl ValidTimestamp {
+    pub const fn new(max_offset: u64) -> Self {
+        Self { max_offset }
+    }
+
+    pub fn check(
+        &self,
+        l1_block_timestamp: u64,
+        last_l2_block_timestamp: u64,
+        previous_batch_timestamp: u64,
+        total_shift: u64,
+    ) -> bool {
+        is_not_outdated_timestamp(
+            last_l2_block_timestamp,
+            l1_block_timestamp,
+            previous_batch_timestamp,
+            total_shift,
+            self.max_offset,
+        )
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn test_last_block_timestamp_is_invalid_if_before_last_batch_timestamp() {
+        let last_l2_block_timestamp = 1;
+        let last_batch_timestamp = 2;
+        let valid =
+            is_not_outdated_timestamp(last_l2_block_timestamp, 0, last_batch_timestamp, 0, 0);
+        assert!(!valid);
+    }
+
+    #[test]
+    fn test_last_block_timestamp_is_invalid_if_smaller_than_time_shift() {
+        let last_l2_block_timestamp = 1;
+        let last_batch_timestamp = 2;
+        let total_shift = 2;
+        let valid = is_not_outdated_timestamp(
+            last_l2_block_timestamp,
+            0,
+            last_batch_timestamp,
+            total_shift,
+            0,
+        );
+        assert!(!valid);
+    }
+
+    #[test]
+    fn test_last_block_timestamp_is_invalid_if_more_than_max_offset_behind_current_block() {
+        let last_l2_block_timestamp = 3;
+        let last_batch_timestamp = 2;
+        let total_shift = 2;
+        let l1_block_timestamp = 12;
+        let max_offset = 10;
+        let valid = is_not_outdated_timestamp(
+            last_l2_block_timestamp,
+            l1_block_timestamp,
+            last_batch_timestamp,
+            total_shift,
+            max_offset,
+        );
+        assert!(!valid);
+    }
+
+    #[test]
+    fn test_valid_last_block_timestamp() {
+        let last_l2_block_timestamp = 3;
+        let last_batch_timestamp = 2;
+        let total_shift = 2;
+        let l1_block_timestamp = 11;
+        let max_offset = 10;
+        let valid = is_not_outdated_timestamp(
+            last_l2_block_timestamp,
+            l1_block_timestamp,
+            last_batch_timestamp,
+            total_shift,
+            max_offset,
+        );
+        assert!(valid);
+    }
+
+    #[test]
+    fn test_convert_sol_error() {
+        let err = "0x1999aed2";
+        let converted = parse_taiko_sol_error(err);
+        assert_eq!(converted, "TimestampTooSmall()".to_string());
+    }
 
     #[test]
     fn test_hex_encode() {
