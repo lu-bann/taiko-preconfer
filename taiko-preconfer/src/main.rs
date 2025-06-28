@@ -10,8 +10,7 @@ use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     client::{
         RpcClient, get_alloy_auth_client, get_alloy_client,
-        get_block_by_id as alloy_get_block_by_id,
-        reqwest::{get_block_by_id, get_latest_header},
+        get_block_by_id as alloy_get_block_by_id, reqwest::get_block_by_id,
     },
     preconf::{
         BlockBuilder,
@@ -83,16 +82,15 @@ fn set_active_operator_for_next_period(
 async fn stream_l1_headers<
     'a,
     E,
-    T: Fn(Header, Arc<RwLock<Header>>, Arc<RwLock<ValidAnchorId>>) -> BoxFuture<'a, Result<(), E>>,
+    T: Fn(Header, Arc<RwLock<ValidAnchorId>>) -> BoxFuture<'a, Result<(), E>>,
 >(
     stream: impl Stream<Item = Header>,
     f: T,
-    current: Arc<RwLock<Header>>,
     valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
 ) -> Result<(), E> {
     pin_mut!(stream);
     while let Some(header) = stream.next().await {
-        f(header, current.clone(), valid_anchor_id.clone()).await?;
+        f(header, valid_anchor_id.clone()).await?;
     }
     Ok(())
 }
@@ -173,10 +171,28 @@ async fn confirmation_loop<L1Client: ITaikoL1Client>(
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
+    let slot_model = SlotModel::holesky();
 
     loop {
         if let Some(slot) = stream.next().await {
             info!("Received slot: {:?}", slot);
+            let total_slot = slot.epoch * 32 + slot.slot;
+            info!("Total slot: {}", total_slot);
+            let can_confirm = preconfirmation_slot_model.can_confirm(&slot);
+            let can_preconfirm = preconfirmation_slot_model.can_preconfirm(&slot);
+            let within_handover_period =
+                preconfirmation_slot_model.within_handover_period(slot.slot);
+            let last_slot_before_handover_window =
+                preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot);
+            info!("Can confirm: {}", can_confirm);
+            info!("Can preconfirm: {}", can_preconfirm);
+            info!("within handover period: {}", within_handover_period);
+            let l1_slot_timestamp = slot_model.get_timestamp(total_slot);
+            info!(
+                "L1 slot timestamp: {} {}",
+                total_slot * 12 + preconfirmation::slot_model::HOLESKY_GENESIS_TIMESTAMP,
+                l1_slot_timestamp
+            );
 
             if let Some(current_preconfer) = log_error(
                 whitelist.getOperatorForCurrentEpoch().call().await,
@@ -190,27 +206,17 @@ async fn confirmation_loop<L1Client: ITaikoL1Client>(
                 );
             }
 
-            if preconfirmation_slot_model.can_preconfirm(&slot)
-                && preconfirmation_slot_model.can_confirm(&slot)
-            {
-                let force_send = false;
+            if true {
+                let force_send = within_handover_period;
                 log_error(
-                    confirmation_strategy.send(force_send).await,
+                    confirmation_strategy
+                        .send(l1_slot_timestamp, force_send)
+                        .await,
                     "Failed to send blocks",
                 );
             }
-            if preconfirmation_slot_model.can_confirm(&slot)
-                && !preconfirmation_slot_model.can_preconfirm(&slot)
-                && preconfirmation_slot_model.is_first_preconfirmation_slot(&slot)
-            {
-                let force_send = true;
-                let _ = log_error(
-                    confirmation_strategy.send(force_send).await,
-                    "Failed to send blocks at start of handover period",
-                );
-            }
 
-            if preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot) {
+            if last_slot_before_handover_window {
                 if let Some(next_preconfer) = log_error(
                     whitelist.getOperatorForNextEpoch().call().await,
                     "Failed to read preconfer for next epoch",
@@ -229,6 +235,7 @@ async fn confirmation_loop<L1Client: ITaikoL1Client>(
 
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
     let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
+    //let taiko_slot_model = SlotModel::holesky();
 
     let time_provider = SystemTimeProvider::new();
     let start = get_next_slot_start(&config.l2_slot_time, &time_provider)?;
@@ -248,7 +255,7 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
 }
 
 fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = Slot>> {
-    let taiko_slot_model = SlotModel::taiko_holesky(config.l1_slot_time);
+    let taiko_slot_model = SlotModel::holesky();
 
     let time_provider = SystemTimeProvider::new();
     let start = get_next_slot_start(&config.l1_slot_time, &time_provider)?;
@@ -257,6 +264,9 @@ fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = S
         .unwrap()
         .as_secs();
     let taiko_slot = taiko_slot_model.get_slot(timestamp);
+    info!("Initial L1 slot {:?}", taiko_slot);
+    let total = taiko_slot.epoch * 32 + taiko_slot.slot;
+    info!("Total {}", total);
 
     let next_slot_count = taiko_slot.epoch * config.l1_slots_per_epoch + taiko_slot.slot + 1;
     Ok(get_slot_stream(
@@ -367,9 +377,8 @@ async fn store_header(
     Ok(())
 }
 
-async fn store_header_l1(
+async fn store_valid_anchor(
     header: Header,
-    current: Arc<RwLock<Header>>,
     valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
 ) -> ApplicationResult<()> {
     info!(
@@ -387,7 +396,6 @@ async fn store_header_l1(
         .write()
         .await
         .update_block_number(header.number);
-    *current.write().await = header;
     Ok(())
 }
 
@@ -395,12 +403,11 @@ async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> Applic
     store_header(header, current, "L2".to_string()).await
 }
 
-fn store_header_boxed_l1<'a>(
+fn store_valid_anchor_boxed<'a>(
     header: Header,
-    current: Arc<RwLock<Header>>,
     valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
-    Box::pin(store_header_l1(header, current, valid_anchor_id))
+    Box::pin(store_valid_anchor(header, valid_anchor_id))
 }
 
 fn store_header_boxed_l2<'a>(
@@ -423,19 +430,6 @@ async fn main() -> ApplicationResult<()> {
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
     let taiko_l2_client = get_taiko_l2_client(&config).await?;
     let latest_l2_header = taiko_l2_client.get_latest_header().await?;
-    let other_latest = get_latest_header(config.l2_client_url.clone()).await?;
-    info!(
-        "Starting with l2 header: {} {}",
-        latest_l2_header.number,
-        latest_l2_header.hash_slow()
-    );
-    info!("{latest_l2_header:?}");
-    info!(
-        "other l2 header: {} {}",
-        other_latest.number,
-        other_latest.hash_slow()
-    );
-    info!("{other_latest:?}");
     let latest_l2_header_number = latest_l2_header.number;
 
     let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
@@ -469,9 +463,11 @@ async fn main() -> ApplicationResult<()> {
         .await
         .unwrap()
         .maxAnchorHeightOffset;
+    let anchor_id_update_tol = 5;
     let valid_anchor_id = Arc::new(RwLock::new(ValidAnchorId::new(
         max_anchor_id_offset,
         config.anchor_id_lag,
+        anchor_id_update_tol,
     )));
 
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
@@ -479,7 +475,6 @@ async fn main() -> ApplicationResult<()> {
         .write()
         .await
         .update_block_number(latest_l1_header.number);
-    let shared_last_l1_header = Arc::new(RwLock::new(latest_l1_header));
     let preconfer_address = signer.address();
     info!("Preconfer address: {}", preconfer_address);
     let block_builder = BlockBuilder::new(
@@ -496,20 +491,13 @@ async fn main() -> ApplicationResult<()> {
     let handover_slots = config.handover_window_slots as u64;
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
 
-    println!("anchor {max_anchor_id_offset}");
-
     let latest_confirmed_batch = get_latest_confirmed_batch(&taiko_inbox).await?;
     let latest_confirmed_block_id = latest_confirmed_batch.lastBlockId;
-    println!("latest batch {latest_confirmed_batch:?}");
     valid_anchor_id
         .write()
         .await
         .update_last_anchor_id(latest_confirmed_batch.anchorBlockId);
     valid_anchor_id.write().await.update();
-    println!(
-        "current valid anchor: {}",
-        valid_anchor_id.read().await.get()
-    );
 
     let mut unconfirmed_l2_blocks = vec![];
     let l2_client = get_alloy_client(&config.l2_client_url, false)?;
@@ -523,6 +511,10 @@ async fn main() -> ApplicationResult<()> {
     );
     let unconfirmed_l2_blocks = Arc::new(RwLock::new(unconfirmed_l2_blocks));
     let max_blocks = 2;
+    let valid_timestamp = preconfirmation::util::ValidTimestamp::new(
+        max_anchor_id_offset * config.l1_slot_time.as_secs(),
+    );
+
     let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
         ConfirmationSender::new(
             taiko_l1_client.clone(),
@@ -533,6 +525,7 @@ async fn main() -> ApplicationResult<()> {
         max_blocks,
         valid_anchor_id.clone(),
         taiko_inbox.clone(),
+        valid_timestamp,
     );
 
     let subslot_stream = create_subslot_stream(&config)?;
@@ -584,12 +577,7 @@ async fn main() -> ApplicationResult<()> {
     .await;
 
     let _ = join!(
-        stream_l1_headers(
-            l1_header_stream,
-            store_header_boxed_l1,
-            shared_last_l1_header,
-            valid_anchor_id,
-        ),
+        stream_l1_headers(l1_header_stream, store_valid_anchor_boxed, valid_anchor_id,),
         stream_l2_headers(
             l2_header_stream,
             store_header_boxed_l2,

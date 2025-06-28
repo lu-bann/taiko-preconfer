@@ -1,8 +1,11 @@
 use alloy_consensus::TxEnvelope;
 use alloy_primitives::Bytes;
 use alloy_rpc_types_eth::Block;
+use alloy_sol_types::SolCall;
 use hex::{FromHexError, decode, encode};
 use tracing::error;
+
+use crate::taiko::contracts::TaikoAnchor;
 
 pub fn hex_encode<T: AsRef<[u8]>>(data: T) -> String {
     format!("0x{}", encode(data))
@@ -39,9 +42,20 @@ pub fn get_tx_envelopes_from_block(block: Block) -> Vec<TxEnvelope> {
         .collect()
 }
 
-pub fn get_tx_envelopes_from_blocks(txs: Vec<Block>) -> Vec<TxEnvelope> {
+pub fn get_anchor_block_id_from_bytes(bytes: &Bytes) -> Result<u64, alloy_sol_types::Error> {
+    let anchor_v3_call = TaikoAnchor::anchorV3Call::abi_decode(bytes)?;
+    Ok(anchor_v3_call._anchorBlockId)
+}
+
+pub fn get_tx_envelopes_without_anchor_from_block(block: Block) -> Vec<TxEnvelope> {
+    let mut txs = get_tx_envelopes_from_block(block);
+    txs.remove(0);
+    txs
+}
+
+pub fn get_tx_envelopes_without_anchor_from_blocks(txs: Vec<Block>) -> Vec<TxEnvelope> {
     txs.into_iter()
-        .flat_map(get_tx_envelopes_from_block)
+        .flat_map(get_tx_envelopes_without_anchor_from_block)
         .collect()
 }
 
@@ -130,7 +144,7 @@ pub fn is_not_outdated_timestamp(
         && last_l2_block_timestamp + max_offset >= l1_block_timestamp + total_shift
 }
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct ValidTimestamp {
     max_offset: u64,
 }
@@ -160,6 +174,16 @@ impl ValidTimestamp {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_read_valid_anchor_id() {
+        let input = hex_decode("0x48080a4500000000000000000000000000000000000000000000000000000000003e3664a1fb40892d9c1a27e5c8c8cc4e48eb87e70f82efdbaa5b1323b65f2e1e3a8e3b000000000000000000000000000000000000000000000000000000000002d61c0000000000000000000000000000000000000000000000000000000000000008000000000000000000000000000000000000000000000000000000000000003200000000000000000000000000000000000000000000000000000000004c4b4000000000000000000000000000000000000000000000000000000000502989660000000000000000000000000000000000000000000000000000000023c3460000000000000000000000000000000000000000000000000000000000000001200000000000000000000000000000000000000000000000000000000000000000").unwrap();
+        let bytes = Bytes::from(input);
+        let anchor_id = get_anchor_block_id_from_bytes(&bytes).unwrap();
+        let expected_anchor_id = 4077156;
+        assert_eq!(anchor_id, expected_anchor_id);
+    }
+
     #[test]
     fn test_last_block_timestamp_is_invalid_if_before_last_batch_timestamp() {
         let last_l2_block_timestamp = 1;

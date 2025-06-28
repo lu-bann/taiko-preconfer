@@ -48,26 +48,32 @@ pub struct ValidAnchorId {
     block_number: u64,
     current_anchor_id: u64,
     last_anchor_id: u64,
+    anchor_id_update_tol: u64,
 }
 
 impl ValidAnchorId {
-    pub const fn new(max_offset: u64, desired_offset: u64) -> Self {
+    pub const fn new(max_offset: u64, desired_offset: u64, anchor_id_update_tol: u64) -> Self {
         Self {
             max_offset,
             desired_offset,
             block_number: 0,
             current_anchor_id: 0,
             last_anchor_id: 0,
+            anchor_id_update_tol,
         }
     }
 
     pub fn update(&mut self) {
-        self.current_anchor_id = compute_valid_anchor_id(
+        let new_anchor_id = compute_valid_anchor_id(
             self.block_number,
             self.max_offset,
             self.desired_offset,
             self.last_anchor_id,
         );
+
+        if new_anchor_id - self.current_anchor_id > self.anchor_id_update_tol {
+            self.current_anchor_id = new_anchor_id;
+        }
     }
 
     pub fn is_valid_after(&self, offset: u64) -> bool {
@@ -86,20 +92,16 @@ impl ValidAnchorId {
 
     pub fn update_block_number(&mut self, block_number: u64) {
         self.block_number = block_number;
+        self.update();
     }
 
     pub fn update_last_anchor_id(&mut self, last_anchor_id: u64) {
         self.last_anchor_id = last_anchor_id;
+        self.update();
     }
 
     pub fn get(&self) -> u64 {
         self.current_anchor_id
-    }
-
-    pub fn get_and_update(&mut self) -> u64 {
-        let anchor_id = self.current_anchor_id;
-        self.update();
-        anchor_id
     }
 }
 

@@ -47,9 +47,13 @@ pub fn create_executable_data(
     timestamp: u64,
     txs: Vec<TxEnvelope>,
 ) -> Result<ExecutableData, CompressionError> {
-    let transactions = Bytes::from(compress(txs)?);
+    info!(
+        "tx hash {}",
+        alloy_primitives::keccak256(alloy_rlp::encode(&txs))
+    );
+    let tx_bytes = compress(txs)?;
+    let transactions = Bytes::from(tx_bytes);
 
-    info!("tx hash {}", alloy_primitives::keccak256(&transactions));
     Ok(ExecutableData {
         base_fee_per_gas,
         block_number,

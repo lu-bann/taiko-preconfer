@@ -9,7 +9,7 @@ use tracing::{debug, info};
 use crate::{
     compression::compress,
     taiko::contracts::{TaikoInbox, TaikoInboxInstance},
-    util::{get_tx_envelopes_from_blocks, pad_left},
+    util::{get_tx_envelopes_without_anchor_from_blocks, pad_left},
 };
 
 pub fn verify_signature(
@@ -126,7 +126,7 @@ impl ILastBatchVerifier for LastBatchVerifier {
 }
 
 pub fn compute_txs_hash(blocks: Vec<Block>) -> Result<B256, TaikoInboxError> {
-    let txs = get_tx_envelopes_from_blocks(blocks);
+    let txs = get_tx_envelopes_without_anchor_from_blocks(blocks);
     debug!("txs: {txs:?}");
     let compressed_txs = compress(txs)?;
 
@@ -158,7 +158,7 @@ pub fn compute_batch_meta_hash(
             let time_shift = block.header.timestamp - last_timestamp;
             last_timestamp = block.header.timestamp;
             TaikoInbox::BlockParams {
-                numTransactions: block.transactions.len() as u16,
+                numTransactions: block.transactions.len() as u16 - 1,
                 timeShift: time_shift as u8,
                 signalSlots: vec![],
             }
@@ -166,7 +166,7 @@ pub fn compute_batch_meta_hash(
         .collect();
     info!("last timestamp {last_timestamp}");
 
-    let txs = get_tx_envelopes_from_blocks(blocks);
+    let txs = get_tx_envelopes_without_anchor_from_blocks(blocks);
     debug!("txs: {txs:?}");
     let compressed_txs = compress(txs)?;
 
