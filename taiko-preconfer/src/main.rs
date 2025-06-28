@@ -463,11 +463,10 @@ async fn main() -> ApplicationResult<()> {
         .await
         .unwrap()
         .maxAnchorHeightOffset;
-    let anchor_id_update_tol = 5;
     let valid_anchor_id = Arc::new(RwLock::new(ValidAnchorId::new(
         max_anchor_id_offset,
         config.anchor_id_lag,
-        anchor_id_update_tol,
+        config.anchor_id_update_tol,
     )));
 
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
