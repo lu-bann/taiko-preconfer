@@ -10,10 +10,7 @@ use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
-    client::{
-        RpcClient, get_alloy_auth_client, get_alloy_client,
-        get_block_by_id as alloy_get_block_by_id, reqwest::get_block_by_id,
-    },
+    client::{RpcClient, get_alloy_auth_client, get_alloy_client, reqwest::get_block_by_id},
     preconf::{
         BlockBuilder,
         config::Config,
@@ -492,9 +489,8 @@ async fn main() -> ApplicationResult<()> {
         .update_last_anchor_id(latest_confirmed_batch.anchorBlockId);
 
     let mut unconfirmed_l2_blocks = vec![];
-    let l2_client = get_alloy_client(&config.l2_client_url, false)?;
     for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
-        let block = alloy_get_block_by_id(&l2_client, block_id, true).await?;
+        let block = get_block_by_id(config.l2_client_url.clone(), Some(block_id)).await?;
         unconfirmed_l2_blocks.push(block);
     }
     info!(

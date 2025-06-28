@@ -37,6 +37,9 @@ pub enum ApplicationError {
 
     #[error("{0}")]
     Http(#[from] preconfirmation::client::HttpError),
+
+    #[error("{0}")]
+    Reqwest(#[from] reqwest::Error),
 }
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;
