@@ -83,9 +83,8 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
         let tx = tx
             .with_from(self.signer.address())
             .with_to(self.taiko_inbox);
-        let signer_str = self.signer.address().to_string();
         let (nonce, gas_limit, fee_estimate) = join!(
-            self.client.get_nonce(&signer_str),
+            self.client.get_nonce(self.signer.address()),
             self.client.estimate_gas(tx.clone()),
             self.client.estimate_eip1559_fees(),
         );
