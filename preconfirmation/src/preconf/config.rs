@@ -30,6 +30,7 @@ pub struct Config {
     pub golden_touch_private_key: String,
     pub private_key: Secret,
     pub jwt_secret: Secret,
+    pub anchor_id_update_tol: u64,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -69,6 +70,7 @@ impl Config {
             golden_touch_private_key: std::env::var("GOLDEN_TOUCH_PRIVATE_KEY")?,
             private_key: Secret::new(std::env::var("PRIVATE_KEY")?),
             jwt_secret: Secret::new(std::env::var("JWT_SECRET")?),
+            anchor_id_update_tol: std::env::var("ANCHOR_ID_UPDATE_TOL")?.parse()?,
         })
     }
 }
