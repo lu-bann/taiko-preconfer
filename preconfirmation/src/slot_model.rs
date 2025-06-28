@@ -32,11 +32,7 @@ impl SlotModel {
     }
 
     pub const fn taiko_holesky(slot_duration: Duration) -> Self {
-        Self::new(
-            TAIKO_HOLESKY_GENESIS_TIMESTAMP,
-            slot_duration,
-            EPOCH_DURATION,
-        )
+        Self::new(HOLESKY_GENESIS_TIMESTAMP, slot_duration, EPOCH_DURATION)
     }
 
     pub const fn generic(genesis_timestamp: u64, slot_duration: Duration) -> Self {
