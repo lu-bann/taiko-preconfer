@@ -44,8 +44,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
             info!("within handover period: {}", within_handover_period);
             let l1_slot_timestamp = slot_model.get_timestamp(total_slot + 1);
             info!(
-                "L1 slot timestamp: {} {} {}",
-                total_slot * 12 + preconfirmation::slot_model::HOLESKY_GENESIS_TIMESTAMP,
+                "L1 slot timestamp: {} {}",
                 l1_slot_timestamp,
                 preconfirmation::util::now_as_secs(),
             );
