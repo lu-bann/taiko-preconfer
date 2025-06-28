@@ -6,7 +6,7 @@ use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_eth::Block;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
-    client::{get_alloy_client, reqwest::get_block_by_id},
+    client::reqwest::get_block_by_id,
     preconf::config::Config,
     stream::{
         get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
@@ -98,8 +98,8 @@ pub async fn create_header_stream(
     ws_url: &str,
     poll_period: Duration,
 ) -> ApplicationResult<impl Stream<Item = Header>> {
-    let client = get_alloy_client(client_url, false)?;
-    let polling_stream = get_header_polling_stream(client, poll_period);
+    let provider = ProviderBuilder::new().connect(client_url).await?;
+    let polling_stream = get_header_polling_stream(provider, poll_period);
 
     let ws = WsConnect::new(ws_url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
@@ -169,9 +169,8 @@ pub async fn create_block_stream(
     ws_url: &str,
     poll_period: Duration,
 ) -> ApplicationResult<impl Stream<Item = Block>> {
-    let client = get_alloy_client(client_url, false)?;
-    let full_tx = true;
-    let polling_stream = get_block_polling_stream(client, poll_period, full_tx);
+    let provider = ProviderBuilder::new().connect(client_url).await?;
+    let polling_stream = get_block_polling_stream(provider, poll_period);
 
     let ws = WsConnect::new(ws_url);
     let provider = ProviderBuilder::new().connect_ws(ws).await?;
