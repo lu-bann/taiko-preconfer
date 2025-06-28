@@ -20,7 +20,7 @@ use preconfirmation::{
     stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
     taiko::{
         anchor::{ValidAnchor, to_anchor_base_fee_config},
-        contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
+        contracts::{TaikoAnchorInstance, TaikoInbox, TaikoInboxInstance, TaikoWhitelistInstance},
         sign::get_signing_key,
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
@@ -81,7 +81,10 @@ fn get_config() -> ApplicationResult<Config> {
     Ok(Config::try_from_env()?)
 }
 
-async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client> {
+async fn get_taiko_l2_client(
+    config: &Config,
+    base_fee_config: &TaikoInbox::BaseFeeConfig,
+) -> ApplicationResult<TaikoL2Client> {
     let jwt_secret = JwtSecret::from_hex(config.jwt_secret.read()).unwrap();
     let auth_client = RpcClient::new(get_alloy_auth_client(
         &config.l2_auth_client_url,
@@ -94,19 +97,13 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client
         .await?;
     let taiko_anchor = TaikoAnchorInstance::new(config.taiko_anchor_address, provider.clone());
 
-    let l1_provider = ProviderBuilder::new()
-        .connect(&config.l1_client_url)
-        .await?;
-    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_provider);
-    let inbox_config = taiko_inbox.pacayaConfig().call().await?.baseFeeConfig;
-
     let chain_id = provider.get_chain_id().await?;
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/preconfBlocks";
     Ok(TaikoL2Client::new(
         auth_client,
         taiko_anchor,
         provider,
-        to_anchor_base_fee_config(inbox_config),
+        to_anchor_base_fee_config(base_fee_config),
         chain_id,
         get_signing_key(&config.golden_touch_private_key),
         preconfirmation_url,
@@ -134,9 +131,16 @@ async fn main() -> ApplicationResult<()> {
 
     let config = get_config()?;
 
+    let l1_ws_provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(&config.l1_ws_url))
+        .await?;
+    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_ws_provider.clone());
+
+    let taiko_inbox_config = taiko_inbox.pacayaConfig().call().await.unwrap();
+
     let signer =
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
-    let taiko_l2_client = get_taiko_l2_client(&config).await?;
+    let taiko_l2_client = get_taiko_l2_client(&config, &taiko_inbox_config.baseFeeConfig).await?;
     let latest_l2_header = taiko_l2_client.get_latest_header().await?;
     let latest_l2_header_number = latest_l2_header.number;
 
@@ -155,17 +159,7 @@ async fn main() -> ApplicationResult<()> {
         TaikoStatusMonitor::new(preconfirmation_url),
     );
 
-    let l1_ws_provider = ProviderBuilder::new()
-        .connect_ws(WsConnect::new(&config.l1_ws_url))
-        .await?;
-    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_ws_provider.clone());
-
-    let max_anchor_id_offset = taiko_inbox
-        .pacayaConfig()
-        .call()
-        .await
-        .unwrap()
-        .maxAnchorHeightOffset;
+    let max_anchor_id_offset = taiko_inbox_config.maxAnchorHeightOffset;
     let valid_anchor = Arc::new(RwLock::new(ValidAnchor::new(
         max_anchor_id_offset,
         config.anchor_id_lag,

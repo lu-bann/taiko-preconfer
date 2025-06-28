@@ -10,7 +10,7 @@ use crate::taiko::{
 
 const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
 
-pub fn to_anchor_base_fee_config(config: TaikoInbox::BaseFeeConfig) -> TaikoAnchor::BaseFeeConfig {
+pub fn to_anchor_base_fee_config(config: &TaikoInbox::BaseFeeConfig) -> TaikoAnchor::BaseFeeConfig {
     TaikoAnchor::BaseFeeConfig {
         adjustmentQuotient: config.adjustmentQuotient,
         sharingPctg: config.sharingPctg,
