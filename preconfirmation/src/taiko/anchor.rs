@@ -2,9 +2,19 @@ use alloy_consensus::{TxEip1559, TypedTransaction};
 use alloy_primitives::{Address, ChainId, TxKind, U256};
 use alloy_sol_types::SolCall;
 
-use crate::taiko::contracts::TaikoAnchor;
+use crate::taiko::contracts::{TaikoAnchor, TaikoInbox};
 
 const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
+
+pub fn to_anchor_base_fee_config(config: TaikoInbox::BaseFeeConfig) -> TaikoAnchor::BaseFeeConfig {
+    TaikoAnchor::BaseFeeConfig {
+        adjustmentQuotient: config.adjustmentQuotient,
+        sharingPctg: config.sharingPctg,
+        gasIssuancePerSecond: config.gasIssuancePerSecond,
+        minGasExcess: config.minGasExcess,
+        maxGasIssuancePerBlock: config.maxGasIssuancePerBlock,
+    }
+}
 
 pub fn create_anchor_transaction(
     chain_id: ChainId,
@@ -106,12 +116,22 @@ impl ValidAnchorId {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use alloy_consensus::Transaction;
     use alloy_primitives::{Bytes, FixedBytes, address};
 
     use super::*;
-    use crate::{taiko::hekla::get_basefee_config_v2, util::hex_decode};
+    use crate::util::hex_decode;
+
+    pub fn get_basefee_config_v2() -> TaikoAnchor::BaseFeeConfig {
+        TaikoAnchor::BaseFeeConfig {
+            adjustmentQuotient: 8,
+            sharingPctg: 50,
+            gasIssuancePerSecond: 5_000_000,
+            minGasExcess: 1_344_899_430,
+            maxGasIssuancePerBlock: 600_000_000,
+        }
+    }
 
     #[test]
     fn test_create_anchor_transaction() {

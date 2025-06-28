@@ -64,7 +64,7 @@ mod tests {
 
     use super::*;
     use crate::{
-        taiko::{contracts::TaikoAnchor, hekla::get_basefee_config_v2},
+        taiko::{anchor::tests::get_basefee_config_v2, contracts::TaikoAnchor},
         util::hex_decode,
     };
 
