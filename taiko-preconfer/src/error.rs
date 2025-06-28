@@ -30,15 +30,6 @@ pub enum ApplicationError {
     BlockBuilder(#[from] preconfirmation::preconf::BlockBuilderError),
 
     #[error("{0}")]
-    SystemTime(#[from] std::time::SystemTimeError),
-
-    #[error("{0}")]
-    FromHex(#[from] alloy_primitives::hex::FromHexError),
-
-    #[error("{0}")]
-    Reqwest(#[from] reqwest::Error),
-
-    #[error("{0}")]
     Signer(#[from] alloy_signer_local::LocalSignerError),
 
     #[error("{0}")]
