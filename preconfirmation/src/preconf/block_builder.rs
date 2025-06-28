@@ -136,7 +136,8 @@ mod tests {
     fn test_valid_anchor_id() -> Arc<RwLock<ValidAnchorId>> {
         let max_offset = 10;
         let desired_offset = 4;
-        Arc::new(ValidAnchorId::new(max_offset, desired_offset).into())
+        let anchor_id_update_tol = 10;
+        Arc::new(ValidAnchorId::new(max_offset, desired_offset, anchor_id_update_tol).into())
     }
 
     #[tokio::test]

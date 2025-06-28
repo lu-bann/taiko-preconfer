@@ -1,5 +1,6 @@
 use std::{num::TryFromIntError, sync::Arc};
 
+use alloy_consensus::Transaction;
 use alloy_primitives::{Address, Bytes};
 use alloy_provider::network::TransactionBuilder as _;
 use alloy_rpc_types::TransactionRequest;
@@ -21,7 +22,9 @@ use crate::{
         propose_batch::create_propose_batch_params,
         taiko_l1_client::ITaikoL1Client,
     },
-    util::get_tx_envelopes_from_block,
+    util::{
+        ValidTimestamp, get_anchor_block_id_from_bytes, get_tx_envelopes_without_anchor_from_block,
+    },
     verification::get_latest_confirmed_batch,
 };
 
@@ -37,10 +40,16 @@ pub enum ConfirmationError {
     Signer(#[from] alloy_signer::Error),
 
     #[error("{0}")]
+    SolTypes(#[from] alloy_sol_types::Error),
+
+    #[error("{0}")]
     TryU8FromU64(#[from] TryFromIntError),
 
     #[error("{0}")]
     TaikoL1Client(#[from] crate::taiko::taiko_l1_client::TaikoL1ClientError),
+
+    #[error("Empty block (id={0})")]
+    EmptyBlock(u64),
 }
 
 pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
@@ -111,6 +120,7 @@ pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     max_blocks: usize,
     valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
     taiko_inbox: TaikoInboxInstance,
+    valid_timestamp: ValidTimestamp,
 }
 
 impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
@@ -120,6 +130,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         max_blocks: usize,
         valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
         taiko_inbox: TaikoInboxInstance,
+        valid_timestamp: ValidTimestamp,
     ) -> Self {
         Self {
             sender,
@@ -127,27 +138,61 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             max_blocks,
             valid_anchor_id,
             taiko_inbox,
+            valid_timestamp,
         }
     }
 
-    pub async fn send(&self, force_send: bool) -> ConfirmationResult<()> {
+    pub async fn send(&self, l1_slot_timestamp: u64, force_send: bool) -> ConfirmationResult<()> {
         info!("send force={force_send}");
         info!("blocks: {}", self.blocks.read().await.len());
-        if self.blocks.read().await.is_empty()
-            || (self.blocks.read().await.len() < self.max_blocks
+        self.blocks.write().await.retain(|block| {
+            self.valid_timestamp
+                .check(l1_slot_timestamp, block.header.timestamp, 0, 0)
+        });
+        info!(
+            "after removing outdated blocks: {}",
+            self.blocks.read().await.len()
+        );
+        let blocks: Vec<Block> = self
+            .blocks
+            .read()
+            .await
+            .iter()
+            .filter_map(|block| {
+                if block.header.timestamp < l1_slot_timestamp - 12 {
+                    Some(block.clone())
+                } else {
+                    None
+                }
+            })
+            .collect();
+        info!("after removing too new blocks: {}", blocks.len());
+        if blocks.is_empty()
+            || (blocks.len() < self.max_blocks
                 && !force_send
-                && self.valid_anchor_id.read().await.is_valid_after(2))
+                && !self.valid_anchor_id.read().await.is_valid_after(2))
         {
             return Ok(());
         }
-        let blocks = self.blocks.read().await.clone();
-        info!("Compression");
         let number_of_blobs = 0u8;
 
         let mut txs = Vec::new();
         let mut block_params = Vec::new();
-        let mut last_timestamp = blocks.first().unwrap().header.timestamp;
-        info!("Get txs from blocks");
+        let mut last_timestamp = blocks.first().expect("Must be present").header.timestamp;
+        let first_anchor_tx = blocks
+            .first()
+            .expect("Must be present")
+            .transactions
+            .txns()
+            .next();
+        if first_anchor_tx.is_none() {
+            error!("{:?}", blocks.first().expect("Must be present"));
+            return Err(ConfirmationError::EmptyBlock(
+                blocks.first().expect("Must be present").header.number,
+            ));
+        }
+        let batch_anchor_id: u64 =
+            get_anchor_block_id_from_bytes(first_anchor_tx.expect("Must be present").input())?;
         info!(
             "{:?}",
             blocks
@@ -162,24 +207,39 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
                 block.header.timestamp,
                 block.transactions.len()
             );
-            let tx_len = block.transactions.len() as u16;
             let timestamp = block.header.timestamp;
             let number = block.header.number;
-            info!("read txs");
-            info!(
+            debug!(
                 "ts {} {} {}",
                 timestamp,
                 last_timestamp,
                 timestamp - last_timestamp
             );
             if let Ok(time_shift) = (timestamp - last_timestamp).try_into() {
-                block_params.push(BlockParams {
-                    numTransactions: tx_len,
-                    timeShift: time_shift,
-                    signalSlots: vec![],
-                });
-                last_timestamp = timestamp;
-                txs.extend(get_tx_envelopes_from_block(block).into_iter());
+                let anchor_tx = block.transactions.txns().next().cloned();
+                if let Some(anchor_tx) = anchor_tx {
+                    let block_anchor_id = get_anchor_block_id_from_bytes(anchor_tx.input())?;
+                    if block_anchor_id == batch_anchor_id {
+                        let block_txs = get_tx_envelopes_without_anchor_from_block(block);
+                        block_params.push(BlockParams {
+                            numTransactions: block_txs.len() as u16,
+                            timeShift: time_shift,
+                            signalSlots: vec![],
+                        });
+                        last_timestamp = timestamp;
+                        debug!("block txs: {:?}", block_txs);
+                        compress(block_txs.clone())?;
+                        txs.extend(block_txs.into_iter());
+                    } else {
+                        info!(
+                            "Found new anchor id {block_anchor_id} for batch with anchor id {batch_anchor_id}. Splitting confirmation."
+                        );
+                        break;
+                    }
+                } else {
+                    error!("{block:?}");
+                    return Err(ConfirmationError::EmptyBlock(number));
+                }
             } else {
                 info!(
                     "Block {} is too far away from previous block. Splitting confirmation step.",
@@ -188,35 +248,31 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
                 break;
             }
         }
-        info!("txs: {txs:?}");
+        debug!("txs: {txs:?}");
 
-        info!("get anchor id");
-        let anchor_block_id = self.valid_anchor_id.write().await.get_and_update();
-        info!("anchor {anchor_block_id}");
-        let batch = get_latest_confirmed_batch(&self.taiko_inbox)
+        let parent_batch_meta_hash = get_latest_confirmed_batch(&self.taiko_inbox)
             .await
-            .expect("last batch should be here");
+            .map(|batch| batch.metaHash)
+            .unwrap_or_default();
         let tx_bytes = Bytes::from(compress(txs.clone())?);
-        info!("Create propose batch params");
         let propose_batch_params = create_propose_batch_params(
             self.sender.address(),
             tx_bytes.len(),
             block_params,
-            batch.metaHash,
-            anchor_block_id,
+            parent_batch_meta_hash,
+            batch_anchor_id,
             last_timestamp,
             self.sender.address(),
             number_of_blobs,
         );
 
-        println!("params");
-        println!("{propose_batch_params:?}");
-        println!("tx_list");
-        println!("{tx_bytes:?}");
+        debug!("params: {propose_batch_params:?}");
+        debug!("tx_list: {tx_bytes:?}");
         let tx = TransactionRequest::default().with_call(&TaikoWrapper::proposeBatchCall {
             _params: propose_batch_params,
             _txList: tx_bytes,
         });
+        self.valid_anchor_id.write().await.update();
         self.sender.send(tx).await?;
         Ok(())
     }
