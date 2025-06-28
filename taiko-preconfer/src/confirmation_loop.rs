@@ -19,9 +19,9 @@ use crate::{
 
 pub async fn run<L1Client: ITaikoL1Client>(
     stream: impl Stream<Item = Slot>,
+    confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
     preconfirmation_slot_model: PreconfirmationSlotModel,
     whitelist: TaikoWhitelistInstance,
-    confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
     preconfer_address: Address,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;

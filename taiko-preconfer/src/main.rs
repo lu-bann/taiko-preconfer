@@ -297,15 +297,15 @@ async fn main() -> ApplicationResult<()> {
             subslot_stream,
             block_builder,
             preconfirmation_slot_model.clone(),
-            taiko_sequencing_monitor,
             whitelist.clone(),
+            taiko_sequencing_monitor,
             config.handover_start_buffer
         ),
         confirmation_loop::run(
             slot_stream,
+            confirmation_strategy,
             preconfirmation_slot_model,
             whitelist,
-            confirmation_strategy,
             preconfer_address,
         )
     );
