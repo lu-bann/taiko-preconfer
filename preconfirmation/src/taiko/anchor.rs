@@ -1,6 +1,7 @@
 use alloy_consensus::{TxEip1559, TypedTransaction};
 use alloy_primitives::{Address, ChainId, FixedBytes, TxKind, U256};
 use alloy_sol_types::SolCall;
+use tracing::info;
 
 use crate::taiko::{
     contracts::{TaikoAnchor, TaikoInbox},
@@ -86,6 +87,10 @@ impl<Client: ITaikoL1Client> ValidAnchor<Client> {
     }
 
     pub async fn update(&mut self) -> Result<(), TaikoL1ClientError> {
+        info!(
+            "compute anchor id block={}, max_offset{}, desired_offset={}, last_anchor={}",
+            self.block_number, self.max_offset, self.desired_offset, self.last_anchor_id
+        );
         let new_anchor_id = compute_valid_anchor_id(
             self.block_number,
             self.max_offset,
@@ -93,6 +98,10 @@ impl<Client: ITaikoL1Client> ValidAnchor<Client> {
             self.last_anchor_id,
         );
 
+        info!(
+            "update anchor id update from {} to {}",
+            self.current_anchor_id, new_anchor_id
+        );
         if new_anchor_id - self.current_anchor_id > self.anchor_id_update_tol {
             let anchor_header = self.client.get_header(new_anchor_id).await?;
             self.current_anchor_id = new_anchor_id;
