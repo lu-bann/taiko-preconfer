@@ -331,11 +331,10 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client
         true,
     )?);
 
-    let taiko_anchor_address = Address::from_str(&config.taiko_anchor_address)?;
     let provider = ProviderBuilder::new()
         .connect(&config.l2_client_url)
         .await?;
-    let taiko_anchor = TaikoAnchorInstance::new(taiko_anchor_address, provider.clone());
+    let taiko_anchor = TaikoAnchorInstance::new(config.taiko_anchor_address, provider.clone());
 
     let chain_id = provider.get_chain_id().await?;
     trace!("L2 chain id {chain_id}");
@@ -437,10 +436,7 @@ async fn main() -> ApplicationResult<()> {
     let l1_provider = ProviderBuilder::new()
         .connect(&config.l1_client_url)
         .await?;
-    let whitelist = TaikoWhitelistInstance::new(
-        Address::from_str(&config.taiko_whitelist_address).unwrap(),
-        l1_provider,
-    );
+    let whitelist = TaikoWhitelistInstance::new(config.taiko_whitelist_address, l1_provider);
 
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
     let taiko_sequencing_monitor = TaikoSequencingMonitor::new(
@@ -452,10 +448,7 @@ async fn main() -> ApplicationResult<()> {
     let l1_ws_provider = ProviderBuilder::new()
         .connect_ws(WsConnect::new(&config.l1_ws_url))
         .await?;
-    let taiko_inbox = TaikoInboxInstance::new(
-        Address::from_str(&config.taiko_inbox_address).unwrap(),
-        l1_ws_provider.clone(),
-    );
+    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_ws_provider.clone());
 
     let max_anchor_id_offset = taiko_inbox
         .pacayaConfig()
@@ -483,7 +476,7 @@ async fn main() -> ApplicationResult<()> {
         preconfer_address,
         SystemTimeProvider::new(),
         shared_last_l2_header.clone(),
-        Address::from_str(&config.golden_touch_address)?,
+        config.golden_touch_address,
     );
 
     let preconfirmation_slot_model = PreconfirmationSlotModel::new(
@@ -516,7 +509,7 @@ async fn main() -> ApplicationResult<()> {
     let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
         ConfirmationSender::new(
             taiko_l1_client.clone(),
-            Address::from_str(&config.taiko_preconf_router_address)?,
+            config.taiko_preconf_router_address,
             signer,
         ),
         unconfirmed_l2_blocks.clone(),

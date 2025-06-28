@@ -1,8 +1,11 @@
 use std::{
     env,
+    str::FromStr,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 use thiserror::Error;
+
+use alloy_primitives::Address;
 
 use crate::secret::Secret;
 
@@ -22,11 +25,11 @@ pub struct Config {
     pub l1_client_url: String,
     pub l1_ws_url: String,
     pub poll_period: Duration,
-    pub taiko_anchor_address: String,
-    pub taiko_inbox_address: String,
-    pub taiko_preconf_router_address: String,
-    pub taiko_whitelist_address: String,
-    pub golden_touch_address: String,
+    pub taiko_anchor_address: Address,
+    pub taiko_inbox_address: Address,
+    pub taiko_preconf_router_address: Address,
+    pub taiko_whitelist_address: Address,
+    pub golden_touch_address: Address,
     pub golden_touch_private_key: String,
     pub private_key: Secret,
     pub jwt_secret: Secret,
@@ -41,6 +44,9 @@ pub enum ConfigError {
 
     #[error("{0}")]
     Parse(#[from] std::num::ParseIntError),
+
+    #[error("{0}")]
+    FromHex(#[from] alloy_primitives::hex::FromHexError),
 }
 
 impl Config {
@@ -63,11 +69,13 @@ impl Config {
             l1_client_url: env::var("L1_CLIENT_URL")?,
             l1_ws_url: env::var("L1_WS_URL")?,
             poll_period: Duration::from_millis(std::env::var("POLL_TIME_MS")?.parse()?),
-            taiko_anchor_address: std::env::var("TAIKO_ANCHOR_ADDRESS")?,
-            taiko_inbox_address: std::env::var("TAIKO_INBOX_ADDRESS")?,
-            taiko_preconf_router_address: std::env::var("TAIKO_PRECONF_ROUTER_ADDRESS")?,
-            taiko_whitelist_address: std::env::var("TAIKO_WHITELIST_ADDRESS")?,
-            golden_touch_address: std::env::var("GOLDEN_TOUCH_ADDRESS")?,
+            taiko_anchor_address: Address::from_str(&std::env::var("TAIKO_ANCHOR_ADDRESS")?)?,
+            taiko_inbox_address: Address::from_str(&std::env::var("TAIKO_INBOX_ADDRESS")?)?,
+            taiko_preconf_router_address: Address::from_str(&std::env::var(
+                "TAIKO_PRECONF_ROUTER_ADDRESS",
+            )?)?,
+            taiko_whitelist_address: Address::from_str(&std::env::var("TAIKO_WHITELIST_ADDRESS")?)?,
+            golden_touch_address: Address::from_str(&std::env::var("GOLDEN_TOUCH_ADDRESS")?)?,
             golden_touch_private_key: std::env::var("GOLDEN_TOUCH_PRIVATE_KEY")?,
             private_key: Secret::new(std::env::var("PRIVATE_KEY")?),
             jwt_secret: Secret::new(std::env::var("JWT_SECRET")?),
