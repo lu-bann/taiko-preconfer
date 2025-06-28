@@ -31,8 +31,8 @@ pub async fn run<
     stream: impl Stream<Item = SubSlot>,
     builder: BlockBuilder<L1Client, L2Client, TimeProvider>,
     preconfirmation_slot_model: PreconfirmationSlotModel,
-    sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     whitelist: TaikoWhitelistInstance,
+    sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     handover_timeout: Duration,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
