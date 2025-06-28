@@ -26,9 +26,8 @@ use preconfirmation::{
         get_next_slot_start, get_slot_stream, get_subslot_stream, stream_l2_headers, to_boxed,
     },
     taiko::{
-        anchor::ValidAnchorId,
+        anchor::{ValidAnchorId, to_anchor_base_fee_config},
         contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
-        hekla::get_basefee_config_v2,
         sign::get_signing_key,
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
@@ -333,14 +332,19 @@ async fn get_taiko_l2_client(config: &Config) -> ApplicationResult<TaikoL2Client
         .await?;
     let taiko_anchor = TaikoAnchorInstance::new(config.taiko_anchor_address, provider.clone());
 
+    let l1_provider = ProviderBuilder::new()
+        .connect(&config.l1_client_url)
+        .await?;
+    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_provider);
+    let inbox_config = taiko_inbox.pacayaConfig().call().await?.baseFeeConfig;
+
     let chain_id = provider.get_chain_id().await?;
-    trace!("L2 chain id {chain_id}");
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/preconfBlocks";
     Ok(TaikoL2Client::new(
         auth_client,
         taiko_anchor,
         provider,
-        get_basefee_config_v2(),
+        to_anchor_base_fee_config(inbox_config),
         chain_id,
         get_signing_key(&config.golden_touch_private_key),
         preconfirmation_url,

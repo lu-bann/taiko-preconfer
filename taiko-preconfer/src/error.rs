@@ -40,6 +40,9 @@ pub enum ApplicationError {
 
     #[error("{0}")]
     Reqwest(#[from] reqwest::Error),
+
+    #[error("{0}")]
+    Contract(#[from] alloy_contract::Error),
 }
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;
