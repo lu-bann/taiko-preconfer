@@ -1,18 +1,21 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy_consensus::Header;
+use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_eth::Block;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
-    client::get_alloy_client,
+    client::{get_alloy_client, reqwest::get_block_by_id},
+    preconf::config::Config,
     stream::{
-        get_block_polling_stream, get_block_stream, get_header_polling_stream, get_header_stream,
+        get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
+        get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
         stream_l2_headers, to_boxed,
     },
-    taiko::{anchor::ValidAnchor, taiko_l1_client::TaikoL1Client},
-    util::now_as_secs,
-    verification::TaikoInboxError,
+    taiko::{anchor::ValidAnchor, contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1Client},
+    util::{log_error, now_as_secs},
+    verification::{LastBatchVerifier, TaikoInboxError},
 };
 use tokio::{join, sync::RwLock};
 use tracing::info;
@@ -103,6 +106,62 @@ pub async fn create_header_stream(
     let subscription = provider.subscribe_blocks().await?;
     let ws_stream = subscription.into_stream().map(|header| header.inner);
     Ok(get_header_stream(polling_stream, ws_stream))
+}
+
+pub async fn create_l2_head_stream(
+    config: &Config,
+    preconfer_address: Address,
+    latest_confirmed_block_id: u64,
+    unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>>,
+    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+    taiko_inbox: TaikoInboxInstance,
+) -> ApplicationResult<impl Stream<Item = Result<Header, TaikoInboxError>>> {
+    let l2_block_stream =
+        create_block_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
+    let valid_anchor = valid_anchor.clone();
+    let batch_proposed_stream = taiko_inbox
+        .BatchProposed_filter()
+        .subscribe()
+        .await?
+        .into_stream()
+        .filter_map(move |result| {
+            let local_valid_anchor = valid_anchor.clone();
+            async move {
+                match result {
+                    Ok((batch_proposed, _log)) => {
+                        log_error(
+                            local_valid_anchor
+                                .write()
+                                .await
+                                .update_last_anchor_id(batch_proposed.info.anchorBlockId)
+                                .await,
+                            "Failed to update anchor from BatchProposed",
+                        );
+                        Some(batch_proposed.info.lastBlockId)
+                    }
+                    Err(_) => None,
+                }
+            }
+        });
+    let confirmed_id_polling_stream =
+        get_confirmed_id_polling_stream(taiko_inbox.clone(), config.poll_period)
+            .filter_map(|id| async { id.ok() });
+    let id_stream = get_id_stream(confirmed_id_polling_stream, batch_proposed_stream);
+
+    let get_header_call = |id: Option<u64>| {
+        let url = config.l2_client_url.clone();
+        async move { get_block_by_id(url.clone(), id).await }
+    };
+    let last_batch_verifier = LastBatchVerifier::new(taiko_inbox, preconfer_address);
+    Ok(get_l2_head_stream(
+        l2_block_stream,
+        id_stream,
+        unconfirmed_l2_blocks,
+        get_header_call,
+        Some(latest_confirmed_block_id),
+        last_batch_verifier,
+    )
+    .await)
 }
 
 pub async fn create_block_stream(

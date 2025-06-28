@@ -5,7 +5,7 @@ use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
-use futures::{Stream, StreamExt};
+use futures::Stream;
 use preconfirmation::{
     client::{RpcClient, get_alloy_auth_client, reqwest::get_block_by_id},
     preconf::{
@@ -17,10 +17,7 @@ use preconfirmation::{
     },
     slot::{Slot, SubSlot},
     slot_model::SlotModel,
-    stream::{
-        get_confirmed_id_polling_stream, get_id_stream, get_l2_head_stream, get_next_slot_start,
-        get_slot_stream, get_subslot_stream,
-    },
+    stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
     taiko::{
         anchor::{ValidAnchor, to_anchor_base_fee_config},
         contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
@@ -29,8 +26,7 @@ use preconfirmation::{
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
-    util::log_error,
-    verification::{LastBatchVerifier, get_latest_confirmed_batch},
+    verification::get_latest_confirmed_batch,
 };
 use tokio::{join, sync::RwLock};
 use tracing::info;
@@ -38,7 +34,7 @@ use tracing::info;
 use taiko_preconfer::{
     confirmation_loop,
     error::ApplicationResult,
-    onchain_tracking_loop::{self, create_block_stream, create_header_stream},
+    onchain_tracking_loop::{self, create_header_stream, create_l2_head_stream},
     preconfirmation_loop,
 };
 
@@ -170,7 +166,7 @@ async fn main() -> ApplicationResult<()> {
         .await
         .unwrap()
         .maxAnchorHeightOffset;
-    let valid_anchor_id = Arc::new(RwLock::new(ValidAnchor::new(
+    let valid_anchor = Arc::new(RwLock::new(ValidAnchor::new(
         max_anchor_id_offset,
         config.anchor_id_lag,
         config.anchor_id_update_tol,
@@ -178,7 +174,7 @@ async fn main() -> ApplicationResult<()> {
     )));
 
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
-    valid_anchor_id
+    valid_anchor
         .write()
         .await
         .update_block_number(latest_l1_header.number)
@@ -186,7 +182,7 @@ async fn main() -> ApplicationResult<()> {
     let preconfer_address = signer.address();
     info!("Preconfer address: {}", preconfer_address);
     let block_builder = BlockBuilder::new(
-        valid_anchor_id.clone(),
+        valid_anchor.clone(),
         taiko_l2_client,
         preconfer_address,
         SystemTimeProvider::new(),
@@ -201,7 +197,7 @@ async fn main() -> ApplicationResult<()> {
 
     let latest_confirmed_batch = get_latest_confirmed_batch(&taiko_inbox).await?;
     let latest_confirmed_block_id = latest_confirmed_batch.lastBlockId;
-    valid_anchor_id
+    valid_anchor
         .write()
         .await
         .update_last_anchor_id(latest_confirmed_batch.anchorBlockId)
@@ -229,7 +225,7 @@ async fn main() -> ApplicationResult<()> {
         ),
         unconfirmed_l2_blocks.clone(),
         config.max_blocks_per_batch,
-        valid_anchor_id.clone(),
+        valid_anchor.clone(),
         taiko_inbox.clone(),
         valid_timestamp,
     );
@@ -239,59 +235,22 @@ async fn main() -> ApplicationResult<()> {
     let l1_header_stream =
         create_header_stream(&config.l1_client_url, &config.l1_ws_url, config.poll_period).await?;
 
-    let l2_block_stream =
-        create_block_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
-    let anchor_id_update_valid_anchor = valid_anchor_id.clone();
-    let batch_proposed_stream = taiko_inbox
-        .BatchProposed_filter()
-        .subscribe()
-        .await?
-        .into_stream()
-        .filter_map(|result| {
-            let anchor_id_update_valid_anchor = anchor_id_update_valid_anchor.clone();
-            async move {
-                match result {
-                    Ok((batch_proposed, _log)) => {
-                        log_error(
-                            anchor_id_update_valid_anchor
-                                .write()
-                                .await
-                                .update_last_anchor_id(batch_proposed.info.anchorBlockId)
-                                .await,
-                            "Failed to update anchor from BatchProposed",
-                        );
-                        Some(batch_proposed.info.lastBlockId)
-                    }
-                    Err(_) => None,
-                }
-            }
-        });
-    let confirmed_id_polling_stream =
-        get_confirmed_id_polling_stream(taiko_inbox.clone(), config.poll_period)
-            .filter_map(|id| async { id.ok() });
-    let id_stream = get_id_stream(confirmed_id_polling_stream, batch_proposed_stream);
-
-    let get_header_call = |id: Option<u64>| {
-        let url = config.l2_client_url.clone();
-        async move { get_block_by_id(url.clone(), id).await }
-    };
-    let last_batch_verifier = LastBatchVerifier::new(taiko_inbox, preconfer_address);
-    let l2_header_stream = get_l2_head_stream(
-        l2_block_stream,
-        id_stream,
+    let l2_header_stream = create_l2_head_stream(
+        &config,
+        preconfer_address,
+        latest_confirmed_block_id,
         unconfirmed_l2_blocks,
-        get_header_call,
-        Some(latest_confirmed_block_id),
-        last_batch_verifier,
+        valid_anchor.clone(),
+        taiko_inbox,
     )
-    .await;
+    .await?;
 
     let (on_chain_result, preconfirmation_result, confirmation_result) = join!(
         onchain_tracking_loop::run(
             l1_header_stream,
             l2_header_stream,
             shared_last_l2_header,
-            valid_anchor_id
+            valid_anchor
         ),
         preconfirmation_loop::run(
             subslot_stream,
