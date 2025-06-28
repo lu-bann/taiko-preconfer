@@ -26,7 +26,7 @@ use preconfirmation::{
         get_next_slot_start, get_slot_stream, get_subslot_stream, stream_l2_headers, to_boxed,
     },
     taiko::{
-        anchor::{ValidAnchorId, to_anchor_base_fee_config},
+        anchor::{ValidAnchor, to_anchor_base_fee_config},
         contracts::{TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance},
         sign::get_signing_key,
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
@@ -75,15 +75,15 @@ fn set_active_operator_for_next_period(
 async fn stream_l1_headers<
     'a,
     E,
-    T: Fn(Header, Arc<RwLock<ValidAnchorId>>) -> BoxFuture<'a, Result<(), E>>,
+    T: Fn(Header, Arc<RwLock<ValidAnchor<TaikoL1Client>>>) -> BoxFuture<'a, Result<(), E>>,
 >(
     stream: impl Stream<Item = Header>,
     f: T,
-    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
+    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
 ) -> Result<(), E> {
     pin_mut!(stream);
     while let Some(header) = stream.next().await {
-        f(header, valid_anchor_id.clone()).await?;
+        f(header, valid_anchor.clone()).await?;
     }
     Ok(())
 }
@@ -382,7 +382,7 @@ async fn store_header(
 
 async fn store_valid_anchor(
     header: Header,
-    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
+    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
 ) -> ApplicationResult<()> {
     info!(
         "L1 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
@@ -392,10 +392,11 @@ async fn store_valid_anchor(
         header.state_root,
         header.gas_used
     );
-    valid_anchor_id
+    valid_anchor
         .write()
         .await
-        .update_block_number(header.number);
+        .update_block_number(header.number)
+        .await?;
     Ok(())
 }
 
@@ -405,7 +406,7 @@ async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> Applic
 
 fn store_valid_anchor_boxed<'a>(
     header: Header,
-    valid_anchor_id: Arc<RwLock<ValidAnchorId>>,
+    valid_anchor_id: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
     Box::pin(store_valid_anchor(header, valid_anchor_id))
 }
@@ -437,7 +438,8 @@ async fn main() -> ApplicationResult<()> {
     let l1_provider = ProviderBuilder::new()
         .connect(&config.l1_client_url)
         .await?;
-    let whitelist = TaikoWhitelistInstance::new(config.taiko_whitelist_address, l1_provider);
+    let whitelist =
+        TaikoWhitelistInstance::new(config.taiko_whitelist_address, l1_provider.clone());
 
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
     let taiko_sequencing_monitor = TaikoSequencingMonitor::new(
@@ -457,22 +459,23 @@ async fn main() -> ApplicationResult<()> {
         .await
         .unwrap()
         .maxAnchorHeightOffset;
-    let valid_anchor_id = Arc::new(RwLock::new(ValidAnchorId::new(
+    let valid_anchor_id = Arc::new(RwLock::new(ValidAnchor::new(
         max_anchor_id_offset,
         config.anchor_id_lag,
         config.anchor_id_update_tol,
+        taiko_l1_client.clone(),
     )));
 
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
     valid_anchor_id
         .write()
         .await
-        .update_block_number(latest_l1_header.number);
+        .update_block_number(latest_l1_header.number)
+        .await?;
     let preconfer_address = signer.address();
     info!("Preconfer address: {}", preconfer_address);
     let block_builder = BlockBuilder::new(
         valid_anchor_id.clone(),
-        taiko_l1_client.clone(),
         taiko_l2_client,
         preconfer_address,
         SystemTimeProvider::new(),
@@ -490,7 +493,8 @@ async fn main() -> ApplicationResult<()> {
     valid_anchor_id
         .write()
         .await
-        .update_last_anchor_id(latest_confirmed_batch.anchorBlockId);
+        .update_last_anchor_id(latest_confirmed_batch.anchorBlockId)
+        .await?;
 
     let mut unconfirmed_l2_blocks = vec![];
     for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
@@ -537,10 +541,14 @@ async fn main() -> ApplicationResult<()> {
             async move {
                 match result {
                     Ok((batch_proposed, _log)) => {
-                        anchor_id_update_valid_anchor
-                            .write()
-                            .await
-                            .update_last_anchor_id(batch_proposed.info.anchorBlockId);
+                        log_error(
+                            anchor_id_update_valid_anchor
+                                .write()
+                                .await
+                                .update_last_anchor_id(batch_proposed.info.anchorBlockId)
+                                .await,
+                            "Failed to update anchor from BatchProposed",
+                        );
                         Some(batch_proposed.info.lastBlockId)
                     }
                     Err(_) => None,

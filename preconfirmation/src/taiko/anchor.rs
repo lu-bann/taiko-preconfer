@@ -1,8 +1,11 @@
 use alloy_consensus::{TxEip1559, TypedTransaction};
-use alloy_primitives::{Address, ChainId, TxKind, U256};
+use alloy_primitives::{Address, ChainId, FixedBytes, TxKind, U256};
 use alloy_sol_types::SolCall;
 
-use crate::taiko::contracts::{TaikoAnchor, TaikoInbox};
+use crate::taiko::{
+    contracts::{TaikoAnchor, TaikoInbox},
+    taiko_l1_client::{ITaikoL1Client, TaikoL1ClientError},
+};
 
 const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
 
@@ -51,18 +54,25 @@ pub fn compute_valid_anchor_id(
     std::cmp::max(desired_anchor_id, min_anchor_id)
 }
 
-#[derive(Debug, Clone)]
-pub struct ValidAnchorId {
+#[derive(Debug)]
+pub struct ValidAnchor<Client: ITaikoL1Client> {
     max_offset: u64,
     desired_offset: u64,
     block_number: u64,
     current_anchor_id: u64,
     last_anchor_id: u64,
     anchor_id_update_tol: u64,
+    state_root: FixedBytes<32>,
+    client: Client,
 }
 
-impl ValidAnchorId {
-    pub const fn new(max_offset: u64, desired_offset: u64, anchor_id_update_tol: u64) -> Self {
+impl<Client: ITaikoL1Client> ValidAnchor<Client> {
+    pub fn new(
+        max_offset: u64,
+        desired_offset: u64,
+        anchor_id_update_tol: u64,
+        client: Client,
+    ) -> Self {
         Self {
             max_offset,
             desired_offset,
@@ -70,10 +80,12 @@ impl ValidAnchorId {
             current_anchor_id: 0,
             last_anchor_id: 0,
             anchor_id_update_tol,
+            state_root: FixedBytes::default(),
+            client,
         }
     }
 
-    pub fn update(&mut self) {
+    pub async fn update(&mut self) -> Result<(), TaikoL1ClientError> {
         let new_anchor_id = compute_valid_anchor_id(
             self.block_number,
             self.max_offset,
@@ -82,8 +94,11 @@ impl ValidAnchorId {
         );
 
         if new_anchor_id - self.current_anchor_id > self.anchor_id_update_tol {
+            let anchor_header = self.client.get_header(new_anchor_id).await?;
             self.current_anchor_id = new_anchor_id;
+            self.state_root = anchor_header.state_root;
         }
+        Ok(())
     }
 
     pub fn is_valid_after(&self, offset: u64) -> bool {
@@ -100,18 +115,24 @@ impl ValidAnchorId {
         self.is_valid_after(0)
     }
 
-    pub fn update_block_number(&mut self, block_number: u64) {
+    pub async fn update_block_number(
+        &mut self,
+        block_number: u64,
+    ) -> Result<(), TaikoL1ClientError> {
         self.block_number = block_number;
-        self.update();
+        self.update().await
     }
 
-    pub fn update_last_anchor_id(&mut self, last_anchor_id: u64) {
+    pub async fn update_last_anchor_id(
+        &mut self,
+        last_anchor_id: u64,
+    ) -> Result<(), TaikoL1ClientError> {
         self.last_anchor_id = last_anchor_id;
-        self.update();
+        self.update().await
     }
 
-    pub fn get(&self) -> u64 {
-        self.current_anchor_id
+    pub fn id_and_state_root(&self) -> (u64, FixedBytes<32>) {
+        (self.current_anchor_id, self.state_root)
     }
 }
 
