@@ -1,5 +1,3 @@
-use std::time::{SystemTime, UNIX_EPOCH};
-
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_contract::Error as ContractError;
 use alloy_json_rpc::RpcError;
@@ -26,10 +24,11 @@ use crate::secret::Secret;
 use crate::taiko::{
     anchor::create_anchor_transaction,
     contracts::{Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
-    hekla::GAS_LIMIT,
     sign::get_signed,
 };
-use crate::util::hex_decode;
+use crate::util::{hex_decode, now_as_secs};
+
+const GAS_LIMIT: u64 = 241_000_000;
 
 #[derive(Debug, Error)]
 pub enum TaikoL2ClientError {
@@ -276,10 +275,7 @@ impl ITaikoL2Client for TaikoL2Client {
 impl TaikoL2Client {
     fn get_jwt_secret(&self) -> TaikoL2ClientResult<String> {
         let secret_bytes = hex_decode(self.jwt_secret.read_slice())?;
-        let now = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs();
+        let now = now_as_secs();
         let claims = Claims {
             iat: now,
             exp: Some(now + 3600),

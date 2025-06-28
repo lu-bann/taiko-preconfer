@@ -1,3 +1,5 @@
+use std::time::{SystemTime, UNIX_EPOCH};
+
 use alloy_consensus::TxEnvelope;
 use alloy_primitives::Bytes;
 use alloy_rpc_types_eth::Block;
@@ -169,6 +171,13 @@ impl ValidTimestamp {
             self.max_offset,
         )
     }
+}
+
+pub fn now_as_secs() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_secs()
 }
 
 #[cfg(test)]

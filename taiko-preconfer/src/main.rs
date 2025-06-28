@@ -1,3 +1,5 @@
+use std::{str::FromStr, sync::Arc, time::Duration};
+
 use alloy_consensus::Header;
 use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
@@ -20,7 +22,7 @@ use preconfirmation::{
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
     slot::{Slot, SubSlot},
-    slot_model::SlotModel,
+    slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
     stream::{
         get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
         get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
@@ -35,13 +37,8 @@ use preconfirmation::{
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
-    util::log_error,
+    util::{log_error, now_as_secs},
     verification::{LastBatchVerifier, get_latest_confirmed_batch},
-};
-use std::{str::FromStr, time::Duration};
-use std::{
-    sync::Arc,
-    time::{SystemTime, UNIX_EPOCH},
 };
 use tokio::{join, sync::RwLock};
 use tracing::{debug, info, trace};
@@ -114,6 +111,21 @@ async fn preconfirmation_loop<
     loop {
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
+            info!(
+                "L1 slot number {}",
+                subslot.slot.epoch * 32 + subslot.slot.slot
+            );
+            info!(
+                "L2 slot number {}",
+                subslot.slot.epoch * 64 + subslot.sub_slot
+            );
+            let slot_timestamp =
+                HOLESKY_GENESIS_TIMESTAMP + subslot.slot.epoch * 32 * 12 + subslot.sub_slot * 6 + 6;
+            info!(
+                "L2 slot timestamp {} {}",
+                slot_timestamp,
+                preconfirmation::util::now_as_secs()
+            );
 
             if let Some(current_preconfer) = log_error(
                 whitelist.getOperatorForCurrentEpoch().call().await,
@@ -187,11 +199,12 @@ async fn confirmation_loop<L1Client: ITaikoL1Client>(
             info!("Can confirm: {}", can_confirm);
             info!("Can preconfirm: {}", can_preconfirm);
             info!("within handover period: {}", within_handover_period);
-            let l1_slot_timestamp = slot_model.get_timestamp(total_slot);
+            let l1_slot_timestamp = slot_model.get_timestamp(total_slot + 1);
             info!(
-                "L1 slot timestamp: {} {}",
+                "L1 slot timestamp: {} {} {}",
                 total_slot * 12 + preconfirmation::slot_model::HOLESKY_GENESIS_TIMESTAMP,
-                l1_slot_timestamp
+                l1_slot_timestamp,
+                preconfirmation::util::now_as_secs(),
             );
 
             if let Some(current_preconfer) = log_error(
@@ -235,21 +248,21 @@ async fn confirmation_loop<L1Client: ITaikoL1Client>(
 
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
     let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
-    //let taiko_slot_model = SlotModel::holesky();
 
     let time_provider = SystemTimeProvider::new();
     let start = get_next_slot_start(&config.l2_slot_time, &time_provider)?;
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let timestamp = time_provider.timestamp_in_s();
     let taiko_slot = taiko_slot_model.get_slot(timestamp);
 
     let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
-    let slots_per_epoch = config.l1_slots_per_epoch * subslots_per_slot;
-    let next_slot_count = taiko_slot.epoch * slots_per_epoch + taiko_slot.slot + 1;
+    let slot_number = taiko_slot_model.get_slot_number(taiko_slot);
     Ok(get_subslot_stream(
-        get_slot_stream(start, next_slot_count, config.l2_slot_time, slots_per_epoch)?,
+        get_slot_stream(
+            start,
+            slot_number,
+            config.l2_slot_time,
+            taiko_slot_model.slots_per_epoch(),
+        )?,
         subslots_per_slot,
     ))
 }
@@ -259,19 +272,13 @@ fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = S
 
     let time_provider = SystemTimeProvider::new();
     let start = get_next_slot_start(&config.l1_slot_time, &time_provider)?;
-    let timestamp = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .unwrap()
-        .as_secs();
+    let timestamp = time_provider.timestamp_in_s();
     let taiko_slot = taiko_slot_model.get_slot(timestamp);
-    info!("Initial L1 slot {:?}", taiko_slot);
-    let total = taiko_slot.epoch * 32 + taiko_slot.slot;
-    info!("Total {}", total);
+    let slot_number = taiko_slot_model.get_slot_number(taiko_slot);
 
-    let next_slot_count = taiko_slot.epoch * config.l1_slots_per_epoch + taiko_slot.slot + 1;
     Ok(get_slot_stream(
         start,
-        next_slot_count,
+        slot_number,
         config.l1_slot_time,
         config.l1_slots_per_epoch,
     )?)
@@ -366,10 +373,7 @@ async fn store_header(
         "{msg} 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
         header.number,
         header.timestamp,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
+        now_as_secs(),
         header.state_root,
         header.gas_used
     );
@@ -385,10 +389,7 @@ async fn store_valid_anchor(
         "L1 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
         header.number,
         header.timestamp,
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_secs(),
+        now_as_secs(),
         header.state_root,
         header.gas_used
     );
@@ -486,9 +487,9 @@ async fn main() -> ApplicationResult<()> {
         config.golden_touch_address.clone(),
     );
 
-    let slots_per_epoch = 32;
     let handover_slots = config.handover_window_slots as u64;
-    let preconfirmation_slot_model = PreconfirmationSlotModel::new(handover_slots, slots_per_epoch);
+    let preconfirmation_slot_model =
+        PreconfirmationSlotModel::new(handover_slots, config.l1_slots_per_epoch);
 
     let latest_confirmed_batch = get_latest_confirmed_batch(&taiko_inbox).await?;
     let latest_confirmed_block_id = latest_confirmed_batch.lastBlockId;
