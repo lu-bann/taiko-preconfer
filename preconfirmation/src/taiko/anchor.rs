@@ -142,7 +142,7 @@ pub(crate) mod tests {
     use alloy_consensus::Transaction;
     use alloy_primitives::{Bytes, FixedBytes, address};
 
-    use crate::{taiko::contracts::taiko_inbox::BaseFeeConfig, util::hex_decode};
+    use crate::{taiko::contracts::BaseFeeConfig, util::hex_decode};
 
     pub fn get_basefee_config_v2() -> BaseFeeConfig {
         BaseFeeConfig {
