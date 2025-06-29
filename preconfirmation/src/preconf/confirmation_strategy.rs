@@ -17,8 +17,8 @@ use crate::{
     taiko::{
         anchor::ValidAnchor,
         contracts::{
-            TaikoInbox, TaikoInboxInstance,
-            taiko_inbox::{BatchParams, BlobParams, BlockParams, ProposeBatchParams},
+            BatchParams, BlobParams, BlockParams, ProposeBatchParams, TaikoInbox,
+            TaikoInboxInstance,
         },
         taiko_l1_client::ITaikoL1Client,
     },

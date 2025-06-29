@@ -1,3 +1,7 @@
+use alloy_provider::{
+    Identity, RootProvider,
+    fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
+};
 use alloy_sol_types::sol;
 
 sol!(
@@ -225,4 +229,23 @@ sol!(
             bytes32[] calldata _signalSlots
         );
     }
+
+    #[derive(Debug)]
+     #[sol(rpc)]
+     contract PreconfWhitelist {
+        function getOperatorForCurrentEpoch() external view returns (address);
+
+        function getOperatorForNextEpoch() external view returns (address);
+    }
 );
+
+pub type Provider = FillProvider<
+    JoinFill<
+        Identity,
+        JoinFill<GasFiller, JoinFill<BlobGasFiller, JoinFill<NonceFiller, ChainIdFiller>>>,
+    >,
+    RootProvider,
+>;
+pub type TaikoAnchorInstance = TaikoAnchor::TaikoAnchorInstance<Provider>;
+pub type TaikoInboxInstance = TaikoInbox::TaikoInboxInstance<Provider>;
+pub type TaikoWhitelistInstance = PreconfWhitelist::PreconfWhitelistInstance<Provider>;

@@ -21,8 +21,7 @@ use preconfirmation::{
     taiko::{
         anchor::ValidAnchor,
         contracts::{
-            TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance,
-            taiko_inbox::BaseFeeConfig,
+            BaseFeeConfig, TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance,
         },
         sign::get_signing_key,
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},

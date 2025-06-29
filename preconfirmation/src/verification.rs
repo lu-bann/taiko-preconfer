@@ -9,8 +9,7 @@ use tracing::{debug, info};
 use crate::{
     compression::compress,
     taiko::contracts::{
-        TaikoInboxInstance,
-        taiko_inbox::{BaseFeeConfig, Batch, BatchInfo, BatchMetadata, BlockParams},
+        BaseFeeConfig, Batch, BatchInfo, BatchMetadata, BlockParams, TaikoInboxInstance,
     },
     util::{get_tx_envelopes_without_anchor_from_blocks, pad_left},
 };

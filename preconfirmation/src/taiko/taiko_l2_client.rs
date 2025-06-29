@@ -23,9 +23,7 @@ use crate::preconf::preconf_blocks::{
 use crate::secret::Secret;
 use crate::taiko::{
     anchor::create_anchor_transaction,
-    contracts::{
-        Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance, taiko_inbox::BaseFeeConfig,
-    },
+    contracts::{BaseFeeConfig, Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
     sign::get_signed,
 };
 use crate::util::{hex_decode, now_as_secs};
