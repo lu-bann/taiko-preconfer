@@ -40,6 +40,8 @@ use taiko_preconfer::{
     preconfirmation_loop,
 };
 
+const PRECONF_BLOCKS: &str = "preconfBlocks";
+
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
     let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
 
@@ -100,7 +102,7 @@ async fn get_taiko_l2_client(
     let taiko_anchor = TaikoAnchorInstance::new(config.taiko_anchor_address, provider.clone());
 
     let chain_id = provider.get_chain_id().await?;
-    let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/preconfBlocks";
+    let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/" + PRECONF_BLOCKS;
     Ok(TaikoL2Client::new(
         auth_client,
         taiko_anchor,
