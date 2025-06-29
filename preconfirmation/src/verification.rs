@@ -8,7 +8,10 @@ use tracing::{debug, info};
 
 use crate::{
     compression::compress,
-    taiko::contracts::{TaikoInbox, TaikoInboxInstance},
+    taiko::contracts::{
+        TaikoInboxInstance,
+        taiko_inbox::{BaseFeeConfig, Batch, BatchInfo, BatchMetadata, BlockParams},
+    },
     util::{get_tx_envelopes_without_anchor_from_blocks, pad_left},
 };
 
@@ -40,7 +43,7 @@ pub enum TaikoInboxError {
 
 pub async fn get_latest_confirmed_batch(
     taiko_inbox: &TaikoInboxInstance,
-) -> Result<TaikoInbox::Batch, TaikoInboxError> {
+) -> Result<Batch, TaikoInboxError> {
     let stats2 = taiko_inbox.getStats2().call().await?;
     let batch = taiko_inbox.getBatch(stats2.numBatches - 1).call().await?;
     Ok(batch)
@@ -141,11 +144,11 @@ pub fn compute_txs_hash(blocks: Vec<Block>) -> Result<B256, TaikoInboxError> {
 pub fn compute_batch_meta_hash(
     preconfer_address: Address,
     blocks: Vec<Block>,
-    batch: TaikoInbox::Batch,
+    batch: Batch,
     anchor_hash: B256,
     proposed_at: u64,
     proposed_in: u64,
-    base_fee_config: TaikoInbox::BaseFeeConfig,
+    base_fee_config: BaseFeeConfig,
 ) -> Result<B256, TaikoInboxError> {
     let mut last_timestamp = blocks
         .first()
@@ -157,7 +160,7 @@ pub fn compute_batch_meta_hash(
         .map(|block| {
             let time_shift = block.header.timestamp - last_timestamp;
             last_timestamp = block.header.timestamp;
-            TaikoInbox::BlockParams {
+            BlockParams {
                 numTransactions: block.transactions.len() as u16 - 1,
                 timeShift: time_shift as u8,
                 signalSlots: vec![],
@@ -179,7 +182,7 @@ pub fn compute_batch_meta_hash(
     debug!("txs_hash {}", txs_hash);
 
     let txs_bytes = compressed_txs.len();
-    let info = TaikoInbox::BatchInfo {
+    let info = BatchInfo {
         txsHash: txs_hash,
         blocks: block_params,
         blobHashes: vec![],
@@ -197,7 +200,7 @@ pub fn compute_batch_meta_hash(
         baseFeeConfig: base_fee_config,
     };
     info!("info: {info:?}");
-    let meta = TaikoInbox::BatchMetadata {
+    let meta = BatchMetadata {
         infoHash: keccak256(info.abi_encode()),
         proposer: preconfer_address,
         batchId: batch.batchId,

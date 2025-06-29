@@ -4,13 +4,13 @@ use alloy_sol_types::SolCall;
 use tracing::info;
 
 use crate::taiko::{
-    contracts::{TaikoAnchor, TaikoInbox},
+    contracts::{TaikoAnchor, taiko_inbox::BaseFeeConfig},
     taiko_l1_client::{ITaikoL1Client, TaikoL1ClientError},
 };
 
 const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
 
-pub fn to_anchor_base_fee_config(config: &TaikoInbox::BaseFeeConfig) -> TaikoAnchor::BaseFeeConfig {
+pub fn to_anchor_base_fee_config(config: &BaseFeeConfig) -> TaikoAnchor::BaseFeeConfig {
     TaikoAnchor::BaseFeeConfig {
         adjustmentQuotient: config.adjustmentQuotient,
         sharingPctg: config.sharingPctg,

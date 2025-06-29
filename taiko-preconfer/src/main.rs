@@ -20,7 +20,10 @@ use preconfirmation::{
     stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
     taiko::{
         anchor::{ValidAnchor, to_anchor_base_fee_config},
-        contracts::{TaikoAnchorInstance, TaikoInbox, TaikoInboxInstance, TaikoWhitelistInstance},
+        contracts::{
+            TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance,
+            taiko_inbox::BaseFeeConfig,
+        },
         sign::get_signing_key,
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
@@ -83,7 +86,7 @@ fn get_config() -> ApplicationResult<Config> {
 
 async fn get_taiko_l2_client(
     config: &Config,
-    base_fee_config: &TaikoInbox::BaseFeeConfig,
+    base_fee_config: &BaseFeeConfig,
 ) -> ApplicationResult<TaikoL2Client> {
     let jwt_secret = JwtSecret::from_hex(config.jwt_secret.read()).unwrap();
     let auth_client = RpcClient::new(get_alloy_auth_client(
