@@ -79,7 +79,7 @@ pub fn parse_transport_error(err: alloy_transport::TransportError) -> String {
         }) => {
             if let Some(data) = data {
                 let data_str = data.to_string();
-                parse_taiko_sol_error(&data_str[1..(data_str.len() - 1)])
+                parse_taiko_inbox_error(&data_str[1..(data_str.len() - 1)])
             } else {
                 format!("{code} {message}")
             }
@@ -88,7 +88,7 @@ pub fn parse_transport_error(err: alloy_transport::TransportError) -> String {
     }
 }
 
-pub fn parse_taiko_sol_error(code: &str) -> String {
+pub fn parse_taiko_inbox_error(code: &str) -> String {
     match code {
         "0x7f14daf8" => "AnchorBlockIdTooLarge()",
         "0x46afbf54" => "AnchorBlockIdTooSmall()",
@@ -254,7 +254,7 @@ mod tests {
     #[test]
     fn test_convert_sol_error() {
         let err = "0x1999aed2";
-        let converted = parse_taiko_sol_error(err);
+        let converted = parse_taiko_inbox_error(err);
         assert_eq!(converted, "TimestampTooSmall()".to_string());
     }
 
