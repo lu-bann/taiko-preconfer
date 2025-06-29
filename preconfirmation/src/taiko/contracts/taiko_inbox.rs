@@ -204,4 +204,25 @@ sol!(
 
         event BatchProposed(BatchInfo info, BatchMetadata meta, bytes txList);
     }
+
+    #[derive(Debug)]
+    #[sol(rpc)]
+     contract TaikoAnchor {
+        function getBasefeeV2(
+            uint32 _parentGasUsed,
+            uint64 _blockTimestamp,
+            BaseFeeConfig calldata _baseFeeConfig
+        )
+        public
+        view
+        returns (uint256 basefee_, uint64 newGasTarget_, uint64 newGasExcess_);
+
+        function anchorV3(
+            uint64 _anchorBlockId,
+            bytes32 _anchorStateRoot,
+            uint32 _parentGasUsed,
+            BaseFeeConfig calldata _baseFeeConfig,
+            bytes32[] calldata _signalSlots
+        );
+    }
 );

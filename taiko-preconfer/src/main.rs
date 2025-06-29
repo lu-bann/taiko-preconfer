@@ -19,7 +19,7 @@ use preconfirmation::{
     slot_model::SlotModel,
     stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
     taiko::{
-        anchor::{ValidAnchor, to_anchor_base_fee_config},
+        anchor::ValidAnchor,
         contracts::{
             TaikoAnchorInstance, TaikoInboxInstance, TaikoWhitelistInstance,
             taiko_inbox::BaseFeeConfig,
@@ -106,7 +106,7 @@ async fn get_taiko_l2_client(
         auth_client,
         taiko_anchor,
         provider,
-        to_anchor_base_fee_config(base_fee_config),
+        base_fee_config.clone(),
         chain_id,
         get_signing_key(&config.golden_touch_private_key),
         preconfirmation_url,
