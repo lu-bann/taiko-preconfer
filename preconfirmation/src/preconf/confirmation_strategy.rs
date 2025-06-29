@@ -17,10 +17,8 @@ use crate::{
     taiko::{
         anchor::ValidAnchor,
         contracts::{
-            TaikoInboxInstance,
-            taiko_wrapper::{
-                BatchParams, BlobParams, BlockParams, ProposeBatchParams, TaikoWrapper,
-            },
+            TaikoInbox, TaikoInboxInstance,
+            taiko_inbox::{BatchParams, BlobParams, BlockParams, ProposeBatchParams},
         },
         taiko_l1_client::ITaikoL1Client,
     },
@@ -269,7 +267,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
 
         debug!("params: {propose_batch_params:?}");
         debug!("tx_list: {tx_bytes:?}");
-        let tx = TransactionRequest::default().with_call(&TaikoWrapper::proposeBatchCall {
+        let tx = TransactionRequest::default().with_call(&TaikoInbox::proposeBatchCall {
             _params: propose_batch_params,
             _txList: tx_bytes,
         });
