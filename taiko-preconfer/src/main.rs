@@ -239,7 +239,7 @@ async fn main() -> ApplicationResult<()> {
     )
     .await?;
 
-    let (on_chain_result, preconfirmation_result, confirmation_result) = join!(
+    let (onchain_tracking_result, preconfirmation_result, confirmation_result) = join!(
         onchain_tracking_loop::run(
             l1_header_stream,
             l2_header_stream,
@@ -263,7 +263,7 @@ async fn main() -> ApplicationResult<()> {
         )
     );
 
-    on_chain_result?;
+    onchain_tracking_result?;
     preconfirmation_result?;
     confirmation_result
 }

@@ -61,6 +61,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
                 );
             }
 
+            // if can_confirm {
             if true {
                 let force_send = within_handover_period;
                 log_error(
