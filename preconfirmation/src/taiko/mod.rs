@@ -1,7 +1,5 @@
 pub mod anchor;
-pub use anchor::create_anchor_transaction;
 pub mod contracts;
-pub mod propose_batch;
 pub mod sign;
 pub mod taiko_l1_client;
 pub mod taiko_l2_client;
