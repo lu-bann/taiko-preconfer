@@ -23,7 +23,9 @@ use crate::preconf::preconf_blocks::{
 use crate::secret::Secret;
 use crate::taiko::{
     anchor::create_anchor_transaction,
-    contracts::{Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
+    contracts::{
+        Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance, taiko_inbox::BaseFeeConfig,
+    },
     sign::get_signed,
 };
 use crate::util::{hex_decode, now_as_secs};
@@ -115,7 +117,7 @@ pub struct TaikoL2Client {
     auth_client: RpcClient,
     taiko_anchor: TaikoAnchorInstance,
     provider: TaikoProvider,
-    base_fee_config: TaikoAnchor::BaseFeeConfig,
+    base_fee_config: BaseFeeConfig,
     chain_id: ChainId,
     golden_touch_signing_key: SigningKey,
     preconfirmation_url: String,
@@ -128,7 +130,7 @@ impl TaikoL2Client {
         auth_client: RpcClient,
         taiko_anchor: TaikoAnchorInstance,
         provider: TaikoProvider,
-        base_fee_config: TaikoAnchor::BaseFeeConfig,
+        base_fee_config: BaseFeeConfig,
         chain_id: ChainId,
         golden_touch_signing_key: SigningKey,
         preconfirmation_url: String,
