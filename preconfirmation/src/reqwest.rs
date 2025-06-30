@@ -1,6 +1,8 @@
 use alloy_consensus::Header;
+use alloy_json_rpc::{Request, Response, ResponsePayload};
 use alloy_rpc_types_eth::Block;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use thiserror::Error;
 
 use crate::util::u64_to_hex;
 
@@ -96,4 +98,42 @@ pub async fn get_latest_block(url: String) -> Result<Block, reqwest::Error> {
         .json()
         .await?;
     Ok(response.result)
+}
+
+#[derive(Debug, Error)]
+pub enum RpcError {
+    #[error("{0}")]
+    Reqwest(#[from] reqwest::Error),
+
+    #[error("{0}")]
+    Rpc(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
+}
+
+pub async fn auth_reqwest<Req: Serialize, Resp: DeserializeOwned>(
+    url: &str,
+    request: &Req,
+    jwt_secret: String,
+) -> Result<Resp, RpcError> {
+    let request_builder = reqwest::Client::new()
+        .post(url)
+        .header("Authorization", jwt_secret);
+    Ok(request_builder.json(&request).send().await?.json().await?)
+}
+
+pub async fn json_auth_reqwest<Resp: DeserializeOwned>(
+    url: &str,
+    method: String,
+    params: serde_json::Value,
+    jwt_secret: String,
+) -> Result<Resp, RpcError> {
+    let request = Request::new(method, alloy_json_rpc::Id::Number(1), params);
+
+    let response: Response<Resp> = auth_reqwest(url, &request, jwt_secret).await?;
+
+    match response.payload {
+        ResponsePayload::Success(payload) => Ok(payload),
+        ResponsePayload::Failure(error_payload) => Err(RpcError::Rpc(
+            alloy_json_rpc::RpcError::ErrorResp(error_payload),
+        )),
+    }
 }

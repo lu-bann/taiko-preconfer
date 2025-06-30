@@ -6,30 +6,30 @@ use alloy_provider::Provider;
 use alloy_provider::utils::Eip1559Estimation;
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
-use alloy_rpc_types_engine::{Claims, JwtSecret};
+use alloy_rpc_types_engine::Claims;
 use alloy_transport::TransportErrorKind;
-use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::{Error as EcdsaError, SigningKey};
 use libdeflater::CompressionError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 
+use crate::blob::MAX_BLOB_DATA_SIZE;
 use crate::{compression::compress, util::pad_left};
 
-use crate::client::{
-    HttpError, RpcClient, flatten_mempool_txs, get_alloy_auth_client, get_latest_header,
-    get_mempool_txs,
-};
+use crate::reqwest::{auth_reqwest, json_auth_reqwest};
 use crate::secret::Secret;
 use crate::taiko::{
     anchor::create_anchor_transaction,
     contracts::{BaseFeeConfig, Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
     sign::get_signed,
 };
-use crate::util::{hex_decode, now_as_secs};
+use crate::util::{get_latest_header, hex_decode, now_as_secs};
 
 const GAS_LIMIT: u64 = 241_000_000;
+const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
+#[allow(dead_code)]
+const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
 
 #[derive(Debug, Error)]
 pub enum TaikoL2ClientError {
@@ -37,13 +37,13 @@ pub enum TaikoL2ClientError {
     Rpc(#[from] RpcError<TransportErrorKind>),
 
     #[error("{0}")]
+    RpcReqwest(#[from] crate::reqwest::RpcError),
+
+    #[error("{0}")]
     FromHex(#[from] hex::FromHexError),
 
     #[error("{0}")]
     UrlParse(#[from] url::ParseError),
-
-    #[error("{0}")]
-    Http(#[from] HttpError),
 
     #[error("{0}")]
     Ecdsa(#[from] EcdsaError),
@@ -58,13 +58,7 @@ pub enum TaikoL2ClientError {
     Compression(#[from] CompressionError),
 
     #[error("{0}")]
-    Reqwest(#[from] reqwest::Error),
-
-    #[error("{0}")]
     JsonWebToken(#[from] jsonwebtoken::errors::Error),
-
-    #[error("Reqwest error: code={code} error={error}")]
-    InvalidReqwest { code: u16, error: String },
 }
 
 pub type TaikoL2ClientResult<T> = Result<T, TaikoL2ClientError>;
@@ -157,19 +151,28 @@ impl ITaikoL2Client for TaikoL2Client {
         beneficiary: Address,
         base_fee: u64,
     ) -> TaikoL2ClientResult<Vec<TxEnvelope>> {
-        let jwt_secret = JwtSecret::from_hex(self.jwt_secret.read()).unwrap();
-        let auth_client = RpcClient::new(get_alloy_auth_client(&self.auth_url, jwt_secret, true)?);
-        let mempool_tx_lists = get_mempool_txs(
-            &auth_client,
+        let params = serde_json::json!([
             beneficiary,
             base_fee,
             GAS_LIMIT,
-            BYTES_PER_BLOB as u64,
-            vec![],
-            1,
+            MAX_BLOB_DATA_SIZE,
+            Vec::<u64>::default(),
+            1u8
+        ]);
+        let jwt_secret = self.get_jwt_secret()?;
+
+        if let Some(mempool_tx_lists) = json_auth_reqwest(
+            &self.auth_url,
+            TAIKO_TX_POOL_CONTENT.into(),
+            params,
+            jwt_secret,
         )
-        .await?;
-        Ok(flatten_mempool_txs(mempool_tx_lists))
+        .await?
+        {
+            Ok(flatten_mempool_txs(mempool_tx_lists))
+        } else {
+            Ok(vec![])
+        }
     }
 
     async fn get_base_fee(
@@ -254,32 +257,20 @@ impl ITaikoL2Client for TaikoL2Client {
         info!("executable data {executable_data:?}");
         let end_of_sequencing = false;
 
-        let req = BuildPreconfBlockRequest {
+        let request = BuildPreconfBlockRequest {
             executable_data,
             end_of_sequencing,
         };
-        let client = reqwest::Client::new();
 
         let jwt_secret = self.get_jwt_secret()?;
-        let request_builder = client
-            .post(&self.preconfirmation_url)
-            .header("Authorization", jwt_secret);
-        let response = request_builder.json(&req).send().await?;
-        let status = response.status();
-        if !status.is_success() {
-            return Err(TaikoL2ClientError::InvalidReqwest {
-                code: status.as_u16(),
-                error: response.text().await?,
-            });
-        }
-
-        let response: BuildPreconfBlockResponse = response.json().await?;
+        let response: BuildPreconfBlockResponse =
+            auth_reqwest(&self.preconfirmation_url, &request, jwt_secret).await?;
         Ok(response.block_header)
     }
 }
 
 impl TaikoL2Client {
-    fn get_jwt_secret(&self) -> TaikoL2ClientResult<String> {
+    pub fn get_jwt_secret(&self) -> TaikoL2ClientResult<String> {
         let secret_bytes = hex_decode(self.jwt_secret.read_slice())?;
         let now = now_as_secs();
         let claims = Claims {
@@ -349,4 +340,21 @@ pub fn create_executable_data(
         timestamp,
         transactions,
     })
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "PascalCase")]
+struct MempoolTxList {
+    pub tx_list: Vec<TxEnvelope>,
+    #[allow(dead_code)]
+    pub estimated_gas_used: u64,
+    #[allow(dead_code)]
+    pub bytes_length: u64,
+}
+
+fn flatten_mempool_txs(tx_lists: Vec<MempoolTxList>) -> Vec<TxEnvelope> {
+    tx_lists
+        .into_iter()
+        .flat_map(|tx_list| tx_list.tx_list)
+        .collect()
 }

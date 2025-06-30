@@ -6,8 +6,8 @@ use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_eth::Block;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
-    client::reqwest::get_block_by_id,
     preconf::config::Config,
+    reqwest::get_block_by_id,
     stream::{
         get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
         get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
