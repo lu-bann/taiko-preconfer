@@ -1,5 +1,7 @@
 use alloy_consensus::BlobTransactionSidecar;
 use alloy_eips::eip4844::env_settings::EnvKzgSettings;
+use alloy_primitives::Bytes;
+
 use c_kzg::{BYTES_PER_BLOB, Blob, Error as KzgError};
 use thiserror::Error;
 
@@ -10,19 +12,25 @@ const ITERATIONS: usize = 1024;
 pub const MAX_BLOB_DATA_SIZE: usize = DATA_SIZE_PER_ITERATION * ITERATIONS - DATA_LENGTH_SIZE;
 const ENCODING_VERSION: u8 = 0;
 
-#[derive(Error, Debug, PartialEq)]
+#[derive(Error, Debug)]
 pub enum BlobEncodeError {
     #[error("Blob size of {size} bytes exceeds {MAX_BLOB_DATA_SIZE} failed.")]
     BlobSize { size: usize },
+
     #[error("Invalid byte offset {offset}%32 != {mod_expected}.")]
     InvalidByteOffset { offset: usize, mod_expected: usize },
+
     #[error("Invalid byte encoding {byte} & {mask} != 0.")]
     InvalidByteEncoding { byte: u8, mask: u8 },
+
     #[error("Failed fitting data into blob. Processed {processed_bytes} of {total_bytes}.")]
     FailedFittingData {
         processed_bytes: usize,
         total_bytes: usize,
     },
+
+    #[error("{0}")]
+    Kzg(#[from] KzgError),
 }
 
 pub fn create_blob(data: &[u8]) -> Result<Blob, BlobEncodeError> {
@@ -73,7 +81,22 @@ pub fn create_blob(data: &[u8]) -> Result<Blob, BlobEncodeError> {
     Ok(c_kzg::Blob::from(blob_bytes))
 }
 
-pub fn blobs_to_sidecar(blobs: Vec<c_kzg::Blob>) -> Result<BlobTransactionSidecar, KzgError> {
+pub fn tx_bytes_to_blobs(tx_bytes: Bytes) -> Result<Vec<Blob>, BlobEncodeError> {
+    let blobs: Result<_, _> = tx_bytes
+        .chunks(MAX_BLOB_DATA_SIZE)
+        .map(create_blob)
+        .collect();
+    blobs
+}
+
+pub fn tx_bytes_to_sidecar(tx_bytes: Bytes) -> Result<BlobTransactionSidecar, BlobEncodeError> {
+    let blobs = tx_bytes_to_blobs(tx_bytes)?;
+    blobs_to_sidecar(blobs)
+}
+
+pub fn blobs_to_sidecar(
+    blobs: Vec<c_kzg::Blob>,
+) -> Result<BlobTransactionSidecar, BlobEncodeError> {
     let kzg_settings = EnvKzgSettings::Default.get();
 
     let mut commitments = Vec::with_capacity(blobs.len());
@@ -251,6 +274,9 @@ mod tests {
         let large_size = MAX_BLOB_DATA_SIZE + 1;
         let data = vec![0; large_size];
         let err = create_blob(&data).unwrap_err();
-        assert_eq!(err, BlobEncodeError::BlobSize { size: large_size });
+        match err {
+            BlobEncodeError::BlobSize { size } => assert_eq!(size, large_size),
+            _ => panic!("unexpected error"),
+        };
     }
 }

@@ -89,13 +89,17 @@ impl<Client: ITaikoL1Client> ValidAnchor<Client> {
         );
 
         info!(
-            "update anchor id update from {} to {}",
+            "anchor id may update from {} to {}",
             self.current_anchor_id, new_anchor_id
         );
         if new_anchor_id - self.current_anchor_id > self.anchor_id_update_tol {
             let anchor_header = self.client.get_header(new_anchor_id).await?;
             self.current_anchor_id = new_anchor_id;
             self.state_root = anchor_header.state_root;
+            info!(
+                "anchor id update from {} to {}",
+                self.current_anchor_id, new_anchor_id
+            );
         }
         Ok(())
     }

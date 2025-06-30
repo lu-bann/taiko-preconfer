@@ -1,6 +1,7 @@
 use std::{num::TryFromIntError, sync::Arc};
 
 use alloy_consensus::Transaction;
+use alloy_network::TransactionBuilder4844;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::network::TransactionBuilder as _;
 use alloy_rpc_types::TransactionRequest;
@@ -13,6 +14,7 @@ use tokio::{join, sync::RwLock};
 use tracing::{debug, error, info};
 
 use crate::{
+    blob::tx_bytes_to_sidecar,
     compression::compress,
     taiko::{
         anchor::ValidAnchor,
@@ -30,6 +32,9 @@ use crate::{
 
 #[derive(Debug, Error)]
 pub enum ConfirmationError {
+    #[error("{0}")]
+    BlobEncode(#[from] crate::blob::BlobEncodeError),
+
     #[error("{0}")]
     Compression(#[from] libdeflater::CompressionError),
 
@@ -120,6 +125,7 @@ pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     valid_anchor_id: Arc<RwLock<ValidAnchor<Client>>>,
     taiko_inbox: TaikoInboxInstance,
     valid_timestamp: ValidTimestamp,
+    use_blobs: bool,
 }
 
 impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
@@ -130,6 +136,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         valid_anchor_id: Arc<RwLock<ValidAnchor<Client>>>,
         taiko_inbox: TaikoInboxInstance,
         valid_timestamp: ValidTimestamp,
+        use_blobs: bool,
     ) -> Self {
         Self {
             sender,
@@ -138,6 +145,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             valid_anchor_id,
             taiko_inbox,
             valid_timestamp,
+            use_blobs,
         }
     }
 
@@ -173,7 +181,6 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         {
             return Ok(());
         }
-        let number_of_blobs = 0u8;
 
         let mut txs = Vec::new();
         let mut block_params = Vec::new();
@@ -227,7 +234,6 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
                         });
                         last_timestamp = timestamp;
                         debug!("block txs: {:?}", block_txs);
-                        compress(block_txs.clone())?;
                         txs.extend(block_txs.into_iter());
                     } else {
                         info!(
@@ -254,12 +260,22 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             .map(|batch| batch.metaHash)
             .unwrap_or_default();
         let tx_bytes = Bytes::from(compress(txs.clone())?);
+        debug!("tx_list: {tx_bytes:?}");
+        let tx_bytes_len = tx_bytes.len();
+        let sidecar = if self.use_blobs {
+            Some(tx_bytes_to_sidecar(tx_bytes)?)
+        } else {
+            None
+        };
         let blob_params = BlobParams {
             blobHashes: vec![],
             firstBlobIndex: 0,
-            numBlobs: number_of_blobs,
+            numBlobs: sidecar
+                .as_ref()
+                .map(|sidecar| sidecar.blobs.len() as u8)
+                .unwrap_or_default(),
             byteOffset: 0,
-            byteSize: tx_bytes.len() as u32,
+            byteSize: tx_bytes_len as u32,
             createdIn: 0,
         };
 
@@ -274,11 +290,13 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         );
 
         debug!("params: {propose_batch_params:?}");
-        debug!("tx_list: {tx_bytes:?}");
-        let tx = TransactionRequest::default().with_call(&TaikoInbox::proposeBatchCall {
+        let mut tx = TransactionRequest::default().with_call(&TaikoInbox::proposeBatchCall {
             _params: propose_batch_params,
-            _txList: tx_bytes,
+            _txList: Bytes::default(),
         });
+        if let Some(sidecar) = sidecar {
+            tx.set_blob_sidecar(sidecar);
+        }
         self.valid_anchor_id.write().await.update().await?;
         self.sender.send(tx).await?;
         Ok(())

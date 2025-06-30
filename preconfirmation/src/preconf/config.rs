@@ -35,6 +35,7 @@ pub struct Config {
     pub jwt_secret: Secret,
     pub anchor_id_update_tol: u64,
     pub max_blocks_per_batch: usize,
+    pub use_blobs: bool,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -43,7 +44,10 @@ pub enum ConfigError {
     Var(#[from] std::env::VarError),
 
     #[error("{0}")]
-    Parse(#[from] std::num::ParseIntError),
+    ParseInt(#[from] std::num::ParseIntError),
+
+    #[error("{0}")]
+    ParseBool(#[from] std::str::ParseBoolError),
 
     #[error("{0}")]
     FromHex(#[from] alloy_primitives::hex::FromHexError),
@@ -81,6 +85,7 @@ impl Config {
             jwt_secret: Secret::new(std::env::var("JWT_SECRET")?),
             anchor_id_update_tol: std::env::var("ANCHOR_ID_UPDATE_TOL")?.parse()?,
             max_blocks_per_batch: std::env::var("MAX_BLOCKS_PER_BATCH")?.parse()?,
+            use_blobs: std::env::var("USE_BLOBS")?.parse()?,
         })
     }
 }

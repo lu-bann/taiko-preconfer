@@ -1,12 +1,17 @@
-use alloy_eips::BlockNumberOrTag;
-use alloy_primitives::{Address, B256, FixedBytes, Signature, SignatureError, keccak256};
+use alloy_eips::{
+    BlockNumberOrTag,
+    eip4844::{env_settings::EnvKzgSettings, kzg_to_versioned_hash},
+};
+use alloy_primitives::{Address, B256, Bytes, FixedBytes, Signature, SignatureError, keccak256};
 use alloy_provider::Provider;
 use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolValue;
+use c_kzg::Blob;
 use thiserror::Error;
 use tracing::{debug, info};
 
 use crate::{
+    blob::tx_bytes_to_blobs,
     compression::compress,
     taiko::contracts::{
         BaseFeeConfig, Batch, BatchInfo, BatchMetadata, BlockParams, TaikoInboxInstance,
@@ -28,6 +33,9 @@ pub fn verify_signature(
 #[derive(Debug, Error)]
 pub enum TaikoInboxError {
     #[error("{0}")]
+    BlobEncode(#[from] crate::blob::BlobEncodeError),
+
+    #[error("{0}")]
     RpcError(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
 
     #[error("{0}")]
@@ -38,6 +46,9 @@ pub enum TaikoInboxError {
 
     #[error("{0}")]
     Http(#[from] crate::client::HttpError),
+
+    #[error("{0}")]
+    Kzg(#[from] c_kzg::Error),
 }
 
 pub async fn get_latest_confirmed_batch(
@@ -52,6 +63,7 @@ pub async fn verify_last_batch(
     taiko_inbox: &TaikoInboxInstance,
     preconfer_address: Address,
     unconfirmed_l2_blocks: Vec<Block>,
+    use_blobs: bool,
 ) -> Result<bool, TaikoInboxError> {
     let stats2 = taiko_inbox.getStats2().call().await?;
     debug!("stats {stats2:?}");
@@ -89,6 +101,7 @@ pub async fn verify_last_batch(
         submit_header.timestamp,
         propose_batch_block_number,
         base_fee_config,
+        use_blobs,
     )?;
     Ok(computed_last_batch_meta_hash == confirmed_batch_meta_hash)
 }
@@ -105,13 +118,19 @@ pub trait ILastBatchVerifier {
 pub struct LastBatchVerifier {
     taiko_inbox: TaikoInboxInstance,
     preconfer_address: Address,
+    use_blobs: bool,
 }
 
 impl LastBatchVerifier {
-    pub fn new(taiko_inbox: TaikoInboxInstance, preconfer_address: Address) -> Self {
+    pub fn new(
+        taiko_inbox: TaikoInboxInstance,
+        preconfer_address: Address,
+        use_blobs: bool,
+    ) -> Self {
         Self {
             taiko_inbox,
             preconfer_address,
+            use_blobs,
         }
     }
 }
@@ -122,24 +141,13 @@ impl ILastBatchVerifier for LastBatchVerifier {
             &self.taiko_inbox,
             self.preconfer_address,
             unconfirmed_l2_blocks,
+            self.use_blobs,
         )
         .await
     }
 }
 
-pub fn compute_txs_hash(blocks: Vec<Block>) -> Result<B256, TaikoInboxError> {
-    let txs = get_tx_envelopes_without_anchor_from_blocks(blocks);
-    debug!("txs: {txs:?}");
-    let compressed_txs = compress(txs)?;
-
-    let mut abi_encoded = <(FixedBytes<32>, Vec<FixedBytes<32>>) as SolValue>::abi_encode(&(
-        keccak256(&compressed_txs),
-        vec![],
-    ));
-    let abi_encoded: Vec<_> = abi_encoded.drain(32..).collect();
-    Ok(keccak256(&abi_encoded))
-}
-
+#[allow(clippy::too_many_arguments)]
 pub fn compute_batch_meta_hash(
     preconfer_address: Address,
     blocks: Vec<Block>,
@@ -148,7 +156,10 @@ pub fn compute_batch_meta_hash(
     proposed_at: u64,
     proposed_in: u64,
     base_fee_config: BaseFeeConfig,
+    use_blobs: bool,
 ) -> Result<B256, TaikoInboxError> {
+    info!("Compute batch meta hash, last batch:");
+    info!("{:?}", batch);
     let mut last_timestamp = blocks
         .first()
         .expect("Batch must have at least one block")
@@ -170,27 +181,35 @@ pub fn compute_batch_meta_hash(
 
     let txs = get_tx_envelopes_without_anchor_from_blocks(blocks);
     debug!("txs: {txs:?}");
-    let compressed_txs = compress(txs)?;
+    let tx_bytes = Bytes::from(compress(txs)?);
+    let tx_bytes_len = tx_bytes.len();
+
+    let (tx_bytes_hash, blob_hashes) = if use_blobs {
+        let blobs = tx_bytes_to_blobs(tx_bytes)?;
+        (keccak256([]), get_blob_hashes(blobs)?)
+    } else {
+        (keccak256(&tx_bytes), vec![])
+    };
 
     let mut abi_encoded = <(FixedBytes<32>, Vec<FixedBytes<32>>) as SolValue>::abi_encode(&(
-        keccak256(&compressed_txs),
-        vec![],
+        tx_bytes_hash,
+        blob_hashes.clone(),
     ));
     let abi_encoded: Vec<_> = abi_encoded.drain(32..).collect();
     let txs_hash = keccak256(&abi_encoded);
+
     debug!("txs_hash {}", txs_hash);
 
-    let txs_bytes = compressed_txs.len();
     let info = BatchInfo {
         txsHash: txs_hash,
         blocks: block_params,
-        blobHashes: vec![],
+        blobHashes: blob_hashes,
         extraData: B256::from_slice(&pad_left::<32>(&[base_fee_config.sharingPctg])),
         coinbase: preconfer_address,
         proposedIn: proposed_in,
-        blobCreatedIn: 0,
+        blobCreatedIn: proposed_in,
         blobByteOffset: 0,
-        blobByteSize: txs_bytes as u32,
+        blobByteSize: tx_bytes_len as u32,
         gasLimit: 240_000_000,
         lastBlockId: batch.lastBlockId,
         lastBlockTimestamp: batch.lastBlockTimestamp,
@@ -205,8 +224,23 @@ pub fn compute_batch_meta_hash(
         batchId: batch.batchId,
         proposedAt: proposed_at,
     };
-    debug!("meta: {meta:?}");
+    info!("meta: {meta:?}");
     Ok(keccak256(meta.abi_encode()))
+}
+
+fn get_blob_hashes(blobs: Vec<Blob>) -> Result<Vec<FixedBytes<32>>, TaikoInboxError> {
+    let kzg_settings = EnvKzgSettings::Default.get();
+
+    let blob_hashes: Result<_, _> = blobs
+        .iter()
+        .map(|blob| -> Result<FixedBytes<32>, c_kzg::Error> {
+            let commitment = kzg_settings.blob_to_kzg_commitment(blob)?;
+            let hash = kzg_to_versioned_hash(commitment.as_slice());
+            info!("blob hash: {:?}", hash);
+            Ok(hash)
+        })
+        .collect();
+    Ok(blob_hashes?)
 }
 
 #[cfg(test)]
