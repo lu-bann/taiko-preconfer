@@ -206,9 +206,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-network"
-version = "1.0.12"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "a0306e8d148b7b94d988615d367443c1b9d6d2e9fecd2e1f187ac5153dce56f5"
+checksum = "de68a3f09cd9ab029cf87d08630e1336ca9a530969689fd151d505fa888a2603"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
