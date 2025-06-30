@@ -254,15 +254,23 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             .map(|batch| batch.metaHash)
             .unwrap_or_default();
         let tx_bytes = Bytes::from(compress(txs.clone())?);
+        let blob_params = BlobParams {
+            blobHashes: vec![],
+            firstBlobIndex: 0,
+            numBlobs: number_of_blobs,
+            byteOffset: 0,
+            byteSize: tx_bytes.len() as u32,
+            createdIn: 0,
+        };
+
         let propose_batch_params = create_propose_batch_params(
             self.sender.address(),
-            tx_bytes.len(),
             block_params,
+            blob_params,
             parent_batch_meta_hash,
             batch_anchor_id,
             last_timestamp,
             self.sender.address(),
-            number_of_blobs,
         );
 
         debug!("params: {propose_batch_params:?}");
@@ -277,16 +285,14 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
     }
 }
 
-#[allow(clippy::too_many_arguments)]
 fn create_propose_batch_params(
     proposer: Address,
-    tx_bytes: usize,
     blocks: Vec<BlockParams>,
+    blob_params: BlobParams,
     parent_meta_hash: B256,
     anchor_block_id: u64,
     last_block_timestamp: u64,
     coinbase: Address,
-    number_of_blobs: u8,
 ) -> Bytes {
     let batch_params = BatchParams {
         proposer,
@@ -295,14 +301,7 @@ fn create_propose_batch_params(
         anchorBlockId: anchor_block_id,
         lastBlockTimestamp: last_block_timestamp,
         revertIfNotFirstProposal: false,
-        blobParams: BlobParams {
-            blobHashes: vec![],
-            firstBlobIndex: 0,
-            numBlobs: number_of_blobs,
-            byteOffset: 0,
-            byteSize: tx_bytes as u32,
-            createdIn: 0,
-        },
+        blobParams: blob_params,
         blocks,
     };
     info!("batch params: {:?}", batch_params);
