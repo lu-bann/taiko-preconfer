@@ -18,7 +18,7 @@ use preconfirmation::{
     verification::{LastBatchVerifier, TaikoInboxError},
 };
 use tokio::{join, sync::RwLock};
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::error::ApplicationResult;
 
@@ -183,6 +183,7 @@ pub async fn create_block_stream(
     Ok(get_block_stream(polling_stream, ws_stream))
 }
 
+#[instrument(name = "🔄", skip_all)]
 pub async fn run<
     L1Stream: Stream<Item = Header>,
     L2Stream: Stream<Item = Result<Header, TaikoInboxError>>,

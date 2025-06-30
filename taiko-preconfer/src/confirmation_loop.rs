@@ -10,13 +10,14 @@ use preconfirmation::{
     taiko::{contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client},
     util::log_error,
 };
-use tracing::info;
+use tracing::{info, instrument};
 
 use crate::{
     error::ApplicationResult,
     util::{set_active_operator_for_next_period, set_active_operator_if_necessary},
 };
 
+#[instrument(name = "➡️", skip_all)]
 pub async fn run<L1Client: ITaikoL1Client>(
     stream: impl Stream<Item = Slot>,
     confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,

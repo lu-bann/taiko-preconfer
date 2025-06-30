@@ -16,13 +16,14 @@ use preconfirmation::{
     time_provider::ITimeProvider,
     util::{log_error, now_as_secs},
 };
-use tracing::{debug, info, trace};
+use tracing::{debug, info, instrument, trace};
 
 use crate::{
     error::ApplicationResult,
     util::{set_active_operator_for_next_period, set_active_operator_if_necessary},
 };
 
+#[instrument(name = "📋", skip_all)]
 pub async fn run<
     L1Client: ITaikoL1Client,
     L2Client: ITaikoL2Client,
