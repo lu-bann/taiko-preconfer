@@ -80,11 +80,6 @@ fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = S
     )?)
 }
 
-fn get_config() -> ApplicationResult<Config> {
-    dotenv::dotenv()?;
-    Ok(Config::try_from_env()?)
-}
-
 async fn get_taiko_l2_client(
     config: &Config,
     base_fee_config: &BaseFeeConfig,
@@ -128,12 +123,13 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
 
 #[tokio::main]
 async fn main() -> ApplicationResult<()> {
+    dotenv::dotenv()?;
+    let config = Config::try_from_env()?;
+
     tracing_subscriber::fmt()
-        .with_max_level(tracing::Level::INFO)
+        .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
         .with_target(false)
         .init();
-
-    let config = get_config()?;
 
     let l1_ws_provider = ProviderBuilder::new()
         .connect_ws(WsConnect::new(&config.l1_ws_url))
