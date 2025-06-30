@@ -60,6 +60,7 @@ pub async fn verify_last_batch(
     taiko_inbox: &TaikoInboxInstance,
     preconfer_address: Address,
     unconfirmed_l2_blocks: Vec<Block>,
+    base_fee_config: BaseFeeConfig,
     use_blobs: bool,
 ) -> Result<bool, TaikoInboxError> {
     let stats2 = taiko_inbox.getStats2().call().await?;
@@ -88,7 +89,6 @@ pub async fn verify_last_batch(
         .await?
         .expect("TODO: can be re-orged away by L1 reorg")
         .header;
-    let base_fee_config = taiko_inbox.pacayaConfig().call().await?.baseFeeConfig;
     let confirmed_batch_meta_hash = batch.metaHash;
     let computed_last_batch_meta_hash = compute_batch_meta_hash(
         preconfer_address,
@@ -115,6 +115,7 @@ pub trait ILastBatchVerifier {
 pub struct LastBatchVerifier {
     taiko_inbox: TaikoInboxInstance,
     preconfer_address: Address,
+    base_fee_config: BaseFeeConfig,
     use_blobs: bool,
 }
 
@@ -122,11 +123,13 @@ impl LastBatchVerifier {
     pub fn new(
         taiko_inbox: TaikoInboxInstance,
         preconfer_address: Address,
+        base_fee_config: BaseFeeConfig,
         use_blobs: bool,
     ) -> Self {
         Self {
             taiko_inbox,
             preconfer_address,
+            base_fee_config,
             use_blobs,
         }
     }
@@ -138,6 +141,7 @@ impl ILastBatchVerifier for LastBatchVerifier {
             &self.taiko_inbox,
             self.preconfer_address,
             unconfirmed_l2_blocks,
+            self.base_fee_config.clone(),
             self.use_blobs,
         )
         .await

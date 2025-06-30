@@ -128,7 +128,7 @@ async fn main() -> ApplicationResult<()> {
         .await?;
     let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_ws_provider.clone());
 
-    let taiko_inbox_config = taiko_inbox.pacayaConfig().call().await.unwrap();
+    let taiko_inbox_config = taiko_inbox.pacayaConfig().call().await?;
 
     let signer =
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
