@@ -9,7 +9,7 @@ resolver = "2"
 [workspace.dependencies]
 alloy-consensus = "1.0.9"
 alloy-contract = { version = "1.0.9", features = ["pubsub"] }
-alloy-eips = { version = "1.0.9", features = ["kzg"] }
+alloy-eips = { version = "1.0.16", features = ["kzg"] }
 alloy-json-rpc = "1.0.9"
 alloy-network = "1.0.12"
 alloy-provider = { version = "1.0.16", features = [
