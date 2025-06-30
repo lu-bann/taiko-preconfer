@@ -1,13 +1,21 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use alloy_consensus::TxEnvelope;
+use alloy_consensus::{Header, TxEnvelope};
+use alloy_json_rpc::RpcError;
 use alloy_primitives::Bytes;
+use alloy_rpc_client::RpcClientInner;
+use alloy_rpc_types::{Block as RpcBlock, BlockNumberOrTag};
 use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolCall;
+use alloy_transport::TransportErrorKind;
 use hex::{FromHexError, decode, encode};
+use serde_json::json;
 use tracing::error;
 
 use crate::taiko::contracts::TaikoAnchor;
+
+pub const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
+pub const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
 
 pub fn hex_encode<T: AsRef<[u8]>>(data: T) -> String {
     format!("0x{}", encode(data))
@@ -35,7 +43,7 @@ pub fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
     }
 }
 
-pub fn get_tx_envelopes_from_block(block: Block) -> Vec<TxEnvelope> {
+pub fn get_tx_envelopes_from_block(block: RpcBlock) -> Vec<TxEnvelope> {
     block
         .transactions
         .into_transactions_vec()
@@ -49,13 +57,13 @@ pub fn get_anchor_block_id_from_bytes(bytes: &Bytes) -> Result<u64, alloy_sol_ty
     Ok(anchor_v3_call._anchorBlockId)
 }
 
-pub fn get_tx_envelopes_without_anchor_from_block(block: Block) -> Vec<TxEnvelope> {
+pub fn get_tx_envelopes_without_anchor_from_block(block: RpcBlock) -> Vec<TxEnvelope> {
     let mut txs = get_tx_envelopes_from_block(block);
     txs.remove(0);
     txs
 }
 
-pub fn get_tx_envelopes_without_anchor_from_blocks(txs: Vec<Block>) -> Vec<TxEnvelope> {
+pub fn get_tx_envelopes_without_anchor_from_blocks(txs: Vec<RpcBlock>) -> Vec<TxEnvelope> {
     txs.into_iter()
         .flat_map(get_tx_envelopes_without_anchor_from_block)
         .collect()
@@ -178,6 +186,43 @@ pub fn now_as_secs() -> u64 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_secs()
+}
+
+pub async fn get_header(
+    client: &RpcClientInner,
+    block_number: BlockNumberOrTag,
+) -> Result<Header, RpcError<TransportErrorKind>> {
+    let params = json!([block_number]);
+
+    let header: Option<Header> = client
+        .request(GET_HEADER_BY_NUMBER.to_string(), params.clone())
+        .await?;
+    header.ok_or(RpcError::NullResp)
+}
+
+pub async fn get_header_by_id(
+    client: &RpcClientInner,
+    id: u64,
+) -> Result<Header, RpcError<TransportErrorKind>> {
+    get_header(client, BlockNumberOrTag::Number(id)).await
+}
+
+pub async fn get_latest_header(
+    client: &RpcClientInner,
+) -> Result<Header, RpcError<TransportErrorKind>> {
+    get_header(client, BlockNumberOrTag::Latest).await
+}
+
+pub async fn get_block(
+    client: &RpcClientInner,
+    block_number: BlockNumberOrTag,
+    full_tx: bool,
+) -> Result<Block, RpcError<TransportErrorKind>> {
+    let params = json!([block_number, full_tx]);
+    let block: Option<Block> = client
+        .request(GET_BLOCK_BY_NUMBER.to_string(), params.clone())
+        .await?;
+    block.ok_or(RpcError::NullResp)
 }
 
 #[cfg(test)]

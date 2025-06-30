@@ -5,7 +5,6 @@ use alloy_eips::merge::{EPOCH_DURATION, SLOT_DURATION};
 use crate::slot::Slot;
 
 pub const HOLESKY_GENESIS_TIMESTAMP: u64 = 1_695_902_400;
-pub const TAIKO_HOLESKY_GENESIS_TIMESTAMP: u64 = 1_711_697_940;
 
 #[derive(Debug)]
 pub struct SlotModel {
@@ -31,7 +30,7 @@ impl SlotModel {
         Self::new(HOLESKY_GENESIS_TIMESTAMP, SLOT_DURATION, EPOCH_DURATION)
     }
 
-    pub const fn taiko_holesky(slot_duration: Duration) -> Self {
+    pub const fn taiko_with_slot_duration(slot_duration: Duration) -> Self {
         Self::new(HOLESKY_GENESIS_TIMESTAMP, slot_duration, EPOCH_DURATION)
     }
 
