@@ -78,7 +78,10 @@ pub async fn run<
                     }
                 }
 
-                log_error(builder.build_block().await, "Error building block");
+                log_error(
+                    builder.build_block(slot_timestamp).await,
+                    "Error building block",
+                );
             } else {
                 info!("Not active operator. Skip block building.");
             }

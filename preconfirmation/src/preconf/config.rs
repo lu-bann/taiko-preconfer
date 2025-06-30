@@ -36,6 +36,7 @@ pub struct Config {
     pub anchor_id_update_tol: u64,
     pub max_blocks_per_batch: usize,
     pub use_blobs: bool,
+    pub propose_timeout: Duration,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -86,6 +87,7 @@ impl Config {
             anchor_id_update_tol: std::env::var("ANCHOR_ID_UPDATE_TOL")?.parse()?,
             max_blocks_per_batch: std::env::var("MAX_BLOCKS_PER_BATCH")?.parse()?,
             use_blobs: std::env::var("USE_BLOBS")?.parse()?,
+            propose_timeout: Duration::from_secs(std::env::var("PROPOSE_TIMEOUT_S")?.parse()?),
         })
     }
 }

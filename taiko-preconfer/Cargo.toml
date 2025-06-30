@@ -10,7 +10,6 @@ alloy-json-rpc = { workspace = true }
 alloy-network = { workspace = true }
 alloy-primitives = { workspace = true }
 alloy-provider = { workspace = true }
-alloy-rpc-types-engine = { workspace = true }
 alloy-rpc-types-eth = { workspace = true }
 alloy-signer = { workspace = true }
 alloy-signer-local = { workspace = true }
