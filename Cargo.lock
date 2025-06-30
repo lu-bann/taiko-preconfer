@@ -150,9 +150,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-eips"
-version = "1.0.12"
+version = "1.0.16"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4f853de9ca1819f54de80de5d03bfc1bb7c9fafcf092b480a654447141bc354d"
+checksum = "33d134f3ac4926124eaf521a1031d11ea98816df3d39fc446fcfd6b36884603f"
 dependencies = [
  "alloy-eip2124",
  "alloy-eip2930",
