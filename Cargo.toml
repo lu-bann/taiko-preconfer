@@ -11,7 +11,7 @@ alloy-consensus = "1.0.9"
 alloy-contract = { version = "1.0.9", features = ["pubsub"] }
 alloy-eips = { version = "1.0.16", features = ["kzg"] }
 alloy-json-rpc = "1.0.9"
-alloy-network = "1.0.12"
+alloy-network = "1.0.16"
 alloy-provider = { version = "1.0.16", features = [
     "reqwest", "ws"
 ], default-features = false }
