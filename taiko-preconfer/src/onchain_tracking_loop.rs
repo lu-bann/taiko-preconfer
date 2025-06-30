@@ -152,8 +152,14 @@ pub async fn create_l2_head_stream(
         let url = config.l2_client_url.clone();
         async move { get_block_by_id(url.clone(), id).await }
     };
-    let last_batch_verifier =
-        LastBatchVerifier::new(taiko_inbox, preconfer_address, config.use_blobs);
+
+    let base_fee_config = taiko_inbox.pacayaConfig().call().await?.baseFeeConfig;
+    let last_batch_verifier = LastBatchVerifier::new(
+        taiko_inbox,
+        preconfer_address,
+        base_fee_config,
+        config.use_blobs,
+    );
     Ok(get_l2_head_stream(
         l2_block_stream,
         id_stream,
