@@ -20,7 +20,7 @@ alloy-rpc-client = "1.0.16"
 alloy-rpc-types = "1.0.16"
 alloy-rpc-types-eth = "1.0.16"
 alloy-rpc-types-engine = "1.0.16"
-alloy-signer = "1.0.12"
+alloy-signer = "1.0.16"
 alloy-signer-local = "1.0.12"
 alloy-transport = "1.0.9"
 alloy-transport-http = { version = "1.0.9", features = ["hyper", "jwt-auth"] }
