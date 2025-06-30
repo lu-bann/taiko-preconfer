@@ -6,7 +6,7 @@ use alloy_provider::Provider;
 use alloy_provider::utils::Eip1559Estimation;
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
-use alloy_rpc_types_engine::Claims;
+use alloy_rpc_types_engine::{Claims, JwtSecret};
 use alloy_transport::TransportErrorKind;
 use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::{Error as EcdsaError, SigningKey};
@@ -18,7 +18,8 @@ use tracing::info;
 use crate::{compression::compress, util::pad_left};
 
 use crate::client::{
-    HttpError, RpcClient, flatten_mempool_txs, get_latest_header, get_mempool_txs,
+    HttpError, RpcClient, flatten_mempool_txs, get_alloy_auth_client, get_latest_header,
+    get_mempool_txs,
 };
 use crate::secret::Secret;
 use crate::taiko::{
@@ -37,6 +38,9 @@ pub enum TaikoL2ClientError {
 
     #[error("{0}")]
     FromHex(#[from] hex::FromHexError),
+
+    #[error("{0}")]
+    UrlParse(#[from] url::ParseError),
 
     #[error("{0}")]
     Http(#[from] HttpError),
@@ -112,7 +116,7 @@ pub trait ITaikoL2Client {
 
 #[derive(Debug)]
 pub struct TaikoL2Client {
-    auth_client: RpcClient,
+    auth_url: String,
     taiko_anchor: TaikoAnchorInstance,
     provider: TaikoProvider,
     base_fee_config: BaseFeeConfig,
@@ -125,7 +129,7 @@ pub struct TaikoL2Client {
 impl TaikoL2Client {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        auth_client: RpcClient,
+        auth_url: String,
         taiko_anchor: TaikoAnchorInstance,
         provider: TaikoProvider,
         base_fee_config: BaseFeeConfig,
@@ -135,7 +139,7 @@ impl TaikoL2Client {
         jwt_secret: Secret,
     ) -> Self {
         Self {
-            auth_client,
+            auth_url,
             taiko_anchor,
             provider,
             base_fee_config,
@@ -153,8 +157,10 @@ impl ITaikoL2Client for TaikoL2Client {
         beneficiary: Address,
         base_fee: u64,
     ) -> TaikoL2ClientResult<Vec<TxEnvelope>> {
+        let jwt_secret = JwtSecret::from_hex(self.jwt_secret.read()).unwrap();
+        let auth_client = RpcClient::new(get_alloy_auth_client(&self.auth_url, jwt_secret, true)?);
         let mempool_tx_lists = get_mempool_txs(
-            &self.auth_client,
+            &auth_client,
             beneficiary,
             base_fee,
             GAS_LIMIT,

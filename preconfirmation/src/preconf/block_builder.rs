@@ -51,24 +51,28 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         self.address
     }
 
-    pub async fn build_block(&self) -> BlockBuilderResult<()> {
+    pub async fn build_block(&self, slot_timestamp: u64) -> BlockBuilderResult<()> {
         let last_l2_header = self.last_l2_header.read().await.clone();
         trace!("build_block: last_l2_header={last_l2_header:?}");
 
         info!("Start preconfirming block: #{}", last_l2_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
-        debug!("now={} parent={}", now, last_l2_header.timestamp);
+        debug!(
+            "slot={}, now={} parent={}",
+            slot_timestamp, now, last_l2_header.timestamp
+        );
 
         let (anchor_block_id, anchor_state_root) =
             self.valid_anchor_id.read().await.id_and_state_root();
         info!("Anchor {anchor_block_id}");
         let (golden_touch_nonce, base_fee) = join!(
             self.l2_client.get_nonce(self.golden_touch_address),
-            self.l2_client.get_base_fee(last_l2_header.gas_used, now),
+            self.l2_client
+                .get_base_fee(last_l2_header.gas_used, slot_timestamp),
         );
 
         let base_fee: u128 = base_fee?;
-        trace!("base fee: {base_fee}");
+        info!("base fee: {base_fee}");
         let mut txs = self
             .l2_client
             .get_mempool_txs(self.address, base_fee as u64)
@@ -97,7 +101,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
             .publish_preconfirmed_transactions(
                 self.address,
                 base_fee as u64,
-                now,
+                slot_timestamp,
                 &last_l2_header,
                 txs.clone(),
             )
@@ -209,7 +213,8 @@ mod tests {
             golden_touch_addr,
         );
 
-        assert!(preconfer.build_block().await.is_ok());
+        let slot_timestamp = 135;
+        assert!(preconfer.build_block(slot_timestamp).await.is_ok());
     }
 
     #[tokio::test]
@@ -258,6 +263,7 @@ mod tests {
             golden_touch_addr,
         );
 
-        assert!(preconfer.build_block().await.is_ok());
+        let slot_timestamp = 135;
+        assert!(preconfer.build_block(slot_timestamp).await.is_ok());
     }
 }

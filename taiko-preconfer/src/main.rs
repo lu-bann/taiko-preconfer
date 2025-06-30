@@ -2,12 +2,11 @@ use std::{str::FromStr, sync::Arc};
 
 use alloy_network::EthereumWallet;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
-use alloy_rpc_types_engine::JwtSecret;
 use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::Stream;
 use preconfirmation::{
-    client::{RpcClient, get_alloy_auth_client, reqwest::get_block_by_id},
+    client::reqwest::get_block_by_id,
     preconf::{
         BlockBuilder,
         config::Config,
@@ -84,13 +83,6 @@ async fn get_taiko_l2_client(
     config: &Config,
     base_fee_config: &BaseFeeConfig,
 ) -> ApplicationResult<TaikoL2Client> {
-    let jwt_secret = JwtSecret::from_hex(config.jwt_secret.read()).unwrap();
-    let auth_client = RpcClient::new(get_alloy_auth_client(
-        &config.l2_auth_client_url,
-        jwt_secret,
-        true,
-    )?);
-
     let provider = ProviderBuilder::new()
         .connect(&config.l2_client_url)
         .await?;
@@ -99,7 +91,7 @@ async fn get_taiko_l2_client(
     let chain_id = provider.get_chain_id().await?;
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/" + PRECONF_BLOCKS;
     Ok(TaikoL2Client::new(
-        auth_client,
+        config.l2_auth_client_url.clone(),
         taiko_anchor,
         provider,
         base_fee_config.clone(),
@@ -118,7 +110,7 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
         .wallet(wallet)
         .connect(&config.l1_client_url)
         .await?;
-    Ok(TaikoL1Client::new(l1_provider))
+    Ok(TaikoL1Client::new(l1_provider, config.propose_timeout))
 }
 
 #[tokio::main]

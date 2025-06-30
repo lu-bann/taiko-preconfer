@@ -9,7 +9,7 @@ use alloy_provider::{
     utils::Eip1559Estimation,
 };
 use alloy_rpc_types::TransactionRequest;
-use std::time::SystemTime;
+use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tracing::info;
 
@@ -56,6 +56,8 @@ pub type TaikoL1ClientResult<T> = Result<T, TaikoL1ClientError>;
 pub trait ITaikoL1Client {
     fn get_nonce(&self, address: Address) -> impl Future<Output = TaikoL1ClientResult<u64>>;
 
+    fn get_blob_base_fee(&self) -> impl Future<Output = TaikoL1ClientResult<u128>>;
+
     fn get_header(&self, id: u64) -> impl Future<Output = TaikoL1ClientResult<Header>>;
 
     fn get_latest_header(&self) -> impl Future<Output = TaikoL1ClientResult<Header>>;
@@ -74,17 +76,25 @@ pub trait ITaikoL1Client {
 #[derive(Debug, Clone)]
 pub struct TaikoL1Client {
     provider: TaikoProvider,
+    propose_timeout: Duration,
 }
 
 impl TaikoL1Client {
-    pub const fn new(provider: TaikoProvider) -> Self {
-        Self { provider }
+    pub const fn new(provider: TaikoProvider, propose_timeout: Duration) -> Self {
+        Self {
+            provider,
+            propose_timeout,
+        }
     }
 }
 
 impl ITaikoL1Client for TaikoL1Client {
     async fn get_nonce(&self, address: Address) -> TaikoL1ClientResult<u64> {
         Ok(self.provider.get_transaction_count(address).await?)
+    }
+
+    async fn get_blob_base_fee(&self) -> TaikoL1ClientResult<u128> {
+        Ok(self.provider.get_blob_base_fee().await?)
     }
 
     async fn get_header(&self, id: u64) -> TaikoL1ClientResult<Header> {
@@ -111,7 +121,7 @@ impl ITaikoL1Client for TaikoL1Client {
             .send_transaction(tx)
             .await?
             .with_required_confirmations(2)
-            .with_timeout(Some(std::time::Duration::from_secs(60)))
+            .with_timeout(Some(self.propose_timeout))
             .get_receipt()
             .await?;
         let end = SystemTime::now();

@@ -85,9 +85,11 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
 
     pub async fn send(&self, tx: TransactionRequest) -> ConfirmationResult<()> {
         debug!("Create tx");
+        let blob_base_fee = self.client.get_blob_base_fee().await?;
         let tx = tx
             .with_from(self.signer.address())
-            .with_to(self.taiko_inbox);
+            .with_to(self.taiko_inbox)
+            .max_fee_per_blob_gas(blob_base_fee);
         let (nonce, gas_limit, fee_estimate) = join!(
             self.client.get_nonce(self.signer.address()),
             self.client.estimate_gas(tx.clone()),
@@ -107,8 +109,8 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
         }
         let tx = tx
             .with_gas_limit(gas_limit?)
-            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas * 2)
-            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas * 2)
+            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas)
+            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas)
             .nonce(nonce?);
 
         info!("propose batch tx {tx:?}");
@@ -166,7 +168,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             .await
             .iter()
             .filter_map(|block| {
-                if block.header.timestamp < l1_slot_timestamp - 12 {
+                if block.header.timestamp < l1_slot_timestamp {
                     Some(block.clone())
                 } else {
                     None
