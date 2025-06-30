@@ -226,6 +226,7 @@ async fn main() -> ApplicationResult<()> {
         valid_anchor.clone(),
         taiko_inbox.clone(),
         valid_timestamp,
+        config.use_blobs,
     );
 
     let subslot_stream = create_subslot_stream(&config)?;
