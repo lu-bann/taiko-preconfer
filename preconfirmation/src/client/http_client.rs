@@ -1,5 +1,3 @@
-use std::num::ParseIntError;
-
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_json_rpc::RpcError;
 use alloy_primitives::Address;
@@ -7,46 +5,35 @@ use alloy_rpc_client::{RpcClient, RpcClientInner};
 use alloy_rpc_types::{Block, BlockNumberOrTag};
 use alloy_transport::TransportErrorKind;
 use serde::{Deserialize, Serialize};
-use serde_json::{Value as JsonValue, json};
-use thiserror::Error;
+use serde_json::json;
 
 pub const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
 pub const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
 pub const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
 pub const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
 
-#[derive(Error, Debug)]
-pub enum HttpError {
-    #[error("{0}")]
-    Rpc(#[from] RpcError<TransportErrorKind>),
-
-    #[error("{0}")]
-    ParseInt(#[from] ParseIntError),
-
-    #[error("RPC request {method} with {params} failed.")]
-    FailedRPCRequest { method: String, params: JsonValue },
-}
-
 pub async fn get_header(
     client: &RpcClientInner,
     block_number: BlockNumberOrTag,
-) -> Result<Header, HttpError> {
+) -> Result<Header, RpcError<TransportErrorKind>> {
     let params = json!([block_number]);
 
     let header: Option<Header> = client
         .request(GET_HEADER_BY_NUMBER.to_string(), params.clone())
         .await?;
-    header.ok_or(HttpError::FailedRPCRequest {
-        method: GET_HEADER_BY_NUMBER.to_string(),
-        params,
-    })
+    header.ok_or(RpcError::NullResp)
 }
 
-pub async fn get_header_by_id(client: &RpcClientInner, id: u64) -> Result<Header, HttpError> {
+pub async fn get_header_by_id(
+    client: &RpcClientInner,
+    id: u64,
+) -> Result<Header, RpcError<TransportErrorKind>> {
     get_header(client, BlockNumberOrTag::Number(id)).await
 }
 
-pub async fn get_latest_header(client: &RpcClientInner) -> Result<Header, HttpError> {
+pub async fn get_latest_header(
+    client: &RpcClientInner,
+) -> Result<Header, RpcError<TransportErrorKind>> {
     get_header(client, BlockNumberOrTag::Latest).await
 }
 
@@ -117,10 +104,10 @@ pub async fn get_block(
     client: &RpcClientInner,
     block_number: BlockNumberOrTag,
     full_tx: bool,
-) -> Result<Block, HttpError> {
+) -> Result<Block, RpcError<TransportErrorKind>> {
     let params = json!([block_number, full_tx]);
     let block: Option<Block> = client
         .request(GET_BLOCK_BY_NUMBER.to_string(), params.clone())
         .await?;
-    block.ok_or(HttpError::Rpc(alloy_json_rpc::RpcError::NullResp))
+    block.ok_or(RpcError::NullResp)
 }

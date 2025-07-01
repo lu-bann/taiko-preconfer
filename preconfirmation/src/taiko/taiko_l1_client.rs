@@ -32,9 +32,6 @@ pub enum TaikoL1ClientError {
     Rpc(String),
 
     #[error("{0}")]
-    Http(#[from] crate::client::HttpError),
-
-    #[error("{0}")]
     Contract(#[from] alloy_contract::Error),
 
     #[error("{0}")]
