@@ -13,7 +13,7 @@ use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tracing::info;
 
-use crate::util::{get_header_by_id, get_latest_header};
+use crate::client::{get_header_by_id, get_latest_header};
 
 type TaikoProvider = FillProvider<
     JoinFill<
@@ -30,6 +30,9 @@ type TaikoProvider = FillProvider<
 pub enum TaikoL1ClientError {
     #[error("{0}")]
     Rpc(String),
+
+    #[error("{0}")]
+    Http(#[from] crate::client::HttpError),
 
     #[error("{0}")]
     Contract(#[from] alloy_contract::Error),

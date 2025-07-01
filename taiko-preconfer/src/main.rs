@@ -6,6 +6,7 @@ use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
 use futures::Stream;
 use preconfirmation::{
+    client::reqwest::get_block_by_id,
     preconf::{
         BlockBuilder,
         config::Config,
@@ -13,7 +14,6 @@ use preconfirmation::{
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
-    reqwest::get_block_by_id,
     slot::{Slot, SubSlot},
     slot_model::SlotModel,
     stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
@@ -42,7 +42,7 @@ use taiko_preconfer::{
 const PRECONF_BLOCKS: &str = "preconfBlocks";
 
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
-    let taiko_slot_model = SlotModel::taiko_with_slot_duration(config.l2_slot_time);
+    let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
 
     let time_provider = SystemTimeProvider::new();
     let start = get_next_slot_start(&config.l2_slot_time, &time_provider)?;
