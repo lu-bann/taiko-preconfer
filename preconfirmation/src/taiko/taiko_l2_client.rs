@@ -1,9 +1,9 @@
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_contract::Error as ContractError;
+use alloy_eips::BlockNumberOrTag;
 use alloy_json_rpc::RpcError;
 use alloy_primitives::{Address, Bytes, ChainId, FixedBytes, ruint::FromUintError};
-use alloy_provider::Provider;
-use alloy_provider::utils::Eip1559Estimation;
+use alloy_provider::{Provider, utils::Eip1559Estimation};
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
 use alloy_rpc_types_engine::{Claims, JwtSecret};
@@ -16,7 +16,7 @@ use tracing::info;
 
 use crate::{
     blob::MAX_BLOB_DATA_SIZE,
-    client::{flatten_mempool_txs, get_alloy_auth_client, get_latest_header, get_mempool_txs},
+    client::{flatten_mempool_txs, get_alloy_auth_client, get_mempool_txs},
     compression::compress,
     secret::Secret,
     taiko::{
@@ -190,7 +190,13 @@ impl ITaikoL2Client for TaikoL2Client {
     }
 
     async fn get_latest_header(&self) -> TaikoL2ClientResult<Header> {
-        Ok(get_latest_header(self.provider.client()).await?)
+        Ok(self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+            .ok_or(alloy_json_rpc::RpcError::NullResp)?
+            .header
+            .inner)
     }
 
     async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoL2ClientResult<u64> {
