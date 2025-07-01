@@ -232,6 +232,7 @@ async fn main() -> ApplicationResult<()> {
     )
     .await?;
 
+    let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
     let (onchain_tracking_result, preconfirmation_result, confirmation_result) = join!(
         onchain_tracking_loop::run(
             l1_header_stream,
@@ -245,7 +246,8 @@ async fn main() -> ApplicationResult<()> {
             preconfirmation_slot_model.clone(),
             whitelist.clone(),
             taiko_sequencing_monitor,
-            config.handover_start_buffer
+            config.handover_start_buffer,
+            subslots_per_slot,
         ),
         confirmation_loop::run(
             slot_stream,

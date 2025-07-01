@@ -111,6 +111,7 @@ pub trait ITaikoL2Client {
         timestamp: u64,
         parent_header: &Header,
         txs: Vec<TxEnvelope>,
+        end_of_sequencing: bool,
     ) -> impl Future<Output = TaikoL2ClientResult<RpcHeader>>;
 }
 
@@ -240,6 +241,7 @@ impl ITaikoL2Client for TaikoL2Client {
         timestamp: u64,
         parent_header: &Header,
         txs: Vec<TxEnvelope>,
+        end_of_sequencing: bool,
     ) -> TaikoL2ClientResult<RpcHeader> {
         let executable_data = create_executable_data(
             base_fee,
@@ -251,8 +253,7 @@ impl ITaikoL2Client for TaikoL2Client {
             timestamp,
             txs,
         )?;
-        info!("executable data {executable_data:?}");
-        let end_of_sequencing = false;
+        info!("executable data {executable_data:?} eos={end_of_sequencing}");
 
         let req = BuildPreconfBlockRequest {
             executable_data,
