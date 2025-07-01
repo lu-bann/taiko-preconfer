@@ -28,6 +28,8 @@ pub async fn run<L1Client: ITaikoL1Client>(
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
     let slot_model = SlotModel::holesky();
+    let mut current_epoch_preconfer = preconfer_address;
+    let mut next_epoch_preconfer = Address::repeat_byte(0);
 
     loop {
         if let Some(slot) = stream.next().await {
@@ -60,10 +62,16 @@ pub async fn run<L1Client: ITaikoL1Client>(
                     &mut preconfirmation_slot_model,
                     &slot,
                 );
+                current_epoch_preconfer = current_preconfer;
             }
+            info!(
+                "Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}"
+            );
 
-            // if can_confirm {
-            if true {
+            if can_confirm
+                || (current_epoch_preconfer == preconfer_address
+                    && next_epoch_preconfer == preconfer_address)
+            {
                 let force_send = within_handover_period;
                 log_error(
                     confirmation_strategy
@@ -84,6 +92,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
                         &mut preconfirmation_slot_model,
                         &slot,
                     );
+                    next_epoch_preconfer = next_preconfer;
                 }
             }
         }
