@@ -9,13 +9,8 @@ pub fn set_active_operator_if_necessary(
     slot: &Slot,
 ) {
     if !preconfirmation_slot_model.can_preconfirm(slot) && current_preconfer == preconfer_address {
-        let epoch = if preconfirmation_slot_model.within_handover_period(slot.slot) {
-            slot.epoch + 1
-        } else {
-            slot.epoch
-        };
-        preconfirmation_slot_model.set_next_active_epoch(epoch);
-        info!("Set active epoch to {} for slot {:?}", epoch, slot);
+        preconfirmation_slot_model.set_next_active_epoch(slot.epoch);
+        info!("Set active epoch to {} for slot {:?}", slot.epoch, slot);
     }
 }
 

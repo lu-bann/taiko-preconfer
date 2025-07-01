@@ -51,7 +51,11 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         self.address
     }
 
-    pub async fn build_block(&self, slot_timestamp: u64) -> BlockBuilderResult<()> {
+    pub async fn build_block(
+        &self,
+        slot_timestamp: u64,
+        end_of_sequencing: bool,
+    ) -> BlockBuilderResult<()> {
         let last_l2_header = self.last_l2_header.read().await.clone();
         trace!("build_block: last_l2_header={last_l2_header:?}");
 
@@ -80,7 +84,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
         info!("mempool {:?}", txs);
         debug!("#txs in mempool: {}", txs.len());
         trace!("{:?}", txs);
-        if txs.is_empty() {
+        if txs.is_empty() && !end_of_sequencing {
             info!("Empty mempool: skipping block building.");
             return Ok(());
         }
@@ -104,6 +108,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
                 slot_timestamp,
                 &last_l2_header,
                 txs.clone(),
+                end_of_sequencing,
             )
             .await?;
         trace!("Preconfirmed block header: {header:?}");
@@ -168,8 +173,8 @@ mod tests {
             .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
         l2_client
             .expect_publish_preconfirmed_transactions()
-            .withf(|_, _, _, _, txs| txs.len() == 2 && txs[0].signature().r() == U256::ONE)
-            .return_once(|_, _, _, _, _| {
+            .withf(|_, _, _, _, txs, _| txs.len() == 2 && txs[0].signature().r() == U256::ONE)
+            .return_once(|_, _, _, _, _, _| {
                 Box::pin(async {
                     Ok(get_rpc_header(get_header(
                         DUMMY_BLOCK_NUMBER,
@@ -214,7 +219,7 @@ mod tests {
         );
 
         let slot_timestamp = 135;
-        assert!(preconfer.build_block(slot_timestamp).await.is_ok());
+        assert!(preconfer.build_block(slot_timestamp, true).await.is_ok());
     }
 
     #[tokio::test]
@@ -264,6 +269,6 @@ mod tests {
         );
 
         let slot_timestamp = 135;
-        assert!(preconfer.build_block(slot_timestamp).await.is_ok());
+        assert!(preconfer.build_block(slot_timestamp, false).await.is_ok());
     }
 }

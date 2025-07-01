@@ -35,6 +35,7 @@ pub async fn run<
     whitelist: TaikoWhitelistInstance,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     handover_timeout: Duration,
+    subslots_per_slot: u64,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
@@ -65,6 +66,8 @@ pub async fn run<
                 );
             }
 
+            let is_last_slot_before_handover_window =
+                preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot);
             if preconfirmation_slot_model.can_preconfirm(&subslot.slot) {
                 if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot) {
                     trace!("First slot in window: {:?}", subslot.slot);
@@ -78,15 +81,18 @@ pub async fn run<
                     }
                 }
 
+                let end_of_sequencing = is_last_slot_before_handover_window
+                    && subslot.sub_slot % subslots_per_slot == subslots_per_slot - 1;
+                info!("End of sequencing: {end_of_sequencing}");
                 log_error(
-                    builder.build_block(slot_timestamp).await,
+                    builder.build_block(slot_timestamp, end_of_sequencing).await,
                     "Error building block",
                 );
             } else {
                 info!("Not active operator. Skip block building.");
             }
 
-            if preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot) {
+            if is_last_slot_before_handover_window {
                 if let Some(next_preconfer) = log_error(
                     whitelist.getOperatorForNextEpoch().call().await,
                     "Failed to read preconfer for next epoch",
