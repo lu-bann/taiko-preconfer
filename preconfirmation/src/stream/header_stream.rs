@@ -5,7 +5,7 @@ use alloy_primitives::B256;
 use alloy_provider::Provider;
 use alloy_rpc_types_eth::Block;
 use async_stream::stream;
-use futures::{Stream, future::BoxFuture, pin_mut};
+use futures::Stream;
 use tokio_stream::StreamExt;
 
 pub fn get_header_stream(
@@ -83,36 +83,6 @@ pub fn get_block_polling_stream<P: Provider>(
             tokio::time::sleep(polling_duration).await;
         }
     }
-}
-
-pub async fn stream_headers<
-    'a,
-    Value: Clone,
-    E,
-    T: Fn(Header, Value) -> BoxFuture<'a, Result<(), E>>,
->(
-    stream: impl Stream<Item = Header>,
-    f: T,
-    current: Value,
-) -> Result<(), E> {
-    pin_mut!(stream);
-    while let Some(header) = stream.next().await {
-        f(header, current.clone()).await?;
-    }
-    Ok(())
-}
-
-pub fn to_boxed<'a, Value, F, FnFut, Res>(
-    header: Header,
-    current: Value,
-    f: F,
-) -> BoxFuture<'a, Res>
-where
-    Value: Send + 'static,
-    FnFut: Future<Output = Res> + Send + 'static,
-    F: Fn(Header, Value) -> FnFut,
-{
-    Box::pin(f(header, current))
 }
 
 #[cfg(test)]
