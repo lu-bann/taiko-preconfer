@@ -1,5 +1,6 @@
 use std::time::Duration;
 
+use alloy_primitives::Address;
 use futures::{Stream, StreamExt, pin_mut};
 use preconfirmation::{
     preconf::{
@@ -40,6 +41,8 @@ pub async fn run<
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
     let preconfer_address = builder.address();
+    let mut current_epoch_preconfer = preconfer_address;
+    let mut next_epoch_preconfer = Address::repeat_byte(0);
 
     loop {
         if let Some(subslot) = stream.next().await {
@@ -64,11 +67,18 @@ pub async fn run<
                     &mut preconfirmation_slot_model,
                     &subslot.slot,
                 );
+                current_epoch_preconfer = current_preconfer;
             }
+            info!(
+                "Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}"
+            );
 
             let is_last_slot_before_handover_window =
                 preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot);
-            if preconfirmation_slot_model.can_preconfirm(&subslot.slot) {
+            if preconfirmation_slot_model.can_preconfirm(&subslot.slot)
+                || (current_epoch_preconfer == preconfer_address
+                    && next_epoch_preconfer == preconfer_address)
+            {
                 if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot) {
                     trace!("First slot in window: {:?}", subslot.slot);
                     if log_error(
@@ -103,6 +113,7 @@ pub async fn run<
                         &mut preconfirmation_slot_model,
                         &subslot.slot,
                     );
+                    next_epoch_preconfer = next_preconfer;
                 }
             }
         }
