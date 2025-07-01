@@ -38,13 +38,9 @@ async fn stream_l1_headers<
     Ok(())
 }
 
-async fn store_header(
-    header: Header,
-    current: Arc<RwLock<Header>>,
-    msg: String,
-) -> ApplicationResult<()> {
+async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
     info!(
-        "{msg} 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
+        "L2 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
         header.number,
         header.timestamp,
         now_as_secs(),
@@ -75,10 +71,6 @@ async fn store_valid_anchor(
     Ok(())
 }
 
-async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
-    store_header(header, current, "L2".to_string()).await
-}
-
 fn store_valid_anchor_boxed<'a>(
     header: Header,
     valid_anchor_id: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
@@ -90,7 +82,7 @@ fn store_header_boxed_l2<'a>(
     header: Header,
     current: Arc<RwLock<Header>>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
-    to_boxed(header, current, store_header_l2)
+    Box::pin(store_header_l2(header, current))
 }
 
 pub async fn create_header_stream(
@@ -209,17 +201,4 @@ pub async fn run<
     );
     l1_result?;
     l2_result
-}
-
-pub fn to_boxed<'a, Value, F, FnFut, Res>(
-    header: Header,
-    current: Value,
-    f: F,
-) -> BoxFuture<'a, Res>
-where
-    Value: Send + 'static,
-    FnFut: Future<Output = Res> + Send + 'static,
-    F: Fn(Header, Value) -> FnFut,
-{
-    Box::pin(f(header, current))
 }
