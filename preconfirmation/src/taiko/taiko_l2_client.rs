@@ -18,8 +18,7 @@ use tracing::info;
 use crate::{compression::compress, util::pad_left};
 
 use crate::client::{
-    HttpError, RpcClient, flatten_mempool_txs, get_alloy_auth_client, get_latest_header,
-    get_mempool_txs,
+    HttpError, flatten_mempool_txs, get_alloy_auth_client, get_latest_header, get_mempool_txs,
 };
 use crate::secret::Secret;
 use crate::taiko::{
@@ -159,7 +158,7 @@ impl ITaikoL2Client for TaikoL2Client {
         base_fee: u64,
     ) -> TaikoL2ClientResult<Vec<TxEnvelope>> {
         let jwt_secret = JwtSecret::from_hex(self.jwt_secret.read()).unwrap();
-        let auth_client = RpcClient::new(get_alloy_auth_client(&self.auth_url, jwt_secret, true)?);
+        let auth_client = get_alloy_auth_client(&self.auth_url, jwt_secret, true)?;
         let mempool_tx_lists = get_mempool_txs(
             &auth_client,
             beneficiary,
