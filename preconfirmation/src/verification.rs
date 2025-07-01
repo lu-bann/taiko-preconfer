@@ -45,6 +45,9 @@ pub enum TaikoInboxError {
     Contract(#[from] alloy_contract::Error),
 
     #[error("{0}")]
+    Http(#[from] crate::client::HttpError),
+
+    #[error("{0}")]
     Kzg(#[from] c_kzg::Error),
 }
 

@@ -1,7 +1,7 @@
 pub mod blob;
+pub mod client;
 pub mod compression;
 pub mod preconf;
-pub mod reqwest;
 pub mod secret;
 pub mod slot;
 pub mod slot_model;
