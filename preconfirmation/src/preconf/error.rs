@@ -6,9 +6,6 @@ pub enum BlockBuilderError {
     Compression(#[from] libdeflater::CompressionError),
 
     #[error("{0}")]
-    Http(#[from] crate::client::HttpError),
-
-    #[error("{0}")]
     Sign(#[from] alloy_signer::Error),
 
     #[error("{0}")]

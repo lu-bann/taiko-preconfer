@@ -15,6 +15,12 @@ pub enum ApplicationError {
     Confirmation(#[from] preconfirmation::preconf::confirmation_strategy::ConfirmationError),
 
     #[error("{0}")]
+    BlockBuilder(#[from] preconfirmation::preconf::BlockBuilderError),
+
+    #[error("{0}")]
+    InboxError(#[from] preconfirmation::verification::TaikoInboxError),
+
+    #[error("{0}")]
     DotEnv(#[from] dotenv::Error),
 
     #[error("{0}")]
@@ -27,16 +33,7 @@ pub enum ApplicationError {
     TryFromInt(#[from] std::num::TryFromIntError),
 
     #[error("{0}")]
-    BlockBuilder(#[from] preconfirmation::preconf::BlockBuilderError),
-
-    #[error("{0}")]
     Signer(#[from] alloy_signer_local::LocalSignerError),
-
-    #[error("{0}")]
-    InboxError(#[from] preconfirmation::verification::TaikoInboxError),
-
-    #[error("{0}")]
-    Http(#[from] preconfirmation::client::HttpError),
 
     #[error("{0}")]
     Reqwest(#[from] reqwest::Error),

@@ -16,9 +16,7 @@ use tracing::info;
 
 use crate::{
     blob::MAX_BLOB_DATA_SIZE,
-    client::{
-        HttpError, flatten_mempool_txs, get_alloy_auth_client, get_latest_header, get_mempool_txs,
-    },
+    client::{flatten_mempool_txs, get_alloy_auth_client, get_latest_header, get_mempool_txs},
     compression::compress,
     secret::Secret,
     taiko::{
@@ -41,9 +39,6 @@ pub enum TaikoL2ClientError {
 
     #[error("{0}")]
     UrlParse(#[from] url::ParseError),
-
-    #[error("{0}")]
-    Http(#[from] HttpError),
 
     #[error("{0}")]
     Ecdsa(#[from] EcdsaError),
