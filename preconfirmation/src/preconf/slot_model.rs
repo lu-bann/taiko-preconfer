@@ -25,16 +25,16 @@ impl SlotModel {
     }
 
     pub fn can_preconfirm(&self, slot: &Slot) -> bool {
-        if let Some(next_active_epoch) = self.active_epoch {
-            return (slot.epoch + 1 == next_active_epoch && self.within_handover_period(slot.slot))
-                || (slot.epoch == next_active_epoch && !self.within_handover_period(slot.slot));
+        if let Some(active_epoch) = self.active_epoch {
+            return (slot.epoch + 1 == active_epoch && self.within_handover_period(slot.slot))
+                || (slot.epoch == active_epoch && !self.within_handover_period(slot.slot));
         }
         false
     }
 
     pub fn can_confirm(&self, slot: &Slot) -> bool {
-        if let Some(next_active_epoch) = self.active_epoch {
-            return slot.epoch == next_active_epoch;
+        if let Some(active_epoch) = self.active_epoch {
+            return slot.epoch == active_epoch;
         }
         false
     }
