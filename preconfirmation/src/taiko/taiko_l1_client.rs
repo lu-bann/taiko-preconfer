@@ -1,4 +1,5 @@
 use alloy_consensus::Header;
+use alloy_eips::BlockNumberOrTag;
 use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
 use alloy_provider::{
@@ -12,8 +13,6 @@ use alloy_rpc_types::TransactionRequest;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tracing::info;
-
-use crate::client::{get_header_by_id, get_latest_header};
 
 type TaikoProvider = FillProvider<
     JoinFill<
@@ -95,11 +94,23 @@ impl ITaikoL1Client for TaikoL1Client {
     }
 
     async fn get_header(&self, id: u64) -> TaikoL1ClientResult<Header> {
-        Ok(get_header_by_id(self.provider.client(), id).await?)
+        Ok(self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Number(id))
+            .await?
+            .ok_or(alloy_json_rpc::RpcError::NullResp)?
+            .header
+            .inner)
     }
 
     async fn get_latest_header(&self) -> TaikoL1ClientResult<Header> {
-        Ok(get_latest_header(self.provider.client()).await?)
+        Ok(self
+            .provider
+            .get_block_by_number(BlockNumberOrTag::Latest)
+            .await?
+            .ok_or(alloy_json_rpc::RpcError::NullResp)?
+            .header
+            .inner)
     }
 
     async fn estimate_gas(&self, tx: TransactionRequest) -> TaikoL1ClientResult<u64> {

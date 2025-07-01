@@ -1,43 +1,23 @@
-use alloy_consensus::{Header, TxEnvelope};
+use alloy_consensus::TxEnvelope;
 use alloy_json_rpc::RpcError;
-use alloy_primitives::Address;
-use alloy_rpc_client::{RpcClient, RpcClientInner};
-use alloy_rpc_types::{Block, BlockNumberOrTag};
+use alloy_primitives::{Address, Bytes};
+use alloy_rpc_client::RpcClient;
+use alloy_rpc_types_engine::JwtSecret;
 use alloy_transport::TransportErrorKind;
-use serde::{Deserialize, Serialize};
+use alloy_transport_http::{
+    AuthLayer, Http, HyperClient,
+    hyper_util::{client::legacy::Client, rt::TokioExecutor},
+};
+use http_body_util::Full;
+use serde::Deserialize;
 use serde_json::json;
+use tower::ServiceBuilder;
+use url::Url;
 
-pub const GET_BLOCK_BY_NUMBER: &str = "eth_getBlockByNumber";
-pub const GET_HEADER_BY_NUMBER: &str = "eth_getHeaderByNumber";
 pub const TAIKO_TX_POOL_CONTENT: &str = "taikoAuth_txPoolContent";
 pub const TAIKO_TX_POOL_CONTENT_WITH_MIN_TIP: &str = "taikoAuth_txPoolContentWithMinTip";
 
-pub async fn get_header(
-    client: &RpcClientInner,
-    block_number: BlockNumberOrTag,
-) -> Result<Header, RpcError<TransportErrorKind>> {
-    let params = json!([block_number]);
-
-    let header: Option<Header> = client
-        .request(GET_HEADER_BY_NUMBER.to_string(), params.clone())
-        .await?;
-    header.ok_or(RpcError::NullResp)
-}
-
-pub async fn get_header_by_id(
-    client: &RpcClientInner,
-    id: u64,
-) -> Result<Header, RpcError<TransportErrorKind>> {
-    get_header(client, BlockNumberOrTag::Number(id)).await
-}
-
-pub async fn get_latest_header(
-    client: &RpcClientInner,
-) -> Result<Header, RpcError<TransportErrorKind>> {
-    get_header(client, BlockNumberOrTag::Latest).await
-}
-
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "PascalCase")]
 pub struct MempoolTxList {
     pub tx_list: Vec<TxEnvelope>,
@@ -100,14 +80,18 @@ pub fn flatten_mempool_txs(tx_lists: Vec<MempoolTxList>) -> Vec<TxEnvelope> {
         .collect()
 }
 
-pub async fn get_block(
-    client: &RpcClientInner,
-    block_number: BlockNumberOrTag,
-    full_tx: bool,
-) -> Result<Block, RpcError<TransportErrorKind>> {
-    let params = json!([block_number, full_tx]);
-    let block: Option<Block> = client
-        .request(GET_BLOCK_BY_NUMBER.to_string(), params.clone())
-        .await?;
-    block.ok_or(RpcError::NullResp)
+pub fn get_alloy_auth_client(
+    url: &str,
+    jwt_secret: JwtSecret,
+    is_local: bool,
+) -> Result<RpcClient, url::ParseError> {
+    let hyper_client = Client::builder(TokioExecutor::new()).build_http::<Full<Bytes>>();
+    let auth_layer = AuthLayer::new(jwt_secret);
+    let service = ServiceBuilder::new()
+        .layer(auth_layer)
+        .service(hyper_client);
+
+    let layer_transport = HyperClient::with_service(service);
+    let transport = Http::with_client(layer_transport, Url::parse(url)?);
+    Ok(RpcClient::new(transport, is_local))
 }
