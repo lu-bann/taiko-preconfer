@@ -11,7 +11,7 @@ use preconfirmation::{
     stream::{
         get_block_polling_stream, get_block_stream, get_confirmed_id_polling_stream,
         get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
-        stream_l2_headers, to_boxed,
+        stream_l2_headers,
     },
     taiko::{anchor::ValidAnchor, contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1Client},
     util::{log_error, now_as_secs},
@@ -209,4 +209,17 @@ pub async fn run<
     );
     l1_result?;
     l2_result
+}
+
+pub fn to_boxed<'a, Value, F, FnFut, Res>(
+    header: Header,
+    current: Value,
+    f: F,
+) -> BoxFuture<'a, Res>
+where
+    Value: Send + 'static,
+    FnFut: Future<Output = Res> + Send + 'static,
+    F: Fn(Header, Value) -> FnFut,
+{
+    Box::pin(f(header, current))
 }
