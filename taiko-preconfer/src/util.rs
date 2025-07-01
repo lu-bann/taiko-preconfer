@@ -9,7 +9,7 @@ pub fn set_active_operator_if_necessary(
     slot: &Slot,
 ) {
     if !preconfirmation_slot_model.can_preconfirm(slot) && current_preconfer == preconfer_address {
-        preconfirmation_slot_model.set_next_active_epoch(slot.epoch);
+        preconfirmation_slot_model.set_active_epoch(slot.epoch);
         info!("Set active epoch to {} for slot {:?}", slot.epoch, slot);
     }
 }
@@ -22,7 +22,7 @@ pub fn set_active_operator_for_next_period(
 ) {
     info!(" *** Preconfer for next epoch: {} ***", next_preconfer);
     if next_preconfer == preconfer_address {
-        preconfirmation_slot_model.set_next_active_epoch(slot.epoch + 1);
+        preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
         info!("Set active epoch to {} for slot {:?}", slot.epoch + 1, slot);
     }
 }
