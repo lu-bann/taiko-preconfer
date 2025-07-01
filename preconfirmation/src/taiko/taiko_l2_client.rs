@@ -8,25 +8,26 @@ use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
 use alloy_rpc_types_engine::{Claims, JwtSecret};
 use alloy_transport::TransportErrorKind;
-use c_kzg::BYTES_PER_BLOB;
 use k256::ecdsa::{Error as EcdsaError, SigningKey};
 use libdeflater::CompressionError;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 use tracing::info;
 
-use crate::{compression::compress, util::pad_left};
-
-use crate::client::{
-    HttpError, flatten_mempool_txs, get_alloy_auth_client, get_latest_header, get_mempool_txs,
+use crate::{
+    blob::MAX_BLOB_DATA_SIZE,
+    client::{
+        HttpError, flatten_mempool_txs, get_alloy_auth_client, get_latest_header, get_mempool_txs,
+    },
+    compression::compress,
+    secret::Secret,
+    taiko::{
+        anchor::create_anchor_transaction,
+        contracts::{BaseFeeConfig, Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
+        sign::get_signed,
+    },
+    util::{hex_decode, now_as_secs, pad_left},
 };
-use crate::secret::Secret;
-use crate::taiko::{
-    anchor::create_anchor_transaction,
-    contracts::{BaseFeeConfig, Provider as TaikoProvider, TaikoAnchor, TaikoAnchorInstance},
-    sign::get_signed,
-};
-use crate::util::{hex_decode, now_as_secs};
 
 const GAS_LIMIT: u64 = 241_000_000;
 
@@ -164,7 +165,7 @@ impl ITaikoL2Client for TaikoL2Client {
             beneficiary,
             base_fee,
             GAS_LIMIT,
-            BYTES_PER_BLOB as u64,
+            MAX_BLOB_DATA_SIZE as u64,
             vec![],
             1,
         )
