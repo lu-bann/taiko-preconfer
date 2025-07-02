@@ -8,7 +8,7 @@ use preconfirmation::{
     slot::Slot,
     slot_model::SlotModel,
     taiko::{contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client},
-    util::log_error,
+    util::{log_error, now_as_secs},
 };
 use tracing::{info, instrument};
 
@@ -28,8 +28,24 @@ pub async fn run<L1Client: ITaikoL1Client>(
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
     let slot_model = SlotModel::holesky();
-    let mut current_epoch_preconfer = preconfer_address;
-    let mut next_epoch_preconfer = Address::repeat_byte(0);
+    let mut current_epoch_preconfer = Address::ZERO;
+    let mut next_epoch_preconfer = Address::ZERO;
+
+    if let Some(current_preconfer) = log_error(
+        whitelist.getOperatorForCurrentEpoch().call().await,
+        "Failed to read current preconfer",
+    ) {
+        let slot_model = SlotModel::holesky();
+        let current_slot = slot_model.get_slot(now_as_secs());
+        info!("Whitelist current preconfer: {current_preconfer}");
+        set_active_operator_if_necessary(
+            &current_preconfer,
+            &preconfer_address,
+            &mut preconfirmation_slot_model,
+            &current_slot,
+        );
+        current_epoch_preconfer = current_preconfer;
+    }
 
     loop {
         if let Some(slot) = stream.next().await {
@@ -52,18 +68,6 @@ pub async fn run<L1Client: ITaikoL1Client>(
                 preconfirmation::util::now_as_secs(),
             );
 
-            if let Some(current_preconfer) = log_error(
-                whitelist.getOperatorForCurrentEpoch().call().await,
-                "Failed to read current preconfer",
-            ) {
-                set_active_operator_if_necessary(
-                    &current_preconfer,
-                    &preconfer_address,
-                    &mut preconfirmation_slot_model,
-                    &slot,
-                );
-                current_epoch_preconfer = current_preconfer;
-            }
             info!(
                 "Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}"
             );

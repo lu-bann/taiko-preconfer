@@ -106,8 +106,8 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
         }
         let tx = tx
             .with_gas_limit(gas_limit?)
-            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas)
-            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas)
+            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas * 12 / 10)
+            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas * 12 / 10)
             .nonce(nonce?);
 
         info!("propose batch tx {tx:?}");

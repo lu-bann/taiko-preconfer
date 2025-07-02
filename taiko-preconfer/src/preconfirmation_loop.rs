@@ -9,7 +9,7 @@ use preconfirmation::{
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
     slot::SubSlot,
-    slot_model::HOLESKY_GENESIS_TIMESTAMP,
+    slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
     taiko::{
         contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client,
         taiko_l2_client::ITaikoL2Client,
@@ -41,8 +41,24 @@ pub async fn run<
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
     let preconfer_address = builder.address();
-    let mut current_epoch_preconfer = preconfer_address;
-    let mut next_epoch_preconfer = Address::repeat_byte(0);
+    let mut current_epoch_preconfer = Address::ZERO;
+    let mut next_epoch_preconfer = Address::ZERO;
+
+    if let Some(current_preconfer) = log_error(
+        whitelist.getOperatorForCurrentEpoch().call().await,
+        "Failed to read current preconfer",
+    ) {
+        let slot_model = SlotModel::holesky();
+        let current_slot = slot_model.get_slot(now_as_secs());
+        info!("Whitelist current preconfer: {current_preconfer}");
+        set_active_operator_if_necessary(
+            &current_preconfer,
+            &preconfer_address,
+            &mut preconfirmation_slot_model,
+            &current_slot,
+        );
+        current_epoch_preconfer = current_preconfer;
+    }
 
     loop {
         if let Some(subslot) = stream.next().await {
@@ -56,19 +72,11 @@ pub async fn run<
                 slot_timestamp,
                 now_as_secs(),
             );
-
-            if let Some(current_preconfer) = log_error(
-                whitelist.getOperatorForCurrentEpoch().call().await,
-                "Failed to read current preconfer",
-            ) {
-                set_active_operator_if_necessary(
-                    &current_preconfer,
-                    &preconfer_address,
-                    &mut preconfirmation_slot_model,
-                    &subslot.slot,
-                );
-                current_epoch_preconfer = current_preconfer;
+            if subslot.slot.slot == 0 {
+                current_epoch_preconfer = next_epoch_preconfer;
+                next_epoch_preconfer = Address::ZERO;
             }
+
             info!(
                 "Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}"
             );
@@ -94,6 +102,7 @@ pub async fn run<
                 let end_of_sequencing = is_last_slot_before_handover_window
                     && subslot.sub_slot % subslots_per_slot == subslots_per_slot - 1;
                 info!("End of sequencing: {end_of_sequencing}");
+                info!("{:?}", preconfirmation_slot_model);
                 log_error(
                     builder.build_block(slot_timestamp, end_of_sequencing).await,
                     "Error building block",
