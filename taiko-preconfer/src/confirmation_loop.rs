@@ -45,7 +45,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
             info!("Can confirm: {}", can_confirm);
             info!("Can preconfirm: {}", can_preconfirm);
             info!("within handover period: {}", within_handover_period);
-            let l1_slot_timestamp = slot_model.get_timestamp(total_slot + 1);
+            let l1_slot_timestamp = slot_model.get_timestamp(total_slot);
             info!(
                 "L1 slot timestamp: {} {}",
                 l1_slot_timestamp,
