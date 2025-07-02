@@ -11,11 +11,15 @@ use alloy_provider::{
 };
 use alloy_rpc_types::TransactionRequest;
 use libdeflater::CompressionError;
-use std::time::{Duration, SystemTime};
+use std::{
+    sync::Arc,
+    time::{Duration, SystemTime},
+};
 use thiserror::Error;
+use tokio::{sync::RwLock, task::JoinHandle};
 use tracing::info;
 
-use crate::{blob::BlobEncodeError, verification::TaikoInboxError};
+use crate::{blob::BlobEncodeError, util::log_error, verification::TaikoInboxError};
 
 type TaikoProvider = FillProvider<
     JoinFill<
@@ -85,13 +89,15 @@ pub trait ITaikoL1Client {
 pub struct TaikoL1Client {
     provider: TaikoProvider,
     propose_timeout: Duration,
+    tx_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
 }
 
 impl TaikoL1Client {
-    pub const fn new(provider: TaikoProvider, propose_timeout: Duration) -> Self {
+    pub fn new(provider: TaikoProvider, propose_timeout: Duration) -> Self {
         Self {
             provider,
             propose_timeout,
+            tx_handle: Arc::new(None.into()),
         }
     }
 }
@@ -135,18 +141,39 @@ impl ITaikoL1Client for TaikoL1Client {
 
     async fn send(&self, tx: TransactionRequest) -> TaikoL1ClientResult<()> {
         info!("Send tx");
-        let start = SystemTime::now();
-        let receipt = self
-            .provider
-            .send_transaction(tx)
-            .await?
-            .with_required_confirmations(2)
-            .with_timeout(Some(self.propose_timeout))
-            .get_receipt()
-            .await?;
-        let end = SystemTime::now();
-        let elapsed = end.duration_since(start).unwrap().as_millis();
-        info!("receipt: {receipt:?}, elapsed={elapsed} ms");
+        let previous_tx_returned = self
+            .tx_handle
+            .read()
+            .await
+            .as_ref()
+            .map(|handle| handle.is_finished())
+            .unwrap_or(true);
+        if !previous_tx_returned {
+            info!("Previous transaction did not finish. Skipping tx.");
+            return Ok(());
+        }
+        let provider = self.provider.clone();
+        let timeout = self.propose_timeout;
+        *self.tx_handle.write().await = Some(tokio::spawn(async move {
+            let start = SystemTime::now();
+            if let Some(tx_builder) = log_error(
+                provider.send_transaction(tx).await,
+                "Failed to get transaction builder",
+            ) {
+                if let Some(receipt) = log_error(
+                    tx_builder
+                        .with_required_confirmations(2)
+                        .with_timeout(Some(timeout))
+                        .get_receipt()
+                        .await,
+                    "Failed to send transaction",
+                ) {
+                    let end = SystemTime::now();
+                    let elapsed = end.duration_since(start).unwrap().as_millis();
+                    info!("receipt: {receipt:?}, elapsed={elapsed} ms");
+                }
+            }
+        }));
         Ok(())
     }
 }
