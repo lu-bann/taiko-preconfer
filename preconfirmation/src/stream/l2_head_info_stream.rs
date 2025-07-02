@@ -9,7 +9,9 @@ use tokio_stream::StreamExt;
 use tracing::{info, warn};
 
 use crate::{
-    taiko::contracts::TaikoInboxInstance, util::log_error, verification::ILastBatchVerifier,
+    taiko::{contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1ClientError},
+    util::log_error,
+    verification::ILastBatchVerifier,
 };
 
 enum StreamData {
@@ -74,7 +76,7 @@ pub async fn get_l2_head_stream<F, FnFut, Verifier>(
     get_block: F,
     initial_confirmed_block_id: Option<u64>,
     verifier: Verifier,
-) -> impl Stream<Item = Result<Header, crate::verification::TaikoInboxError>>
+) -> impl Stream<Item = Result<Header, crate::taiko::taiko_l1_client::TaikoL1ClientError>>
 where
     FnFut: Future<Output = Result<Block, reqwest::Error>> + Send + 'static,
     F: Fn(Option<u64>) -> FnFut,
@@ -161,10 +163,10 @@ where
 pub async fn stream_l2_headers<
     'a,
     Value: Clone,
-    E: std::convert::From<crate::verification::TaikoInboxError>,
+    E: std::convert::From<TaikoL1ClientError>,
     T: Fn(Header, Value) -> BoxFuture<'a, Result<(), E>>,
 >(
-    stream: impl Stream<Item = Result<Header, crate::verification::TaikoInboxError>>,
+    stream: impl Stream<Item = Result<Header, TaikoL1ClientError>>,
     f: T,
     current: Value,
 ) -> Result<(), E> {

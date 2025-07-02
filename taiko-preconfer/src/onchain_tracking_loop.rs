@@ -13,9 +13,13 @@ use preconfirmation::{
         get_header_polling_stream, get_header_stream, get_id_stream, get_l2_head_stream,
         stream_l2_headers,
     },
-    taiko::{anchor::ValidAnchor, contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1Client},
-    util::{log_error, now_as_secs},
-    verification::{LastBatchVerifier, TaikoInboxError},
+    taiko::{
+        anchor::ValidAnchor,
+        contracts::TaikoInboxInstance,
+        taiko_l1_client::{TaikoL1Client, TaikoL1ClientError},
+    },
+    util::now_as_secs,
+    verification::LastBatchVerifier,
 };
 use tokio::{join, sync::RwLock};
 use tracing::{info, instrument};
@@ -107,32 +111,18 @@ pub async fn create_l2_head_stream(
     unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>>,
     valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
     taiko_inbox: TaikoInboxInstance,
-) -> ApplicationResult<impl Stream<Item = Result<Header, TaikoInboxError>>> {
+) -> ApplicationResult<impl Stream<Item = Result<Header, TaikoL1ClientError>>> {
     let l2_block_stream =
         create_block_stream(&config.l2_client_url, &config.l2_ws_url, config.poll_period).await?;
-    let valid_anchor = valid_anchor.clone();
     let batch_proposed_stream = taiko_inbox
         .BatchProposed_filter()
         .subscribe()
         .await?
         .into_stream()
-        .filter_map(move |result| {
-            let local_valid_anchor = valid_anchor.clone();
-            async move {
-                match result {
-                    Ok((batch_proposed, _log)) => {
-                        log_error(
-                            local_valid_anchor
-                                .write()
-                                .await
-                                .update_last_anchor_id(batch_proposed.info.anchorBlockId)
-                                .await,
-                            "Failed to update anchor from BatchProposed",
-                        );
-                        Some(batch_proposed.info.lastBlockId)
-                    }
-                    Err(_) => None,
-                }
+        .filter_map(move |result| async move {
+            match result {
+                Ok((batch_proposed, _log)) => Some(batch_proposed.info.lastBlockId),
+                Err(_) => None,
             }
         });
     let confirmed_id_polling_stream =
@@ -151,6 +141,7 @@ pub async fn create_l2_head_stream(
         preconfer_address,
         base_fee_config,
         config.use_blobs,
+        valid_anchor.clone(),
     );
     Ok(get_l2_head_stream(
         l2_block_stream,
@@ -184,7 +175,7 @@ pub async fn create_block_stream(
 #[instrument(name = "🔄", skip_all)]
 pub async fn run<
     L1Stream: Stream<Item = Header>,
-    L2Stream: Stream<Item = Result<Header, TaikoInboxError>>,
+    L2Stream: Stream<Item = Result<Header, TaikoL1ClientError>>,
 >(
     l1_header_stream: L1Stream,
     l2_header_stream: L2Stream,
