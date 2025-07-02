@@ -26,6 +26,7 @@ use crate::{
     },
     util::{
         ValidTimestamp, get_anchor_block_id_from_bytes, get_tx_envelopes_without_anchor_from_block,
+        now_as_millis,
     },
     verification::get_latest_confirmed_batch,
 };
@@ -254,6 +255,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         }
         debug!("txs: {txs:?}");
 
+        info!("get parent meta hash {}", now_as_millis());
         let parent_batch_meta_hash = get_latest_confirmed_batch(&self.taiko_inbox)
             .await
             .map(|batch| batch.metaHash)
@@ -261,6 +263,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         let tx_bytes = Bytes::from(compress(txs.clone())?);
         debug!("tx_list: {tx_bytes:?}");
         let tx_bytes_len = tx_bytes.len();
+        info!("get sidecar {}", now_as_millis());
         let sidecar = if self.use_blobs {
             Some(tx_bytes_to_sidecar(tx_bytes)?)
         } else {
@@ -289,6 +292,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         );
 
         debug!("params: {propose_batch_params:?}");
+        info!("send tx {}", now_as_millis());
         let mut tx = TransactionRequest::default().with_call(&TaikoInbox::proposeBatchCall {
             _params: propose_batch_params,
             _txList: Bytes::default(),
@@ -296,7 +300,6 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         if let Some(sidecar) = sidecar {
             tx.set_blob_sidecar(sidecar);
         }
-        self.valid_anchor_id.write().await.update().await?;
         self.sender.send(tx).await?;
         Ok(())
     }

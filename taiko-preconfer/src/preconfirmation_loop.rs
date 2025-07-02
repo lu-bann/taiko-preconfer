@@ -84,7 +84,7 @@ pub async fn run<
                 slot_timestamp,
                 now_as_secs(),
             );
-            if subslot.slot.slot == 0 {
+            if subslot.sub_slot == 0 {
                 current_epoch_preconfer = next_epoch_preconfer;
                 next_epoch_preconfer = Address::ZERO;
             }
@@ -116,7 +116,11 @@ pub async fn run<
                 info!("End of sequencing: {end_of_sequencing}");
                 info!("{:?}", preconfirmation_slot_model);
                 log_error(
-                    builder.build_block(slot_timestamp, end_of_sequencing).await,
+                    tokio::time::timeout(
+                        Duration::from_millis(1500),
+                        builder.build_block(slot_timestamp, end_of_sequencing),
+                    )
+                    .await,
                     "Error building block",
                 );
             } else {
