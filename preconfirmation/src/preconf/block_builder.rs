@@ -7,17 +7,12 @@ use alloy_primitives::Address;
 
 use crate::preconf::BlockBuilderResult;
 use crate::taiko::anchor::ValidAnchor;
-use crate::taiko::taiko_l1_client::ITaikoL1Client;
 use crate::taiko::taiko_l2_client::ITaikoL2Client;
 use crate::time_provider::ITimeProvider;
 
 #[derive(Debug)]
-pub struct BlockBuilder<
-    L1Client: ITaikoL1Client,
-    L2Client: ITaikoL2Client,
-    TimeProvider: ITimeProvider,
-> {
-    valid_anchor_id: Arc<RwLock<ValidAnchor<L1Client>>>,
+pub struct BlockBuilder<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> {
+    valid_anchor_id: ValidAnchor,
     l2_client: L2Client,
     address: Address,
     time_provider: TimeProvider,
@@ -25,12 +20,10 @@ pub struct BlockBuilder<
     golden_touch_address: Address,
 }
 
-impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>
-    BlockBuilder<L1Client, L2Client, TimeProvider>
-{
+impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Client, TimeProvider> {
     #[allow(clippy::too_many_arguments)]
     pub fn new(
-        valid_anchor_id: Arc<RwLock<ValidAnchor<L1Client>>>,
+        valid_anchor_id: ValidAnchor,
         l2_client: L2Client,
         address: Address,
         time_provider: TimeProvider,
@@ -66,8 +59,7 @@ impl<L1Client: ITaikoL1Client, L2Client: ITaikoL2Client, TimeProvider: ITimeProv
             slot_timestamp, now, last_l2_header.timestamp
         );
 
-        let (anchor_block_id, anchor_state_root) =
-            self.valid_anchor_id.read().await.id_and_state_root();
+        let (anchor_block_id, anchor_state_root) = self.valid_anchor_id.id_and_state_root().await;
         info!("Anchor {anchor_block_id}");
         let (golden_touch_nonce, base_fee) = join!(
             self.l2_client.get_nonce(self.golden_touch_address),
@@ -126,7 +118,7 @@ mod tests {
     use std::time::{Duration, UNIX_EPOCH};
 
     use crate::{
-        taiko::{taiko_l1_client::MockITaikoL1Client, taiko_l2_client::MockITaikoL2Client},
+        taiko::taiko_l2_client::MockITaikoL2Client,
         test_util::{get_header, get_rpc_header},
         time_provider::MockITimeProvider,
     };
@@ -139,12 +131,16 @@ mod tests {
     const DUMMY_TIMESTAMP: u64 = 987654321;
     const DUMMY_GAS: u64 = 30000;
 
-    fn test_valid_anchor_id() -> Arc<RwLock<ValidAnchor<MockITaikoL1Client>>> {
+    fn test_valid_anchor_id() -> ValidAnchor {
         let max_offset = 10;
         let desired_offset = 4;
         let anchor_id_update_tol = 10;
-        let client = MockITaikoL1Client::new();
-        Arc::new(ValidAnchor::new(max_offset, desired_offset, anchor_id_update_tol, client).into())
+        ValidAnchor::new(
+            max_offset,
+            desired_offset,
+            anchor_id_update_tol,
+            "url".into(),
+        )
     }
 
     #[tokio::test]

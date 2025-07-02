@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use alloy_eips::{
     BlockNumberOrTag,
     eip4844::{env_settings::EnvKzgSettings, kzg_to_versioned_hash},
@@ -10,7 +8,6 @@ use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolValue;
 use c_kzg::Blob;
 use thiserror::Error;
-use tokio::sync::RwLock;
 use tracing::{debug, info};
 
 use crate::{
@@ -21,7 +18,7 @@ use crate::{
         contracts::{
             BaseFeeConfig, Batch, BatchInfo, BatchMetadata, BlockParams, TaikoInboxInstance,
         },
-        taiko_l1_client::{TaikoL1Client, TaikoL1ClientError},
+        taiko_l1_client::TaikoL1ClientError,
     },
     util::{get_tx_envelopes_without_anchor_from_blocks, now_as_millis, pad_left},
 };
@@ -65,19 +62,18 @@ pub async fn get_latest_confirmed_batch(
 
 pub async fn verify_last_batch(
     taiko_inbox: &TaikoInboxInstance,
-    valid_anchor: &Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+    valid_anchor: ValidAnchor,
     preconfer_address: Address,
     unconfirmed_l2_blocks: Vec<Block>,
     base_fee_config: BaseFeeConfig,
     use_blobs: bool,
 ) -> Result<bool, TaikoL1ClientError> {
+    let mut valid_anchor = valid_anchor;
     let stats2 = taiko_inbox.getStats2().call().await?;
     debug!("stats {stats2:?}");
     let batch = taiko_inbox.getBatch(stats2.numBatches - 1).call().await?;
     debug!("batch {batch:?}");
     valid_anchor
-        .write()
-        .await
         .update_last_anchor_id(batch.anchorBlockId)
         .await?;
     let blocks: Vec<_> = unconfirmed_l2_blocks
@@ -130,7 +126,7 @@ pub struct LastBatchVerifier {
     preconfer_address: Address,
     base_fee_config: BaseFeeConfig,
     use_blobs: bool,
-    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+    valid_anchor: ValidAnchor,
 }
 
 impl LastBatchVerifier {
@@ -139,7 +135,7 @@ impl LastBatchVerifier {
         preconfer_address: Address,
         base_fee_config: BaseFeeConfig,
         use_blobs: bool,
-        valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+        valid_anchor: ValidAnchor,
     ) -> Self {
         Self {
             taiko_inbox,
@@ -155,7 +151,7 @@ impl ILastBatchVerifier for LastBatchVerifier {
     async fn verify(&self, unconfirmed_l2_blocks: Vec<Block>) -> Result<bool, TaikoL1ClientError> {
         verify_last_batch(
             &self.taiko_inbox,
-            &self.valid_anchor,
+            self.valid_anchor.clone(),
             self.preconfer_address,
             unconfirmed_l2_blocks,
             self.base_fee_config.clone(),

@@ -1,12 +1,15 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicU64, Ordering},
+};
+
 use alloy_consensus::{TxEip1559, TypedTransaction};
 use alloy_primitives::{Address, ChainId, FixedBytes, TxKind, U256};
 use alloy_sol_types::SolCall;
+use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-use crate::taiko::{
-    contracts::TaikoAnchor,
-    taiko_l1_client::{ITaikoL1Client, TaikoL1ClientError},
-};
+use crate::{client::reqwest::get_header_by_id, taiko::contracts::TaikoAnchor};
 
 const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
 
@@ -45,85 +48,75 @@ pub fn compute_valid_anchor_id(
     std::cmp::max(desired_anchor_id, min_anchor_id)
 }
 
-#[derive(Debug)]
-pub struct ValidAnchor<Client: ITaikoL1Client> {
+#[derive(Debug, Clone)]
+pub struct ValidAnchor {
     max_offset: u64,
     desired_offset: u64,
-    block_number: u64,
-    current_anchor_id: u64,
-    last_anchor_id: u64,
+    block_number: Arc<AtomicU64>,
+    current_anchor: Arc<RwLock<(u64, FixedBytes<32>)>>,
+    last_anchor_id: Arc<AtomicU64>,
     anchor_id_update_tol: u64,
-    state_root: FixedBytes<32>,
-    client: Client,
+    url: String,
 }
 
-impl<Client: ITaikoL1Client> ValidAnchor<Client> {
+impl ValidAnchor {
     pub fn new(
         max_offset: u64,
         desired_offset: u64,
         anchor_id_update_tol: u64,
-        client: Client,
+        url: String,
     ) -> Self {
         Self {
             max_offset,
             desired_offset,
-            block_number: 0,
-            current_anchor_id: 0,
-            last_anchor_id: 0,
+            block_number: Arc::new(0.into()),
+            current_anchor: Arc::new((0, FixedBytes::default()).into()),
+            last_anchor_id: Arc::new(0.into()),
             anchor_id_update_tol,
-            state_root: FixedBytes::default(),
-            client,
+            url,
         }
     }
 
-    pub async fn update(&mut self) -> Result<(), TaikoL1ClientError> {
+    pub async fn update(&mut self) -> Result<(), reqwest::Error> {
+        let block_number = self.block_number.load(Ordering::Relaxed);
+        let last_anchor_id = self.last_anchor_id.load(Ordering::Relaxed);
         debug!(
             "compute anchor id block={}, max_offset={}, desired_offset={}, last_anchor={}",
-            self.block_number, self.max_offset, self.desired_offset, self.last_anchor_id
+            block_number, self.max_offset, self.desired_offset, last_anchor_id
         );
         let new_anchor_id = compute_valid_anchor_id(
-            self.block_number,
+            block_number,
             self.max_offset,
             self.desired_offset,
-            self.last_anchor_id,
+            last_anchor_id,
         );
-
-        info!(
-            "anchor id may update from {} to {}",
-            self.current_anchor_id, new_anchor_id
-        );
-        if new_anchor_id > self.current_anchor_id + self.anchor_id_update_tol {
-            let anchor_header = self.client.get_header(new_anchor_id).await?;
-            self.current_anchor_id = new_anchor_id;
-            self.state_root = anchor_header.state_root;
-            info!(
-                "anchor id update from {} to {}",
-                self.current_anchor_id, new_anchor_id
-            );
+        let current_anchor_id = self.current_anchor.read().await.0;
+        if new_anchor_id > current_anchor_id + self.anchor_id_update_tol {
+            info!("Request header {} for {}", new_anchor_id, self.url);
+            let anchor_header = get_header_by_id(self.url.clone(), new_anchor_id).await?;
+            *self.current_anchor.write().await = (new_anchor_id, anchor_header.state_root);
+            info!("anchor id update to {}", new_anchor_id);
         }
         Ok(())
     }
 
-    pub fn is_valid_after(&self, offset: u64) -> bool {
-        self.current_anchor_id
+    pub async fn is_valid_after(&self, offset: u64) -> bool {
+        self.current_anchor.read().await.0
             == compute_valid_anchor_id(
-                self.block_number + offset,
+                self.block_number.load(Ordering::Relaxed) + offset,
                 self.max_offset,
                 self.desired_offset,
-                self.last_anchor_id,
+                self.last_anchor_id.load(Ordering::Relaxed),
             )
     }
 
-    pub fn is_valid(&self) -> bool {
-        self.is_valid_after(0)
+    pub async fn is_valid(&self) -> bool {
+        self.is_valid_after(0).await
     }
 
-    pub async fn update_block_number(
-        &mut self,
-        block_number: u64,
-    ) -> Result<(), TaikoL1ClientError> {
-        if block_number > self.block_number {
-            self.block_number = block_number;
+    pub async fn update_block_number(&mut self, block_number: u64) -> Result<(), reqwest::Error> {
+        if block_number > self.block_number.load(Ordering::Relaxed) {
+            self.block_number.store(block_number, Ordering::Relaxed);
             return self.update().await;
         }
         Ok(())
@@ -132,13 +125,13 @@ impl<Client: ITaikoL1Client> ValidAnchor<Client> {
     pub async fn update_last_anchor_id(
         &mut self,
         last_anchor_id: u64,
-    ) -> Result<(), TaikoL1ClientError> {
-        self.last_anchor_id = last_anchor_id;
+    ) -> Result<(), reqwest::Error> {
+        self.last_anchor_id.store(last_anchor_id, Ordering::Relaxed);
         self.update().await
     }
 
-    pub fn id_and_state_root(&self) -> (u64, FixedBytes<32>) {
-        (self.current_anchor_id, self.state_root)
+    pub async fn id_and_state_root(&self) -> (u64, FixedBytes<32>) {
+        *self.current_anchor.read().await
     }
 }
 

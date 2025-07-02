@@ -14,9 +14,7 @@ use preconfirmation::{
         stream_l2_headers,
     },
     taiko::{
-        anchor::ValidAnchor,
-        contracts::TaikoInboxInstance,
-        taiko_l1_client::{TaikoL1Client, TaikoL1ClientError},
+        anchor::ValidAnchor, contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1ClientError,
     },
     util::now_as_secs,
     verification::LastBatchVerifier,
@@ -26,14 +24,10 @@ use tracing::{info, instrument};
 
 use crate::error::ApplicationResult;
 
-async fn stream_l1_headers<
-    'a,
-    E,
-    T: Fn(Header, Arc<RwLock<ValidAnchor<TaikoL1Client>>>) -> BoxFuture<'a, Result<(), E>>,
->(
+async fn stream_l1_headers<'a, E, T: Fn(Header, ValidAnchor) -> BoxFuture<'a, Result<(), E>>>(
     stream: impl Stream<Item = Header>,
     f: T,
-    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+    valid_anchor: ValidAnchor,
 ) -> Result<(), E> {
     pin_mut!(stream);
     while let Some(header) = stream.next().await {
@@ -55,10 +49,7 @@ async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> Applic
     Ok(())
 }
 
-async fn store_valid_anchor(
-    header: Header,
-    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
-) -> ApplicationResult<()> {
+async fn store_valid_anchor(header: Header, valid_anchor: ValidAnchor) -> ApplicationResult<()> {
     info!(
         "L1 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
         header.number,
@@ -67,17 +58,14 @@ async fn store_valid_anchor(
         header.state_root,
         header.gas_used
     );
-    valid_anchor
-        .write()
-        .await
-        .update_block_number(header.number)
-        .await?;
+    let mut valid_anchor = valid_anchor;
+    valid_anchor.update_block_number(header.number).await?;
     Ok(())
 }
 
 fn store_valid_anchor_boxed<'a>(
     header: Header,
-    valid_anchor_id: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+    valid_anchor_id: ValidAnchor,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
     Box::pin(store_valid_anchor(header, valid_anchor_id))
 }
@@ -109,7 +97,7 @@ pub async fn create_l2_head_stream(
     preconfer_address: Address,
     latest_confirmed_block_id: u64,
     unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>>,
-    valid_anchor: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+    valid_anchor: ValidAnchor,
     taiko_inbox: TaikoInboxInstance,
 ) -> ApplicationResult<impl Stream<Item = Result<Header, TaikoL1ClientError>>> {
     let l2_block_stream =
@@ -180,10 +168,10 @@ pub async fn run<
     l1_header_stream: L1Stream,
     l2_header_stream: L2Stream,
     shared_last_l2_header: Arc<RwLock<Header>>,
-    valid_anchor_id: Arc<RwLock<ValidAnchor<TaikoL1Client>>>,
+    valid_anchor: ValidAnchor,
 ) -> ApplicationResult<()> {
     let (l1_result, l2_result) = join!(
-        stream_l1_headers(l1_header_stream, store_valid_anchor_boxed, valid_anchor_id,),
+        stream_l1_headers(l1_header_stream, store_valid_anchor_boxed, valid_anchor,),
         stream_l2_headers(
             l2_header_stream,
             store_header_boxed_l2,

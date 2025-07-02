@@ -164,17 +164,15 @@ async fn main() -> ApplicationResult<()> {
     );
 
     let max_anchor_id_offset = taiko_inbox_config.maxAnchorHeightOffset;
-    let valid_anchor = Arc::new(RwLock::new(ValidAnchor::new(
+    let mut valid_anchor = ValidAnchor::new(
         max_anchor_id_offset,
         config.anchor_id_lag,
         config.anchor_id_update_tol,
-        taiko_l1_client.clone(),
-    )));
+        config.l1_client_url.clone(),
+    );
 
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
     valid_anchor
-        .write()
-        .await
         .update_block_number(latest_l1_header.number)
         .await?;
     let preconfer_address = signer.address();
@@ -196,8 +194,6 @@ async fn main() -> ApplicationResult<()> {
     let latest_confirmed_batch = get_latest_confirmed_batch(&taiko_inbox).await?;
     let latest_confirmed_block_id = latest_confirmed_batch.lastBlockId;
     valid_anchor
-        .write()
-        .await
         .update_last_anchor_id(latest_confirmed_batch.anchorBlockId)
         .await?;
 

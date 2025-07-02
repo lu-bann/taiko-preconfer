@@ -37,15 +37,15 @@ pub async fn get_header_by_id(url: String, id: u64) -> Result<Header, reqwest::E
         "eth_getBlockByNumber".into(),
         serde_json::json!([u64_to_hex(id), false]),
     );
-    let response: JsonResponse<Header> = reqwest::Client::new()
-        .get(&url)
+    let response: JsonResponse<Block> = reqwest::Client::new()
+        .post(&url)
         .json(&request)
         .send()
         .await
         .unwrap()
         .json()
         .await?;
-    Ok(response.result)
+    Ok(response.result.header.inner)
 }
 
 pub async fn get_block_by_id(url: String, id: Option<u64>) -> Result<Block, reqwest::Error> {
@@ -56,7 +56,7 @@ pub async fn get_block_by_id(url: String, id: Option<u64>) -> Result<Block, reqw
     };
     let request = JsonRequest::new("eth_getBlockByNumber".into(), params);
     let response: JsonResponse<Block> = reqwest::Client::new()
-        .get(&url)
+        .post(&url)
         .json(&request)
         .send()
         .await
