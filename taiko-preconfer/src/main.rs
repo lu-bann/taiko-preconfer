@@ -51,11 +51,14 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
     let taiko_slot = taiko_slot_model.get_slot(timestamp);
 
     let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
-    let slot_number = taiko_slot_model.get_slot_number(taiko_slot);
+    let slot_number = taiko_slot_model.get_slot_number(taiko_slot) + 1;
+    let l2_slot_in_epoch = slot_number % (config.l1_slots_per_epoch * subslots_per_slot);
     info!(
-        "L2 slot on startup: {}, {}",
+        "L2 slot on startup: {}, {} {} {:?}",
         slot_number,
-        slot_number / subslots_per_slot
+        slot_number / subslots_per_slot,
+        l2_slot_in_epoch,
+        start,
     );
     Ok(get_subslot_stream(
         get_slot_stream(
@@ -76,8 +79,8 @@ fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = S
     let start = get_next_slot_start(&config.l1_slot_time, &time_provider)?;
     let timestamp = time_provider.timestamp_in_s();
     let taiko_slot = taiko_slot_model.get_slot(timestamp);
-    let slot_number = taiko_slot_model.get_slot_number(taiko_slot);
-    info!("L1 slot on startup: {}", slot_number);
+    let slot_number = taiko_slot_model.get_slot_number(taiko_slot) + 1;
+    info!("L1 slot on startup: {} {:?}", slot_number, start);
 
     Ok(get_slot_stream(
         start,

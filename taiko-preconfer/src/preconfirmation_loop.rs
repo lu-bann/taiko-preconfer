@@ -48,7 +48,7 @@ pub async fn run<
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
             let slot_timestamp =
-                HOLESKY_GENESIS_TIMESTAMP + subslot.slot.epoch * 32 * 12 + subslot.sub_slot * 6 + 6;
+                HOLESKY_GENESIS_TIMESTAMP + subslot.slot.epoch * 32 * 12 + subslot.sub_slot * 6;
             info!(
                 "slot number: L1={}, L2={}, L2 time={}, now={}",
                 subslot.slot.epoch * 32 + subslot.slot.slot,
