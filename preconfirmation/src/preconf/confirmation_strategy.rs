@@ -127,7 +127,7 @@ pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     sender: ConfirmationSender<Client>,
     blocks: Arc<RwLock<Vec<Block>>>,
     max_blocks: usize,
-    valid_anchor_id: Arc<RwLock<ValidAnchor<Client>>>,
+    valid_anchor_id: ValidAnchor,
     taiko_inbox: TaikoInboxInstance,
     valid_timestamp: ValidTimestamp,
     use_blobs: bool,
@@ -139,7 +139,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         sender: ConfirmationSender<Client>,
         blocks: Arc<RwLock<Vec<Block>>>,
         max_blocks: usize,
-        valid_anchor_id: Arc<RwLock<ValidAnchor<Client>>>,
+        valid_anchor_id: ValidAnchor,
         taiko_inbox: TaikoInboxInstance,
         valid_timestamp: ValidTimestamp,
         use_blobs: bool,
@@ -186,7 +186,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         if blocks.is_empty()
             || (blocks.len() < self.max_blocks
                 && !force_send
-                && !self.valid_anchor_id.read().await.is_valid_after(2))
+                && !self.valid_anchor_id.is_valid_after(2).await)
         {
             return Ok(());
         }

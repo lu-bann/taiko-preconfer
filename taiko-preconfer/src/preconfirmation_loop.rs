@@ -10,10 +10,7 @@ use preconfirmation::{
     },
     slot::SubSlot,
     slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
-    taiko::{
-        contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client,
-        taiko_l2_client::ITaikoL2Client,
-    },
+    taiko::{contracts::TaikoWhitelistInstance, taiko_l2_client::ITaikoL2Client},
     time_provider::ITimeProvider,
     util::{log_error, now_as_secs},
 };
@@ -25,13 +22,9 @@ use crate::{
 };
 
 #[instrument(name = "📋", skip_all)]
-pub async fn run<
-    L1Client: ITaikoL1Client,
-    L2Client: ITaikoL2Client,
-    TimeProvider: ITimeProvider,
->(
+pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     stream: impl Stream<Item = SubSlot>,
-    builder: BlockBuilder<L1Client, L2Client, TimeProvider>,
+    builder: BlockBuilder<L2Client, TimeProvider>,
     preconfirmation_slot_model: PreconfirmationSlotModel,
     whitelist: TaikoWhitelistInstance,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,

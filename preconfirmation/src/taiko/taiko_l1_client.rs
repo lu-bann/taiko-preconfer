@@ -21,7 +21,7 @@ use tracing::info;
 
 use crate::{blob::BlobEncodeError, util::log_error, verification::TaikoInboxError};
 
-type TaikoProvider = FillProvider<
+pub type TaikoProvider = FillProvider<
     JoinFill<
         JoinFill<
             Identity,
@@ -48,6 +48,9 @@ pub enum TaikoL1ClientError {
 
     #[error("{0}")]
     Contract(#[from] alloy_contract::Error),
+
+    #[error("{0}")]
+    Reqwest(#[from] reqwest::Error),
 
     #[error("{0}")]
     FromUInt128(#[from] alloy_primitives::ruint::FromUintError<u128>),
