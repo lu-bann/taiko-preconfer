@@ -180,6 +180,13 @@ pub fn now_as_secs() -> u64 {
         .as_secs()
 }
 
+pub fn now_as_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap()
+        .as_millis()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

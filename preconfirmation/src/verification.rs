@@ -23,7 +23,7 @@ use crate::{
         },
         taiko_l1_client::{TaikoL1Client, TaikoL1ClientError},
     },
-    util::{get_tx_envelopes_without_anchor_from_blocks, pad_left},
+    util::{get_tx_envelopes_without_anchor_from_blocks, now_as_millis, pad_left},
 };
 
 pub fn verify_signature(
@@ -202,11 +202,13 @@ pub fn compute_batch_meta_hash(
         .collect();
     info!("last timestamp {last_timestamp}");
 
+    info!("get envelopes {}", now_as_millis());
     let txs = get_tx_envelopes_without_anchor_from_blocks(blocks);
     debug!("txs: {txs:?}");
     let tx_bytes = Bytes::from(compress(txs)?);
     let tx_bytes_len = tx_bytes.len();
 
+    info!("blb hashes {}", now_as_millis());
     let (tx_bytes_hash, blob_hashes) = if use_blobs {
         let blobs = tx_bytes_to_blobs(tx_bytes)?;
         (keccak256([]), get_blob_hashes(blobs)?)
@@ -248,6 +250,7 @@ pub fn compute_batch_meta_hash(
         proposedAt: proposed_at,
     };
     info!("meta: {meta:?}");
+    info!("end {}", now_as_millis());
     Ok(keccak256(meta.abi_encode()))
 }
 
