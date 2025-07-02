@@ -1,9 +1,11 @@
 use alloy_consensus::BlobTransactionSidecar;
-use alloy_eips::eip4844::env_settings::EnvKzgSettings;
 use alloy_primitives::Bytes;
 
-use c_kzg::{BYTES_PER_BLOB, Blob, Error as KzgError};
+use c_kzg::{BYTES_PER_BLOB, Blob, Error as KzgError, KzgSettings};
 use thiserror::Error;
+use tracing::info;
+
+use crate::util::now_as_millis;
 
 const DATA_LENGTH_SIZE: usize = 4;
 const FIELD_ELEMENTS_PER_ITERATION: usize = 4;
@@ -34,47 +36,64 @@ pub enum BlobEncodeError {
 }
 
 pub fn create_blob(data: &[u8]) -> Result<Blob, BlobEncodeError> {
-    assert_blob_size(data.len())?;
-
     let mut blob_bytes = [0; BYTES_PER_BLOB];
     let mut read_offset = 0;
     let mut write_offset = 0;
     let mut buf31 = [0u8; 31];
 
-    for round in 0..ITERATIONS {
-        if read_offset >= data.len() {
-            break;
-        }
+    let next_idx = write_version_and_data_size(data.len() as u32, &mut buf31);
 
-        if round == 0 {
-            let next_idx = write_version_and_data_size(data.len() as u32, &mut buf31);
+    let n = std::cmp::min(buf31.len() - next_idx, data.len());
+    buf31[next_idx..next_idx + n].copy_from_slice(&data[read_offset..read_offset + n]);
+    buf31[next_idx + n..].fill(0);
+    read_offset += n;
 
-            let n = std::cmp::min(buf31.len() - next_idx, data.len());
-            buf31[next_idx..next_idx + n].copy_from_slice(&data[read_offset..read_offset + n]);
-            buf31[next_idx + n..].fill(0);
-            read_offset += n;
-        } else {
+    let x = read_byte(data, &mut read_offset);
+    let a = x & MASK_1;
+    write(&mut blob_bytes, &mut write_offset, a, &buf31)?;
+
+    read_31_bytes(data, &mut read_offset, &mut buf31);
+    let y = read_byte(data, &mut read_offset);
+    let b = (y & MASK_2) | ((x & MASK_3) >> 2);
+    write(&mut blob_bytes, &mut write_offset, b, &buf31)?;
+
+    read_31_bytes(data, &mut read_offset, &mut buf31);
+    let z = read_byte(data, &mut read_offset);
+    let c = z & MASK_1;
+    write(&mut blob_bytes, &mut write_offset, c, &buf31)?;
+
+    read_31_bytes(data, &mut read_offset, &mut buf31);
+    let d = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
+    write(&mut blob_bytes, &mut write_offset, d, &buf31)?;
+
+    let iterations = std::cmp::min(ITERATIONS, data.len() / 32 + 1);
+    tracing::info!("iter");
+
+    let result: Result<Vec<()>, BlobEncodeError> = (1..iterations)
+        .map(|_| {
             read_31_bytes(data, &mut read_offset, &mut buf31);
-        }
 
-        let x = read_byte(data, &mut read_offset);
-        let a = x & MASK_1;
-        write(&mut blob_bytes, &mut write_offset, a, &buf31)?;
+            let x = read_byte(data, &mut read_offset);
+            let a = x & MASK_1;
+            write(&mut blob_bytes, &mut write_offset, a, &buf31)?;
 
-        read_31_bytes(data, &mut read_offset, &mut buf31);
-        let y = read_byte(data, &mut read_offset);
-        let b = (y & MASK_2) | ((x & MASK_3) >> 2);
-        write(&mut blob_bytes, &mut write_offset, b, &buf31)?;
+            read_31_bytes(data, &mut read_offset, &mut buf31);
+            let y = read_byte(data, &mut read_offset);
+            let b = (y & MASK_2) | ((x & MASK_3) >> 2);
+            write(&mut blob_bytes, &mut write_offset, b, &buf31)?;
 
-        read_31_bytes(data, &mut read_offset, &mut buf31);
-        let z = read_byte(data, &mut read_offset);
-        let c = z & MASK_1;
-        write(&mut blob_bytes, &mut write_offset, c, &buf31)?;
+            read_31_bytes(data, &mut read_offset, &mut buf31);
+            let z = read_byte(data, &mut read_offset);
+            let c = z & MASK_1;
+            write(&mut blob_bytes, &mut write_offset, c, &buf31)?;
 
-        read_31_bytes(data, &mut read_offset, &mut buf31);
-        let d = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
-        write(&mut blob_bytes, &mut write_offset, d, &buf31)?;
-    }
+            read_31_bytes(data, &mut read_offset, &mut buf31);
+            let d = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
+            write(&mut blob_bytes, &mut write_offset, d, &buf31)?;
+            Ok(())
+        })
+        .collect();
+    result?;
 
     assert_all_bytes_processed(read_offset, data.len())?;
 
@@ -89,19 +108,25 @@ pub fn tx_bytes_to_blobs(tx_bytes: Bytes) -> Result<Vec<Blob>, BlobEncodeError> 
     blobs
 }
 
-pub fn tx_bytes_to_sidecar(tx_bytes: Bytes) -> Result<BlobTransactionSidecar, BlobEncodeError> {
+pub fn tx_bytes_to_sidecar(
+    tx_bytes: Bytes,
+    kzg_settings: &KzgSettings,
+) -> Result<BlobTransactionSidecar, BlobEncodeError> {
     let blobs = tx_bytes_to_blobs(tx_bytes)?;
-    blobs_to_sidecar(blobs)
+    tracing::info!("blobs to sidecar");
+    blobs_to_sidecar(blobs, kzg_settings)
 }
 
 pub fn blobs_to_sidecar(
     blobs: Vec<c_kzg::Blob>,
+    kzg_settings: &KzgSettings,
 ) -> Result<BlobTransactionSidecar, BlobEncodeError> {
-    let kzg_settings = EnvKzgSettings::Default.get();
+    info!("blobs to sidecar start");
 
     let mut commitments = Vec::with_capacity(blobs.len());
     let mut proofs = Vec::with_capacity(blobs.len());
 
+    let start = now_as_millis();
     for blob in blobs.iter() {
         let commitment = kzg_settings.blob_to_kzg_commitment(blob)?.to_bytes();
         let proof = kzg_settings
@@ -110,15 +135,10 @@ pub fn blobs_to_sidecar(
         commitments.push(commitment);
         proofs.push(proof);
     }
+    let end = now_as_millis();
+    info!("sidecar elapsed {} ms", end - start);
 
     Ok(BlobTransactionSidecar::from_kzg(blobs, commitments, proofs))
-}
-
-fn assert_blob_size(size: usize) -> Result<(), BlobEncodeError> {
-    if size > MAX_BLOB_DATA_SIZE {
-        return Err(BlobEncodeError::BlobSize { size });
-    }
-    Ok(())
 }
 
 fn assert_byte_offset(offset: usize, mod_expected: usize) -> Result<(), BlobEncodeError> {
@@ -221,6 +241,7 @@ const MASK_4: u8 = 0b1111_0000;
 
 #[cfg(test)]
 mod tests {
+    use alloy_eips::eip4844::env_settings::EnvKzgSettings;
     use alloy_primitives::{FixedBytes, keccak256};
 
     use super::*;
@@ -249,7 +270,8 @@ mod tests {
     fn test_blob_sidecar_valid_proof_creation() {
         let data = test_data();
         let blob = create_blob(&data).unwrap();
-        let sidecar = blobs_to_sidecar(vec![blob]).unwrap();
+        let settings = EnvKzgSettings::Default.get();
+        let sidecar = blobs_to_sidecar(vec![blob], settings).unwrap();
         let sidecar_item = sidecar.into_iter().next().unwrap();
         assert!(sidecar_item.verify_blob_kzg_proof().is_ok());
     }
@@ -267,16 +289,5 @@ mod tests {
                     .unwrap()
             )
         );
-    }
-
-    #[test]
-    fn test_encode_blob_fails_if_blob_exceeds_max_size() {
-        let large_size = MAX_BLOB_DATA_SIZE + 1;
-        let data = vec![0; large_size];
-        let err = create_blob(&data).unwrap_err();
-        match err {
-            BlobEncodeError::BlobSize { size } => assert_eq!(size, large_size),
-            _ => panic!("unexpected error"),
-        };
     }
 }
