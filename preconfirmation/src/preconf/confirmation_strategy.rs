@@ -1,6 +1,7 @@
 use std::{num::TryFromIntError, sync::Arc};
 
 use alloy_consensus::Transaction;
+use alloy_eips::eip4844::env_settings::EnvKzgSettings;
 use alloy_network::TransactionBuilder4844;
 use alloy_primitives::{Address, B256, Bytes};
 use alloy_provider::network::TransactionBuilder as _;
@@ -130,10 +131,11 @@ pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     taiko_inbox: TaikoInboxInstance,
     valid_timestamp: ValidTimestamp,
     use_blobs: bool,
+    kzg_settings: EnvKzgSettings,
 }
 
 impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
-    pub const fn new(
+    pub fn new(
         sender: ConfirmationSender<Client>,
         blocks: Arc<RwLock<Vec<Block>>>,
         max_blocks: usize,
@@ -142,6 +144,8 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         valid_timestamp: ValidTimestamp,
         use_blobs: bool,
     ) -> Self {
+        let kzg_settings = EnvKzgSettings::Default;
+        let _ = kzg_settings.get();
         Self {
             sender,
             blocks,
@@ -150,6 +154,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             taiko_inbox,
             valid_timestamp,
             use_blobs,
+            kzg_settings,
         }
     }
 
@@ -268,11 +273,18 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         debug!("tx_list: {tx_bytes:?}");
         let tx_bytes_len = tx_bytes.len();
         info!("get sidecar {}", now_as_millis());
+        info!("tx bytes: {}", tx_bytes_len);
+        let start = now_as_millis();
         let (tx_list, sidecar) = if self.use_blobs {
-            (Bytes::default(), Some(tx_bytes_to_sidecar(tx_bytes)?))
+            (
+                Bytes::default(),
+                Some(tx_bytes_to_sidecar(tx_bytes, self.kzg_settings.get())?),
+            )
         } else {
             (tx_bytes, None)
         };
+        let end = now_as_millis();
+        info!("elapsed: {} ms", end - start);
         info!("has sidecar: {}", sidecar.is_some());
         let blob_params = BlobParams {
             blobHashes: vec![],
