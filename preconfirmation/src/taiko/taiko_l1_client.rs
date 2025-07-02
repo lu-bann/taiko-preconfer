@@ -10,9 +10,12 @@ use alloy_provider::{
     utils::Eip1559Estimation,
 };
 use alloy_rpc_types::TransactionRequest;
+use libdeflater::CompressionError;
 use std::time::{Duration, SystemTime};
 use thiserror::Error;
 use tracing::info;
+
+use crate::{blob::BlobEncodeError, verification::TaikoInboxError};
 
 type TaikoProvider = FillProvider<
     JoinFill<
@@ -29,6 +32,15 @@ type TaikoProvider = FillProvider<
 pub enum TaikoL1ClientError {
     #[error("{0}")]
     Rpc(String),
+
+    #[error("{0}")]
+    BlobEncode(#[from] BlobEncodeError),
+
+    #[error("{0}")]
+    Compression(#[from] CompressionError),
+
+    #[error("{0}")]
+    TaikoInbox(#[from] TaikoInboxError),
 
     #[error("{0}")]
     Contract(#[from] alloy_contract::Error),

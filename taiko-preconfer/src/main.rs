@@ -41,6 +41,7 @@ use taiko_preconfer::{
 
 const PRECONF_BLOCKS: &str = "preconfBlocks";
 
+#[allow(clippy::result_large_err)]
 fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
     let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
 
@@ -51,6 +52,11 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
 
     let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
     let slot_number = taiko_slot_model.get_slot_number(taiko_slot);
+    info!(
+        "L2 slot on startup: {}, {}",
+        slot_number,
+        slot_number / subslots_per_slot
+    );
     Ok(get_subslot_stream(
         get_slot_stream(
             start,
@@ -62,6 +68,7 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
     ))
 }
 
+#[allow(clippy::result_large_err)]
 fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = Slot>> {
     let taiko_slot_model = SlotModel::holesky();
 
@@ -70,6 +77,7 @@ fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = S
     let timestamp = time_provider.timestamp_in_s();
     let taiko_slot = taiko_slot_model.get_slot(timestamp);
     let slot_number = taiko_slot_model.get_slot_number(taiko_slot);
+    info!("L1 slot on startup: {}", slot_number);
 
     Ok(get_slot_stream(
         start,
@@ -114,6 +122,7 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
 }
 
 #[tokio::main]
+#[allow(clippy::result_large_err)]
 async fn main() -> ApplicationResult<()> {
     dotenv::dotenv()?;
     let config = Config::try_from_env()?;
@@ -217,8 +226,6 @@ async fn main() -> ApplicationResult<()> {
         config.use_blobs,
     );
 
-    let subslot_stream = create_subslot_stream(&config)?;
-    let slot_stream = create_slot_stream(&config)?;
     let l1_header_stream =
         create_header_stream(&config.l1_client_url, &config.l1_ws_url, config.poll_period).await?;
 
@@ -232,6 +239,8 @@ async fn main() -> ApplicationResult<()> {
     )
     .await?;
 
+    let subslot_stream = create_subslot_stream(&config)?;
+    let slot_stream = create_slot_stream(&config)?;
     let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
     let (onchain_tracking_result, preconfirmation_result, confirmation_result) = join!(
         onchain_tracking_loop::run(
