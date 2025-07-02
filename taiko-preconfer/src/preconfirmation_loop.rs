@@ -44,12 +44,12 @@ pub async fn run<
     let mut current_epoch_preconfer = Address::ZERO;
     let mut next_epoch_preconfer = Address::ZERO;
 
+    let slot_model = SlotModel::holesky();
+    let current_slot = slot_model.get_slot(now_as_secs());
     if let Some(current_preconfer) = log_error(
         whitelist.getOperatorForCurrentEpoch().call().await,
         "Failed to read current preconfer",
     ) {
-        let slot_model = SlotModel::holesky();
-        let current_slot = slot_model.get_slot(now_as_secs());
         info!("Whitelist current preconfer: {current_preconfer}");
         set_active_operator_if_necessary(
             &current_preconfer,
@@ -58,6 +58,18 @@ pub async fn run<
             &current_slot,
         );
         current_epoch_preconfer = current_preconfer;
+    }
+    if let Some(next_preconfer) = log_error(
+        whitelist.getOperatorForNextEpoch().call().await,
+        "Failed to read preconfer for next epoch",
+    ) {
+        set_active_operator_for_next_period(
+            &next_preconfer,
+            &preconfer_address,
+            &mut preconfirmation_slot_model,
+            &current_slot,
+        );
+        next_epoch_preconfer = next_preconfer;
     }
 
     loop {

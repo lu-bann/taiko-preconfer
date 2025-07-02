@@ -154,6 +154,10 @@ impl ITaikoL2Client for TaikoL2Client {
         base_fee: u64,
     ) -> TaikoL2ClientResult<Vec<TxEnvelope>> {
         let jwt_secret = JwtSecret::from_hex(self.jwt_secret.read()).unwrap();
+        info!(
+            "JWT secret valid: {}",
+            jwt_secret.validate(&self.jwt_secret.read()).is_ok()
+        );
         let auth_client = get_alloy_auth_client(&self.auth_url, jwt_secret, true)?;
         let mempool_tx_lists = get_mempool_txs(
             &auth_client,
