@@ -83,11 +83,15 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
 
     pub async fn send(&self, tx: TransactionRequest) -> ConfirmationResult<()> {
         debug!("Create tx");
-        let blob_base_fee = self.client.get_blob_base_fee().await?;
-        let tx = tx
+        let mut tx = tx
             .with_from(self.signer.address())
-            .with_to(self.taiko_inbox)
-            .max_fee_per_blob_gas(blob_base_fee);
+            .with_to(self.taiko_inbox);
+        if tx.sidecar.is_some() {
+            info!("Set blob base fee");
+            let blob_base_fee = self.client.get_blob_base_fee().await?;
+            tx = tx.max_fee_per_blob_gas(blob_base_fee);
+        }
+        info!("tx: {:?}", tx);
         let (nonce, gas_limit, fee_estimate) = join!(
             self.client.get_nonce(self.signer.address()),
             self.client.estimate_gas(tx.clone()),
@@ -264,11 +268,12 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         debug!("tx_list: {tx_bytes:?}");
         let tx_bytes_len = tx_bytes.len();
         info!("get sidecar {}", now_as_millis());
-        let sidecar = if self.use_blobs {
-            Some(tx_bytes_to_sidecar(tx_bytes)?)
+        let (tx_list, sidecar) = if self.use_blobs {
+            (Bytes::default(), Some(tx_bytes_to_sidecar(tx_bytes)?))
         } else {
-            None
+            (tx_bytes, None)
         };
+        info!("has sidecar: {}", sidecar.is_some());
         let blob_params = BlobParams {
             blobHashes: vec![],
             firstBlobIndex: 0,
@@ -280,6 +285,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             byteSize: tx_bytes_len as u32,
             createdIn: 0,
         };
+        info!("blob params: {:?}", blob_params);
 
         let propose_batch_params = create_propose_batch_params(
             self.sender.address(),
@@ -295,7 +301,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         info!("send tx {}", now_as_millis());
         let mut tx = TransactionRequest::default().with_call(&TaikoInbox::proposeBatchCall {
             _params: propose_batch_params,
-            _txList: Bytes::default(),
+            _txList: tx_list,
         });
         if let Some(sidecar) = sidecar {
             tx.set_blob_sidecar(sidecar);
