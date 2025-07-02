@@ -92,7 +92,7 @@ impl<Client: ITaikoL1Client> ValidAnchor<Client> {
             "anchor id may update from {} to {}",
             self.current_anchor_id, new_anchor_id
         );
-        if new_anchor_id - self.current_anchor_id > self.anchor_id_update_tol {
+        if new_anchor_id > self.current_anchor_id + self.anchor_id_update_tol {
             let anchor_header = self.client.get_header(new_anchor_id).await?;
             self.current_anchor_id = new_anchor_id;
             self.state_root = anchor_header.state_root;
@@ -122,8 +122,11 @@ impl<Client: ITaikoL1Client> ValidAnchor<Client> {
         &mut self,
         block_number: u64,
     ) -> Result<(), TaikoL1ClientError> {
-        self.block_number = block_number;
-        self.update().await
+        if block_number > self.block_number {
+            self.block_number = block_number;
+            return self.update().await;
+        }
+        Ok(())
     }
 
     pub async fn update_last_anchor_id(
