@@ -3592,6 +3592,7 @@ version = "0.1.0"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
+ "alloy-eips",
  "alloy-json-rpc",
  "alloy-network",
  "alloy-primitives",

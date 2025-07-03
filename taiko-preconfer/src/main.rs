@@ -1,5 +1,6 @@
 use std::{str::FromStr, sync::Arc};
 
+use alloy_eips::eip4844::env_settings::EnvKzgSettings;
 use alloy_network::EthereumWallet;
 use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
@@ -151,6 +152,9 @@ async fn main() -> ApplicationResult<()> {
     info!("Starting preconfer");
     dotenv::dotenv()?;
     let config = Config::try_from_env()?;
+
+    // initialize kzg settings before using it later as this can take about 2s
+    let _ = EnvKzgSettings::Default.get();
 
     tracing_subscriber::fmt()
         .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
