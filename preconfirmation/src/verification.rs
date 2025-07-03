@@ -228,7 +228,7 @@ pub fn compute_batch_meta_hash(
         extraData: B256::from_slice(&pad_left::<32>(&[base_fee_config.sharingPctg])),
         coinbase: preconfer_address,
         proposedIn: proposed_in,
-        blobCreatedIn: proposed_in,
+        blobCreatedIn: if use_blobs { proposed_in } else { 0 },
         blobByteOffset: 0,
         blobByteSize: tx_bytes_len as u32,
         gasLimit: 240_000_000,
