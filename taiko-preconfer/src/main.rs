@@ -133,10 +133,7 @@ async fn get_taiko_l1_client(
         .connect(&config.l1_client_url)
         .await?;
 
-    let l1_ws_provider = ProviderBuilder::new()
-        .connect_ws(WsConnect::new(&config.l1_ws_url))
-        .await?;
-    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_ws_provider);
+    let taiko_inbox = get_inbox(config).await?;
     Ok(TaikoL1Client::new(
         l1_provider,
         config.propose_timeout,
@@ -146,6 +143,26 @@ async fn get_taiko_l1_client(
         config.use_blobs,
         config.relative_fee_premium,
         config.relative_blob_fee_premium,
+    ))
+}
+
+async fn get_whitelist(config: &Config) -> ApplicationResult<TaikoWhitelistInstance> {
+    let l1_provider = ProviderBuilder::new()
+        .connect(&config.l1_client_url)
+        .await?;
+    Ok(TaikoWhitelistInstance::new(
+        config.taiko_whitelist_address,
+        l1_provider,
+    ))
+}
+
+async fn get_inbox(config: &Config) -> ApplicationResult<TaikoInboxInstance> {
+    let l1_ws_provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(&config.l1_ws_url))
+        .await?;
+    Ok(TaikoInboxInstance::new(
+        config.taiko_inbox_address,
+        l1_ws_provider,
     ))
 }
 
@@ -164,11 +181,7 @@ async fn main() -> ApplicationResult<()> {
         .with_target(false)
         .init();
 
-    let l1_ws_provider = ProviderBuilder::new()
-        .connect_ws(WsConnect::new(&config.l1_ws_url))
-        .await?;
-    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_ws_provider.clone());
-
+    let taiko_inbox = get_inbox(&config).await?;
     let taiko_inbox_config = taiko_inbox.pacayaConfig().call().await?;
 
     let signer =
@@ -182,11 +195,7 @@ async fn main() -> ApplicationResult<()> {
 
     let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
     let taiko_l1_client = get_taiko_l1_client(&config, preconfer_address).await?;
-    let l1_provider = ProviderBuilder::new()
-        .connect(&config.l1_client_url)
-        .await?;
-    let whitelist =
-        TaikoWhitelistInstance::new(config.taiko_whitelist_address, l1_provider.clone());
+    let whitelist = get_whitelist(&config).await?;
 
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
     let taiko_sequencing_monitor = TaikoSequencingMonitor::new(
