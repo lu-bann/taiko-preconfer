@@ -403,7 +403,7 @@ pub fn create_propose_batch_params(
         blobParams: blob_params,
         blocks,
     };
-    info!("batch params: {:?}", batch_params);
+    debug!("batch params: {:?}", batch_params);
 
     let propose_batch_wrapper = ProposeBatchParams {
         bytesX: Bytes::new(),

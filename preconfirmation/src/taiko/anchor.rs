@@ -10,7 +10,7 @@ use alloy_consensus::{TxEip1559, TypedTransaction};
 use alloy_primitives::{Address, ChainId, FixedBytes, TxKind, U256};
 use alloy_sol_types::SolCall;
 use tokio::sync::RwLock;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
     client::reqwest::get_header_by_id, taiko::contracts::TaikoAnchor, util::get_system_time_from_s,
@@ -100,14 +100,14 @@ impl ValidAnchor {
         );
         let current_anchor_id = self.current_anchor.read().await.0;
         if new_anchor_id > current_anchor_id + self.anchor_id_update_tol {
-            info!("Request header {} for {}", new_anchor_id, self.url);
+            debug!("Request header {} for {}", new_anchor_id, self.url);
             let anchor_header = get_header_by_id(self.url.clone(), new_anchor_id).await?;
             *self.current_anchor.write().await = (
                 new_anchor_id,
                 get_system_time_from_s(anchor_header.timestamp),
                 anchor_header.state_root,
             );
-            info!("anchor id update to {}", new_anchor_id);
+            debug!("anchor id update to {}", new_anchor_id);
         }
         Ok(())
     }
