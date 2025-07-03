@@ -1,9 +1,9 @@
 use std::thread::JoinHandle;
 
-use alloy_consensus::Header;
-use alloy_eips::BlockNumberOrTag;
-use alloy_network::{EthereumWallet, TransactionBuilder};
-use alloy_primitives::Address;
+use alloy_consensus::{BlobTransactionSidecar, Header, Transaction, TxEnvelope};
+use alloy_eips::{BlockNumberOrTag, eip4844::env_settings::EnvKzgSettings};
+use alloy_network::{EthereumWallet, TransactionBuilder, TransactionBuilder4844};
+use alloy_primitives::{Address, Bytes, FixedBytes};
 use alloy_provider::{
     Identity, Provider, RootProvider,
     fillers::{
@@ -12,6 +12,8 @@ use alloy_provider::{
     utils::Eip1559Estimation,
 };
 use alloy_rpc_types::TransactionRequest;
+use alloy_rpc_types_eth::Block;
+use alloy_sol_types::SolType;
 use libdeflater::CompressionError;
 use std::{
     sync::Arc,
@@ -19,9 +21,20 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{join, sync::RwLock};
-use tracing::{error, info};
+use tracing::{debug, error, info};
 
-use crate::{blob::BlobEncodeError, util::log_error, verification::TaikoInboxError};
+use crate::{
+    blob::{BlobEncodeError, tx_bytes_to_sidecar},
+    compression::compress,
+    taiko::contracts::{
+        BatchParams, BlobParams, BlockParams, ProposeBatchParams, TaikoInbox, TaikoInboxInstance,
+    },
+    util::{
+        get_anchor_block_id_from_bytes, get_tx_envelopes_without_anchor_from_block, log_error,
+        now_as_millis,
+    },
+    verification::{TaikoInboxError, get_latest_confirmed_batch},
+};
 
 pub type TaikoProvider = FillProvider<
     JoinFill<
@@ -90,7 +103,7 @@ pub trait ITaikoL1Client {
     fn estimate_eip1559_fees(&self)
     -> impl Future<Output = TaikoL1ClientResult<Eip1559Estimation>>;
 
-    fn send(&self, tx: TransactionRequest) -> impl Future<Output = TaikoL1ClientResult<()>>;
+    fn send(&self, blocks: Vec<Block>) -> impl Future<Output = TaikoL1ClientResult<()>>;
 }
 
 #[derive(Debug, Clone)]
@@ -99,7 +112,9 @@ pub struct TaikoL1Client {
     propose_timeout: Duration,
     tx_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
     preconfer_address: Address,
-    taiko_inbox: Address,
+    preconf_router_address: Address,
+    taiko_inbox: TaikoInboxInstance,
+    use_blobs: bool,
 }
 
 impl TaikoL1Client {
@@ -107,14 +122,18 @@ impl TaikoL1Client {
         provider: TaikoProvider,
         propose_timeout: Duration,
         preconfer_address: Address,
-        taiko_inbox: Address,
+        preconf_router_address: Address,
+        taiko_inbox: TaikoInboxInstance,
+        use_blobs: bool,
     ) -> Self {
         Self {
             provider,
             propose_timeout,
             tx_handle: Arc::new(None.into()),
             preconfer_address,
+            preconf_router_address,
             taiko_inbox,
+            use_blobs,
         }
     }
 }
@@ -156,7 +175,7 @@ impl ITaikoL1Client for TaikoL1Client {
         Ok(self.provider.estimate_eip1559_fees().await?)
     }
 
-    async fn send(&self, tx: TransactionRequest) -> TaikoL1ClientResult<()> {
+    async fn send(&self, blocks: Vec<Block>) -> TaikoL1ClientResult<()> {
         info!("Send tx");
         let previous_tx_returned = self
             .tx_handle
@@ -172,17 +191,87 @@ impl ITaikoL1Client for TaikoL1Client {
         let provider = self.provider.clone();
         let timeout = self.propose_timeout;
         let preconfer_address = self.preconfer_address;
-        let taiko_inbox_address = self.taiko_inbox;
+        let taiko_inbox = self.taiko_inbox.clone();
+        let use_blobs = self.use_blobs;
+        let tx = TransactionRequest::default()
+            .with_from(preconfer_address)
+            .with_to(self.preconf_router_address);
+
         *self.tx_handle.write().await = Some(
             std::thread::Builder::new()
                 .stack_size(8 * 1024 * 1024)
                 .spawn(move || {
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async move {
-                        let start = SystemTime::now();
+                        let settings = EnvKzgSettings::Default.get();
 
-                        let mut tx = tx;
-                        if tx.sidecar.is_some() {
+                        let mut txs = Vec::new();
+                        let mut block_params = Vec::new();
+                        let first_anchor_tx = blocks
+                            .first()
+                            .expect("Must be present")
+                            .transactions
+                            .txns()
+                            .next();
+                        if first_anchor_tx.is_none() {
+                            error!("{:?}", blocks.first().expect("Must be present"));
+                            return;
+                        }
+                        let batch_anchor_id: u64 = get_anchor_block_id_from_bytes(
+                            first_anchor_tx.expect("Must be present").input(),
+                        )
+                        .expect("Missing anchor id");
+
+                        let last_timestamp =
+                            read_blocks(blocks, batch_anchor_id, &mut block_params, &mut txs);
+
+                        info!("get parent meta hash {}", now_as_millis());
+                        let parent_batch_meta_hash = get_latest_confirmed_batch(&taiko_inbox)
+                            .await
+                            .map(|batch| batch.metaHash)
+                            .unwrap_or_default();
+                        let tx_bytes =
+                            Bytes::from(compress(txs.clone()).expect("Failed to compress txs"));
+                        debug!("tx_list: {tx_bytes:?}");
+                        let tx_bytes_len = tx_bytes.len();
+                        info!("get sidecar {}", now_as_millis());
+                        info!("tx bytes: {}", tx_bytes_len);
+                        let start = now_as_millis();
+                        let (tx_list, sidecar) = if use_blobs {
+                            (
+                                Bytes::default(),
+                                Some(
+                                    tx_bytes_to_sidecar(tx_bytes, settings)
+                                        .expect("Failed to get sidecar from bytes"),
+                                ),
+                            )
+                        } else {
+                            (tx_bytes, None)
+                        };
+                        let end = now_as_millis();
+                        info!("elapsed: {} ms", end - start);
+                        info!("has sidecar: {}", sidecar.is_some());
+                        let blob_params = get_blob_params(&sidecar, tx_bytes_len);
+                        info!("blob params: {:?}", blob_params);
+
+                        let propose_batch_params = create_propose_batch_params(
+                            preconfer_address,
+                            block_params,
+                            blob_params,
+                            parent_batch_meta_hash,
+                            batch_anchor_id,
+                            last_timestamp,
+                            preconfer_address,
+                        );
+
+                        debug!("params: {propose_batch_params:?}");
+                        info!("send tx {}", now_as_millis());
+                        let mut tx = tx.with_call(&TaikoInbox::proposeBatchCall {
+                            _params: propose_batch_params,
+                            _txList: tx_list,
+                        });
+                        if let Some(sidecar) = sidecar {
+                            tx.set_blob_sidecar(sidecar);
                             info!("Set blob base fee");
                             if let Some(blob_base_fee) = log_error(
                                 provider.get_blob_base_fee().await,
@@ -198,14 +287,21 @@ impl ITaikoL1Client for TaikoL1Client {
                             provider.estimate_eip1559_fees(),
                         );
 
-                        info!(
-                            "sign tx {} {:?} {:?} {:?}",
-                            taiko_inbox_address, nonce, gas_limit, fee_estimate
-                        );
-                        if gas_limit.is_err() || fee_estimate.is_err() {
-                            error!("Failed to estimate gas or fees for block confirmation.");
-                            error!("{}", gas_limit.unwrap_err());
-                            error!("{}", fee_estimate.unwrap_err());
+                        if gas_limit.is_err() {
+                            error!("Failed to estimate gas for block confirmation.");
+                            error!(
+                                "{}",
+                                gas_limit.map_err(TaikoL1ClientError::from).unwrap_err()
+                            );
+                            return;
+                        }
+
+                        if fee_estimate.is_err() {
+                            error!("Failed to estimate fees for block confirmation.");
+                            error!(
+                                "{}",
+                                fee_estimate.map_err(TaikoL1ClientError::from).unwrap_err()
+                            );
                             return;
                         }
                         let gas_limit = gas_limit.expect("Must be present");
@@ -225,6 +321,7 @@ impl ITaikoL1Client for TaikoL1Client {
                             provider.send_transaction(tx).await,
                             "Failed to get transaction builder",
                         ) {
+                            let start = SystemTime::now();
                             if let Some(receipt) = log_error(
                                 tx_builder
                                     .with_required_confirmations(2)
@@ -243,4 +340,119 @@ impl ITaikoL1Client for TaikoL1Client {
         );
         Ok(())
     }
+}
+
+fn get_blob_params(sidecar: &Option<BlobTransactionSidecar>, tx_bytes_len: usize) -> BlobParams {
+    BlobParams {
+        blobHashes: vec![],
+        firstBlobIndex: 0,
+        numBlobs: sidecar
+            .as_ref()
+            .map(|sidecar: &BlobTransactionSidecar| sidecar.blobs.len() as u8)
+            .unwrap_or_default(),
+        byteOffset: 0,
+        byteSize: tx_bytes_len as u32,
+        createdIn: 0,
+    }
+}
+
+fn read_blocks(
+    blocks: Vec<Block>,
+    batch_anchor_id: u64,
+    block_params: &mut Vec<BlockParams>,
+    txs: &mut Vec<TxEnvelope>,
+) -> u64 {
+    let mut last_timestamp = blocks.first().expect("Must be present").header.timestamp;
+    info!(
+        "{:?}",
+        blocks
+            .iter()
+            .map(|block| (block.header.number, block.header.timestamp))
+            .collect::<Vec<(u64, u64)>>()
+    );
+    for block in blocks.into_iter() {
+        info!(
+            "block {} {} {}",
+            block.header.number,
+            block.header.timestamp,
+            block.transactions.len()
+        );
+        let timestamp = block.header.timestamp;
+        let number = block.header.number;
+        debug!(
+            "ts {} {} {}",
+            timestamp,
+            last_timestamp,
+            timestamp - last_timestamp
+        );
+        if let Ok(time_shift) = (timestamp - last_timestamp).try_into() {
+            let anchor_tx = block.transactions.txns().next().cloned();
+            if let Some(anchor_tx) = anchor_tx {
+                let block_anchor_id =
+                    get_anchor_block_id_from_bytes(anchor_tx.input()).expect("Missing anchor id");
+                if block_anchor_id == batch_anchor_id {
+                    let block_txs = get_tx_envelopes_without_anchor_from_block(block);
+                    block_params.push(BlockParams {
+                        numTransactions: block_txs.len() as u16,
+                        timeShift: time_shift,
+                        signalSlots: vec![],
+                    });
+                    last_timestamp = timestamp;
+                    debug!("block txs: {:?}", block_txs);
+                    txs.extend(block_txs.into_iter());
+                } else {
+                    info!(
+                        "Found new anchor id {block_anchor_id} for batch with anchor id {batch_anchor_id}. Splitting confirmation."
+                    );
+                    break;
+                }
+            } else {
+                error!(
+                    "Missing anchor transaction in block {}",
+                    block.header.number
+                );
+                error!("{block:?}");
+            }
+        } else {
+            info!(
+                "Block {} is too far away from previous block. Splitting confirmation step.",
+                number
+            );
+            break;
+        }
+    }
+    debug!("txs: {txs:?}");
+
+    last_timestamp
+}
+
+pub fn create_propose_batch_params(
+    proposer: Address,
+    blocks: Vec<BlockParams>,
+    blob_params: BlobParams,
+    parent_meta_hash: FixedBytes<32>,
+    anchor_block_id: u64,
+    last_block_timestamp: u64,
+    coinbase: Address,
+) -> Bytes {
+    let batch_params = BatchParams {
+        proposer,
+        coinbase,
+        parentMetaHash: parent_meta_hash,
+        anchorBlockId: anchor_block_id,
+        lastBlockTimestamp: last_block_timestamp,
+        revertIfNotFirstProposal: false,
+        blobParams: blob_params,
+        blocks,
+    };
+    info!("batch params: {:?}", batch_params);
+
+    let propose_batch_wrapper = ProposeBatchParams {
+        bytesX: Bytes::new(),
+        bytesY: Bytes::from(BatchParams::abi_encode(&batch_params)),
+    };
+
+    Bytes::from(ProposeBatchParams::abi_encode_sequence(
+        &propose_batch_wrapper,
+    ))
 }

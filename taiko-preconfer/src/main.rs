@@ -11,7 +11,7 @@ use preconfirmation::{
     preconf::{
         BlockBuilder,
         config::Config,
-        confirmation_strategy::{BlockConstrainedConfirmationStrategy, ConfirmationSender},
+        confirmation_strategy::BlockConstrainedConfirmationStrategy,
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
@@ -125,11 +125,18 @@ async fn get_taiko_l1_client(
         .wallet(wallet)
         .connect(&config.l1_client_url)
         .await?;
+
+    let l1_ws_provider = ProviderBuilder::new()
+        .connect_ws(WsConnect::new(&config.l1_ws_url))
+        .await?;
+    let taiko_inbox = TaikoInboxInstance::new(config.taiko_inbox_address, l1_ws_provider);
     Ok(TaikoL1Client::new(
         l1_provider,
         config.propose_timeout,
         preconfer_address,
-        config.taiko_inbox_address,
+        config.taiko_preconf_router_address,
+        taiko_inbox,
+        config.use_blobs,
     ))
 }
 
@@ -224,17 +231,11 @@ async fn main() -> ApplicationResult<()> {
     );
 
     let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
-        ConfirmationSender::new(
-            taiko_l1_client.clone(),
-            config.taiko_preconf_router_address,
-            signer,
-        ),
+        taiko_l1_client.clone(),
         unconfirmed_l2_blocks.clone(),
         config.max_blocks_per_batch,
         valid_anchor.clone(),
-        taiko_inbox.clone(),
         valid_timestamp,
-        config.use_blobs,
     );
 
     let l1_header_stream =
