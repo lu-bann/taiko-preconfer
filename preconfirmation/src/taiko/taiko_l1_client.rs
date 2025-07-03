@@ -103,7 +103,11 @@ pub trait ITaikoL1Client {
     fn estimate_eip1559_fees(&self)
     -> impl Future<Output = TaikoL1ClientResult<Eip1559Estimation>>;
 
-    fn send(&self, blocks: Vec<Block>) -> impl Future<Output = TaikoL1ClientResult<()>>;
+    fn send(
+        &self,
+        blocks: Vec<Block>,
+        anchor_id: u64,
+    ) -> impl Future<Output = TaikoL1ClientResult<()>>;
 }
 
 #[derive(Debug, Clone)]
@@ -175,7 +179,7 @@ impl ITaikoL1Client for TaikoL1Client {
         Ok(self.provider.estimate_eip1559_fees().await?)
     }
 
-    async fn send(&self, blocks: Vec<Block>) -> TaikoL1ClientResult<()> {
+    async fn send(&self, blocks: Vec<Block>, anchor_id: u64) -> TaikoL1ClientResult<()> {
         info!("Send tx");
         let previous_tx_returned = self
             .tx_handle
@@ -206,23 +210,9 @@ impl ITaikoL1Client for TaikoL1Client {
 
                         let mut txs = Vec::new();
                         let mut block_params = Vec::new();
-                        let first_anchor_tx = blocks
-                            .first()
-                            .expect("Must be present")
-                            .transactions
-                            .txns()
-                            .next();
-                        if first_anchor_tx.is_none() {
-                            error!("{:?}", blocks.first().expect("Must be present"));
-                            return;
-                        }
-                        let batch_anchor_id: u64 = get_anchor_block_id_from_bytes(
-                            first_anchor_tx.expect("Must be present").input(),
-                        )
-                        .expect("Missing anchor id");
 
                         let last_timestamp =
-                            read_blocks(blocks, batch_anchor_id, &mut block_params, &mut txs);
+                            read_blocks(blocks, anchor_id, &mut block_params, &mut txs);
 
                         let parent_batch_meta_hash = get_latest_confirmed_batch(&taiko_inbox)
                             .await
@@ -252,7 +242,7 @@ impl ITaikoL1Client for TaikoL1Client {
                             block_params,
                             blob_params,
                             parent_batch_meta_hash,
-                            batch_anchor_id,
+                            anchor_id,
                             last_timestamp,
                             preconfer_address,
                         );
