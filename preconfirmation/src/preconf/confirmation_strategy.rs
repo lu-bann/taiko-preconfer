@@ -11,7 +11,7 @@ use alloy_signer_local::LocalSigner;
 use alloy_sol_types::SolType;
 use k256::ecdsa::SigningKey;
 use thiserror::Error;
-use tokio::{join, sync::RwLock};
+use tokio::sync::RwLock;
 use tracing::{debug, error, info};
 
 use crate::{
@@ -84,37 +84,9 @@ impl<Client: ITaikoL1Client> ConfirmationSender<Client> {
 
     pub async fn send(&self, tx: TransactionRequest) -> ConfirmationResult<()> {
         debug!("Create tx");
-        let mut tx = tx
+        let tx = tx
             .with_from(self.signer.address())
             .with_to(self.taiko_inbox);
-        if tx.sidecar.is_some() {
-            info!("Set blob base fee");
-            let blob_base_fee = self.client.get_blob_base_fee().await?;
-            tx = tx.max_fee_per_blob_gas(blob_base_fee);
-        }
-        info!("tx: {:?}", tx);
-        let (nonce, gas_limit, fee_estimate) = join!(
-            self.client.get_nonce(self.signer.address()),
-            self.client.estimate_gas(tx.clone()),
-            self.client.estimate_eip1559_fees(),
-        );
-
-        let fee_estimate = fee_estimate?;
-
-        info!(
-            "sign tx {} {:?} {:?} {:?}",
-            self.taiko_inbox, nonce, gas_limit, fee_estimate
-        );
-        if gas_limit.is_err() {
-            error!("Failed to estimate gas for block confirmation.");
-            error!("{}", gas_limit.unwrap_err());
-            return Ok(());
-        }
-        let tx = tx
-            .with_gas_limit(gas_limit?)
-            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas * 12 / 10)
-            .with_max_priority_fee_per_gas(fee_estimate.max_priority_fee_per_gas * 12 / 10)
-            .nonce(nonce?);
 
         info!("propose batch tx {tx:?}");
         self.client.send(tx).await?;

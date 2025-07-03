@@ -1,6 +1,7 @@
 use std::{str::FromStr, sync::Arc};
 
 use alloy_network::EthereumWallet;
+use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
@@ -113,7 +114,10 @@ async fn get_taiko_l2_client(
     ))
 }
 
-async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client> {
+async fn get_taiko_l1_client(
+    config: &Config,
+    preconfer_address: Address,
+) -> ApplicationResult<TaikoL1Client> {
     let signer = PrivateKeySigner::from_str(&config.private_key.read())?;
     let wallet = EthereumWallet::from(signer);
 
@@ -121,7 +125,12 @@ async fn get_taiko_l1_client(config: &Config) -> ApplicationResult<TaikoL1Client
         .wallet(wallet)
         .connect(&config.l1_client_url)
         .await?;
-    Ok(TaikoL1Client::new(l1_provider, config.propose_timeout))
+    Ok(TaikoL1Client::new(
+        l1_provider,
+        config.propose_timeout,
+        preconfer_address,
+        config.taiko_inbox_address,
+    ))
 }
 
 #[tokio::main]
@@ -144,12 +153,15 @@ async fn main() -> ApplicationResult<()> {
 
     let signer =
         LocalSigner::<SigningKey>::from_signing_key(get_signing_key(&config.private_key.read()));
+    let preconfer_address = signer.address();
+    info!("Preconfer address: {}", preconfer_address);
+
     let taiko_l2_client = get_taiko_l2_client(&config, &taiko_inbox_config.baseFeeConfig).await?;
     let latest_l2_header = taiko_l2_client.get_latest_header().await?;
     let latest_l2_header_number = latest_l2_header.number;
 
     let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
-    let taiko_l1_client = get_taiko_l1_client(&config).await?;
+    let taiko_l1_client = get_taiko_l1_client(&config, preconfer_address).await?;
     let l1_provider = ProviderBuilder::new()
         .connect(&config.l1_client_url)
         .await?;
@@ -175,8 +187,6 @@ async fn main() -> ApplicationResult<()> {
     valid_anchor
         .update_block_number(latest_l1_header.number)
         .await?;
-    let preconfer_address = signer.address();
-    info!("Preconfer address: {}", preconfer_address);
     let block_builder = BlockBuilder::new(
         valid_anchor.clone(),
         taiko_l2_client,
@@ -200,7 +210,9 @@ async fn main() -> ApplicationResult<()> {
     let mut unconfirmed_l2_blocks = vec![];
     for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
         let block = get_block_by_id(config.l2_client_url.clone(), Some(block_id)).await?;
-        unconfirmed_l2_blocks.push(block);
+        if !block.transactions.is_empty() {
+            unconfirmed_l2_blocks.push(block);
+        }
     }
     info!(
         "Picked up {} unconfirmed blocks at startup",
