@@ -6,7 +6,7 @@ use async_stream::stream;
 use futures::{Stream, future::BoxFuture, pin_mut};
 use tokio::sync::RwLock;
 use tokio_stream::StreamExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::{
     taiko::{contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1ClientError},
@@ -28,10 +28,8 @@ async fn update_unconfirmed_blocks(block: Block, unconfirmed_l2_blocks: &Arc<RwL
         .iter_mut()
         .find(|unconfirmed_block| unconfirmed_block.header.number == block.header.number)
     {
-        info!("Replace current block");
         *current = block;
     } else {
-        info!("Add block");
         unconfirmed.push(block);
     }
     unconfirmed.sort_by(|a, b| a.header.number.cmp(&b.header.number));
@@ -99,7 +97,7 @@ where
                     if !block.transactions.is_empty() {
                     let header = block.header.inner.clone();
                     let should_yield = if let Some(last_confirmed_block_id) = *last_confirmed_block_id.read().await {
-                        info!("last confirmed block: {last_confirmed_block_id}");
+                        debug!("last confirmed block: {last_confirmed_block_id}");
                         if block.header.number >= last_confirmed_block_id {
                             if block.header.number > last_confirmed_block_id {
                                 update_unconfirmed_blocks(*block, &unconfirmed_l2_blocks).await;
