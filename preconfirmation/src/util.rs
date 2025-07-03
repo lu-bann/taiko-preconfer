@@ -25,10 +25,10 @@ pub fn u64_to_hex(value: u64) -> String {
     format!("{value:#x}")
 }
 
-pub fn log_error<T, E: ToString>(result: Result<T, E>, msg: &str) -> Option<T> {
+pub fn log_error<T, E: ToString + std::fmt::Debug>(result: Result<T, E>, msg: &str) -> Option<T> {
     match result {
         Err(err) => {
-            error!("{msg}: {}", err.to_string());
+            error!("{msg}: {} [{:?}]", err.to_string(), err);
             None
         }
         Ok(value) => Some(value),
