@@ -71,7 +71,11 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
             .l2_client
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
-        info!("Found {} transactions in the mempool.", txs.len());
+        info!(
+            "{} Found {} transactions in the mempool.",
+            if txs.is_empty() { "∅" } else { "👀" },
+            txs.len()
+        );
         debug!("{:?}", txs);
         if txs.is_empty() && !end_of_sequencing {
             return Ok(());
@@ -86,7 +90,10 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
         )?;
         txs.insert(0, anchor_tx);
 
-        debug!("Publish preconfirmed block with {} transactions", txs.len());
+        info!(
+            "📢 Publish preconfirmed block with {} transactions",
+            txs.len()
+        );
         let header = self
             .l2_client
             .publish_preconfirmed_transactions(

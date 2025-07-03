@@ -24,7 +24,7 @@ use crate::{
     util::{set_active_operator_for_next_period, set_active_operator_if_necessary},
 };
 
-#[instrument(name = "➡️", skip_all)]
+#[instrument(name = "➡️:", skip_all)]
 pub async fn run<L1Client: ITaikoL1Client>(
     stream: impl Stream<Item = Slot>,
     confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
@@ -68,7 +68,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
 
     loop {
         if let Some(slot) = stream.next().await {
-            info!("Received slot: {:?}", slot);
+            info!("📩 Received slot: {:?}", slot);
             if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
                 info!("Waiting for previous preconfer to finish.");
                 continue;
