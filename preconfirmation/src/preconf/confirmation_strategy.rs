@@ -1,11 +1,15 @@
 use std::{num::TryFromIntError, sync::Arc};
 
+use alloy_consensus::Transaction;
 use alloy_rpc_types_eth::Block;
 use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
-use crate::{taiko::taiko_l1_client::ITaikoL1Client, util::ValidTimestamp};
+use crate::{
+    taiko::taiko_l1_client::ITaikoL1Client,
+    util::{ValidTimestamp, get_anchor_block_id_from_bytes},
+};
 
 #[derive(Debug, Error)]
 pub enum ConfirmationError {
@@ -29,6 +33,9 @@ pub enum ConfirmationError {
 
     #[error("Empty block (id={0})")]
     EmptyBlock(u64),
+
+    #[error("Missing anchor tx in block {0}")]
+    MissingAnchor(u64),
 }
 
 pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
@@ -81,11 +88,46 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             })
             .collect();
         info!("after removing too new blocks: {}", blocks.len());
-        if blocks.is_empty() || (blocks.len() < self.max_blocks && !force_send) {
+        if blocks.is_empty() {
+            return Ok(());
+        }
+        let first_anchor_tx = blocks
+            .first()
+            .expect("Must be present")
+            .transactions
+            .txns()
+            .next();
+        if first_anchor_tx.is_none() {
+            error!("{:?}", blocks.first().expect("Must be present"));
+            return Err(ConfirmationError::MissingAnchor(
+                blocks.first().expect("Must be present").header.number,
+            ));
+        }
+        let batch_anchor_id: u64 =
+            get_anchor_block_id_from_bytes(first_anchor_tx.expect("Must be present").input())?;
+        let mut batch_blocks = vec![];
+        for block in blocks.iter() {
+            let block_anchor_id: u64 = get_anchor_block_id_from_bytes(
+                block
+                    .transactions
+                    .txns()
+                    .next()
+                    .expect("Must be present")
+                    .input(),
+            )?;
+            if block_anchor_id == batch_anchor_id {
+                batch_blocks.push(block.clone());
+            } else {
+                break;
+            }
+        }
+        // force sending it more than one anchor id is used
+        let force_send = force_send || batch_blocks.len() != blocks.len();
+        if batch_blocks.is_empty() || (batch_blocks.len() < self.max_blocks && !force_send) {
             return Ok(());
         }
 
-        self.client.send(blocks).await?;
+        self.client.send(batch_blocks, batch_anchor_id).await?;
         Ok(())
     }
 }
