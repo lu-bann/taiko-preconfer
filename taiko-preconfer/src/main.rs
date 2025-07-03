@@ -137,6 +137,8 @@ async fn get_taiko_l1_client(
         config.taiko_preconf_router_address,
         taiko_inbox,
         config.use_blobs,
+        config.relative_fee_premium,
+        config.relative_blob_fee_premium,
     ))
 }
 

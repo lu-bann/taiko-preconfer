@@ -119,9 +119,12 @@ pub struct TaikoL1Client {
     preconf_router_address: Address,
     taiko_inbox: TaikoInboxInstance,
     use_blobs: bool,
+    relative_fee_premium: f32,
+    relative_blob_fee_premium: f32,
 }
 
 impl TaikoL1Client {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         provider: TaikoProvider,
         propose_timeout: Duration,
@@ -129,6 +132,8 @@ impl TaikoL1Client {
         preconf_router_address: Address,
         taiko_inbox: TaikoInboxInstance,
         use_blobs: bool,
+        relative_fee_premium: f32,
+        relative_blob_fee_premium: f32,
     ) -> Self {
         Self {
             provider,
@@ -138,6 +143,8 @@ impl TaikoL1Client {
             preconf_router_address,
             taiko_inbox,
             use_blobs,
+            relative_fee_premium,
+            relative_blob_fee_premium,
         }
     }
 }
@@ -198,6 +205,8 @@ impl ITaikoL1Client for TaikoL1Client {
         let router_address = self.preconf_router_address;
         let taiko_inbox = self.taiko_inbox.clone();
         let use_blobs = self.use_blobs;
+        let rel_fee_premium = self.relative_fee_premium;
+        let rel_blob_fee_premium = self.relative_blob_fee_premium;
 
         *self.tx_handle.write().await = Some(
             std::thread::Builder::new()
@@ -263,7 +272,9 @@ impl ITaikoL1Client for TaikoL1Client {
                                 provider.get_blob_base_fee().await,
                                 "Failed to get blob base fee",
                             ) {
-                                tx = tx.max_fee_per_blob_gas(blob_base_fee);
+                                tx = tx.max_fee_per_blob_gas(
+                                    (blob_base_fee as f32 * (1.0 + rel_blob_fee_premium)) as u128,
+                                );
                             }
                         }
                         info!("tx: {:?}", tx);
@@ -290,13 +301,17 @@ impl ITaikoL1Client for TaikoL1Client {
                         }
                         let gas_limit = gas_limit.expect("Must be present");
                         let fee_estimate = fee_estimate.expect("Must be present");
+                        let max_fee_per_gas = ((1.0 + rel_fee_premium)
+                            * fee_estimate.max_fee_per_gas as f32)
+                            .round() as u128;
+                        let max_priority_fee_per_gas = ((1.0 + rel_fee_premium)
+                            * fee_estimate.max_priority_fee_per_gas as f32)
+                            .round() as u128;
                         let nonce = nonce.expect("Must be present");
                         let tx = tx
                             .with_gas_limit(gas_limit)
-                            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas * 12 / 10)
-                            .with_max_priority_fee_per_gas(
-                                fee_estimate.max_priority_fee_per_gas * 12 / 10,
-                            )
+                            .with_max_fee_per_gas(max_fee_per_gas)
+                            .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
                             .nonce(nonce);
 
                         info!("propose batch tx {tx:?}");
