@@ -1,4 +1,7 @@
-use std::{str::FromStr, sync::Arc};
+use std::{
+    str::FromStr,
+    sync::{Arc, atomic::AtomicBool},
+};
 
 use alloy_eips::eip4844::env_settings::EnvKzgSettings;
 use alloy_network::EthereumWallet;
@@ -261,6 +264,7 @@ async fn main() -> ApplicationResult<()> {
     )
     .await?;
 
+    let waiting_for_previous_preconfer = Arc::new(AtomicBool::new(false));
     let subslot_stream = create_subslot_stream(&config)?;
     let slot_stream = create_slot_stream(&config)?;
     let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
@@ -279,6 +283,9 @@ async fn main() -> ApplicationResult<()> {
             taiko_sequencing_monitor,
             config.handover_start_buffer,
             subslots_per_slot,
+            waiting_for_previous_preconfer.clone(),
+            config.poll_period,
+            config.status_sync_max_delay,
         ),
         confirmation_loop::run(
             slot_stream,
@@ -287,6 +294,7 @@ async fn main() -> ApplicationResult<()> {
             whitelist,
             preconfer_address,
             valid_anchor.clone(),
+            waiting_for_previous_preconfer.clone(),
         )
     );
 

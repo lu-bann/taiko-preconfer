@@ -1,3 +1,8 @@
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+
 use alloy_primitives::Address;
 use futures::{Stream, StreamExt, pin_mut};
 use preconfirmation::{
@@ -27,6 +32,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
     whitelist: TaikoWhitelistInstance,
     preconfer_address: Address,
     valid_anchor: ValidAnchor,
+    waiting_for_previous_preconfer: Arc<AtomicBool>,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
@@ -63,6 +69,11 @@ pub async fn run<L1Client: ITaikoL1Client>(
     loop {
         if let Some(slot) = stream.next().await {
             info!("Received slot: {:?}", slot);
+            if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
+                info!("Waiting for previous preconfer to finish.");
+                continue;
+            }
+
             let total_slot = slot.epoch * 32 + slot.slot;
             let l1_slot_timestamp = slot_model.get_timestamp(total_slot);
             info!(

@@ -1,24 +1,24 @@
 use std::{sync::Arc, time::Duration};
 
 use alloy_consensus::Header;
-use alloy_primitives::B256;
-use serde::{Deserialize, Serialize};
+use alloy_primitives::FixedBytes;
+use serde::Deserialize;
 use tokio::sync::RwLock;
 use tracing::debug;
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SequencingStatus {
     #[serde(rename = "highestUnsafeL2PayloadBlockID")]
     pub highest_unsafe_l2_payload_block_id: u64,
-    pub end_of_sequencing_block_hash: B256,
+    pub end_of_sequencing_block_hash: FixedBytes<32>,
 }
 
-#[cfg_attr(test, mockall::automock)]
 pub trait IStatusMonitor {
     fn status(&self) -> impl Future<Output = Result<SequencingStatus, reqwest::Error>>;
 }
 
+#[derive(Debug, Clone)]
 pub struct TaikoStatusMonitor {
     url: String,
 }
@@ -35,13 +35,14 @@ impl IStatusMonitor for TaikoStatusMonitor {
     }
 }
 
-pub struct TaikoSequencingMonitor<StatusMonitor: IStatusMonitor> {
+#[derive(Debug, Clone)]
+pub struct TaikoSequencingMonitor<StatusMonitor: IStatusMonitor + Clone> {
     last_header: Arc<RwLock<Header>>,
     poll_period: Duration,
     monitor: StatusMonitor,
 }
 
-impl<StatusMonitor: IStatusMonitor> TaikoSequencingMonitor<StatusMonitor> {
+impl<StatusMonitor: IStatusMonitor + Clone> TaikoSequencingMonitor<StatusMonitor> {
     pub const fn new(
         last_header: Arc<RwLock<Header>>,
         poll_period: Duration,
@@ -121,6 +122,16 @@ mod tests {
         assert!(!is_end_of_sequencing_status_unsafe(&status, &header));
     }
 
+    mockall::mock! {
+        StatusMonitor {}
+        impl IStatusMonitor for StatusMonitor {
+            fn status(&self) -> impl Future<Output = Result<SequencingStatus, reqwest::Error>>;
+        }
+        impl Clone for StatusMonitor {
+            fn clone(&self) -> Self;
+        }
+    }
+
     #[tokio::test]
     async fn when_header_and_status_match_then_sequencing_monitor_does_return() {
         let block_number = 3;
@@ -131,7 +142,7 @@ mod tests {
             end_of_sequencing_block_hash: header.hash_slow(),
         };
         let header = Arc::new(RwLock::new(header));
-        let mut status_monitor = MockIStatusMonitor::new();
+        let mut status_monitor = MockStatusMonitor::new();
         status_monitor
             .expect_status()
             .return_once(|| Box::pin(async { Ok(status) }));

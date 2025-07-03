@@ -1,4 +1,10 @@
-use std::time::Duration;
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    time::Duration,
+};
 
 use alloy_primitives::Address;
 use futures::{Stream, StreamExt, pin_mut};
@@ -12,7 +18,7 @@ use preconfirmation::{
     slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
     taiko::{contracts::TaikoWhitelistInstance, taiko_l2_client::ITaikoL2Client},
     time_provider::ITimeProvider,
-    util::{log_error, now_as_secs},
+    util::{log_error, now_as_millis, now_as_secs},
 };
 use tracing::{debug, info, instrument};
 
@@ -22,6 +28,7 @@ use crate::{
 };
 
 #[instrument(name = "📋", skip_all)]
+#[allow(clippy::too_many_arguments)]
 pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     stream: impl Stream<Item = SubSlot>,
     builder: BlockBuilder<L2Client, TimeProvider>,
@@ -30,6 +37,9 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     handover_timeout: Duration,
     subslots_per_slot: u64,
+    waiting_for_previous_preconfer: Arc<AtomicBool>,
+    polling_period: Duration,
+    status_sync_max_delay: Duration,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
@@ -68,6 +78,10 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     loop {
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
+            if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
+                info!("Waiting for previous preconfer to finish.");
+                continue;
+            }
             let slot_timestamp =
                 HOLESKY_GENESIS_TIMESTAMP + subslot.slot.epoch * 32 * 12 + subslot.sub_slot * 6;
             info!(
@@ -92,14 +106,33 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                 || (current_epoch_preconfer == preconfer_address
                     && next_epoch_preconfer == preconfer_address)
             {
-                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot)
-                    && log_error(
-                        tokio::time::timeout(handover_timeout, sequencing_monitor.ready()).await,
-                        "State out of sync after handover period",
-                    )
-                    .is_some()
-                {
-                    info!("Last preconfer is done and l2 header is in sync");
+                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot) {
+                    let handover_timeout = handover_timeout;
+                    let sequencing_monitor = sequencing_monitor.clone();
+                    waiting_for_previous_preconfer.store(true, Ordering::Relaxed);
+                    let waiting_for_previous_preconfer_spawn =
+                        waiting_for_previous_preconfer.clone();
+                    tokio::spawn(async move {
+                        if log_error(
+                            tokio::time::timeout(handover_timeout, sequencing_monitor.ready())
+                                .await,
+                            "Out of sync after handover period",
+                        )
+                        .is_some()
+                        {
+                            info!("In sync after handover period");
+                        }
+                        waiting_for_previous_preconfer_spawn.store(false, Ordering::Relaxed);
+                    });
+                    let slot_timestamp_ms = slot_timestamp as u128 * 1000;
+                    let mut skip_slot = true;
+                    while now_as_millis() - slot_timestamp_ms < status_sync_max_delay.as_millis() {
+                        skip_slot = waiting_for_previous_preconfer.load(Ordering::Relaxed);
+                        tokio::time::sleep(polling_period).await;
+                    }
+                    if skip_slot {
+                        continue;
+                    }
                 }
 
                 let end_of_sequencing = is_last_slot_before_handover_window
