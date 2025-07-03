@@ -1,6 +1,6 @@
 use std::sync::{
     Arc,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
 use alloy_primitives::Address;
@@ -25,6 +25,7 @@ use crate::{
 };
 
 #[instrument(name = "➡️:", skip_all)]
+#[allow(clippy::too_many_arguments)]
 pub async fn run<L1Client: ITaikoL1Client>(
     stream: impl Stream<Item = Slot>,
     confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
@@ -33,6 +34,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
     preconfer_address: Address,
     valid_anchor: ValidAnchor,
     waiting_for_previous_preconfer: Arc<AtomicBool>,
+    shared_latest_l1_timestamp: Arc<AtomicU64>,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
@@ -101,7 +103,12 @@ pub async fn run<L1Client: ITaikoL1Client>(
                 let current_anchor_id = valid_anchor.id_and_state_root().await.0;
                 log_error(
                     confirmation_strategy
-                        .send(l1_slot_timestamp, force_send, current_anchor_id)
+                        .send(
+                            shared_latest_l1_timestamp.load(Ordering::Relaxed)
+                                + slot_model.slot_duration.as_secs(),
+                            force_send,
+                            current_anchor_id,
+                        )
                         .await,
                     "Failed to send blocks",
                 );

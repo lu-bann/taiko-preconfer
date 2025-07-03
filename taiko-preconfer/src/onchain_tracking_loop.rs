@@ -1,4 +1,10 @@
-use std::{sync::Arc, time::Duration};
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::Duration,
+};
 
 use alloy_consensus::Header;
 use alloy_primitives::Address;
@@ -24,14 +30,24 @@ use tracing::{debug, info, instrument};
 
 use crate::error::ApplicationResult;
 
-async fn stream_l1_headers<'a, E, T: Fn(Header, ValidAnchor) -> BoxFuture<'a, Result<(), E>>>(
+async fn stream_l1_headers<
+    'a,
+    E,
+    T: Fn(Header, ValidAnchor, Arc<AtomicU64>) -> BoxFuture<'a, Result<(), E>>,
+>(
     stream: impl Stream<Item = Header>,
     f: T,
     valid_anchor: ValidAnchor,
+    shared_last_l1_timestamp: Arc<AtomicU64>,
 ) -> Result<(), E> {
     pin_mut!(stream);
     while let Some(header) = stream.next().await {
-        f(header, valid_anchor.clone()).await?;
+        f(
+            header,
+            valid_anchor.clone(),
+            shared_last_l1_timestamp.clone(),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -47,7 +63,11 @@ async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> Applic
     Ok(())
 }
 
-async fn store_valid_anchor(header: Header, valid_anchor: ValidAnchor) -> ApplicationResult<()> {
+async fn process_header(
+    header: Header,
+    valid_anchor: ValidAnchor,
+    shared_last_l1_timestamp: Arc<AtomicU64>,
+) -> ApplicationResult<()> {
     info!(
         "🗣 L1 #{} timestamp={} now={}",
         header.number,
@@ -55,15 +75,21 @@ async fn store_valid_anchor(header: Header, valid_anchor: ValidAnchor) -> Applic
         now_as_secs(),
     );
     let mut valid_anchor = valid_anchor;
+    shared_last_l1_timestamp.store(header.timestamp, Ordering::Relaxed);
     valid_anchor.update_block_number(header.number).await?;
     Ok(())
 }
 
-fn store_valid_anchor_boxed<'a>(
+fn process_header_boxed<'a>(
     header: Header,
     valid_anchor_id: ValidAnchor,
+    shared_last_l1_timestamp: Arc<AtomicU64>,
 ) -> BoxFuture<'a, ApplicationResult<()>> {
-    Box::pin(store_valid_anchor(header, valid_anchor_id))
+    Box::pin(process_header(
+        header,
+        valid_anchor_id,
+        shared_last_l1_timestamp,
+    ))
 }
 
 fn store_header_boxed_l2<'a>(
@@ -168,9 +194,15 @@ pub async fn run<
     l2_header_stream: L2Stream,
     shared_last_l2_header: Arc<RwLock<Header>>,
     valid_anchor: ValidAnchor,
+    shared_last_l1_timestamp: Arc<AtomicU64>,
 ) -> ApplicationResult<()> {
     let (l1_result, l2_result) = join!(
-        stream_l1_headers(l1_header_stream, store_valid_anchor_boxed, valid_anchor,),
+        stream_l1_headers(
+            l1_header_stream,
+            process_header_boxed,
+            valid_anchor,
+            shared_last_l1_timestamp
+        ),
         stream_l2_headers(
             l2_header_stream,
             store_header_boxed_l2,
