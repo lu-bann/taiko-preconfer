@@ -20,7 +20,7 @@ use preconfirmation::{
     verification::LastBatchVerifier,
 };
 use tokio::{join, sync::RwLock};
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
 use crate::error::ApplicationResult;
 
@@ -38,12 +38,10 @@ async fn stream_l1_headers<'a, E, T: Fn(Header, ValidAnchor) -> BoxFuture<'a, Re
 
 async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
     info!(
-        "L2 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
+        "L2 🗣 #{} timestamp={} now={}",
         header.number,
         header.timestamp,
         now_as_secs(),
-        header.state_root,
-        header.gas_used
     );
     *current.write().await = header;
     Ok(())
@@ -51,12 +49,10 @@ async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> Applic
 
 async fn store_valid_anchor(header: Header, valid_anchor: ValidAnchor) -> ApplicationResult<()> {
     info!(
-        "L1 🗣 #{:<10} timestamp={} now={} state_root={:?} gas_used={}",
+        "L1 🗣 #{} timestamp={} now={}",
         header.number,
         header.timestamp,
         now_as_secs(),
-        header.state_root,
-        header.gas_used
     );
     let mut valid_anchor = valid_anchor;
     valid_anchor.update_block_number(header.number).await?;
@@ -110,7 +106,7 @@ pub async fn create_l2_head_stream(
         .filter_map(move |result| async move {
             match result {
                 Ok((batch_proposed, _log)) => {
-                    info!("batch proposed: {:?}", batch_proposed);
+                    debug!("batch proposed: {:?}", batch_proposed);
                     Some(batch_proposed.info.lastBlockId)
                 }
                 Err(_) => None,

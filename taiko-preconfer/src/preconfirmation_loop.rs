@@ -14,7 +14,7 @@ use preconfirmation::{
     time_provider::ITimeProvider,
     util::{log_error, now_as_secs},
 };
-use tracing::{debug, info, instrument, trace};
+use tracing::{debug, info, instrument};
 
 use crate::{
     error::ApplicationResult,
@@ -43,7 +43,6 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         whitelist.getOperatorForCurrentEpoch().call().await,
         "Failed to read current preconfer",
     ) {
-        info!("Whitelist current preconfer: {current_preconfer}");
         set_active_operator_if_necessary(
             &current_preconfer,
             &preconfer_address,
@@ -65,6 +64,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         next_epoch_preconfer = next_preconfer;
     }
 
+    info!("Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}");
     loop {
         if let Some(subslot) = stream.next().await {
             info!("Received subslot: {:?}", subslot);
@@ -82,7 +82,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                 next_epoch_preconfer = Address::ZERO;
             }
 
-            info!(
+            debug!(
                 "Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}"
             );
 
@@ -92,22 +92,18 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                 || (current_epoch_preconfer == preconfer_address
                     && next_epoch_preconfer == preconfer_address)
             {
-                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot) {
-                    trace!("First slot in window: {:?}", subslot.slot);
-                    if log_error(
+                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot)
+                    && log_error(
                         tokio::time::timeout(handover_timeout, sequencing_monitor.ready()).await,
                         "State out of sync after handover period",
                     )
                     .is_some()
-                    {
-                        debug!("Last preconfer is done and l2 header is in sync");
-                    }
+                {
+                    info!("Last preconfer is done and l2 header is in sync");
                 }
 
                 let end_of_sequencing = is_last_slot_before_handover_window
                     && subslot.sub_slot % subslots_per_slot == subslots_per_slot - 1;
-                info!("End of sequencing: {end_of_sequencing}");
-                info!("{:?}", preconfirmation_slot_model);
                 log_error(
                     tokio::time::timeout(
                         Duration::from_millis(1500),

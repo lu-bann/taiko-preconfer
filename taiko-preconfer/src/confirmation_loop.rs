@@ -39,7 +39,6 @@ pub async fn run<L1Client: ITaikoL1Client>(
         whitelist.getOperatorForCurrentEpoch().call().await,
         "Failed to read current preconfer",
     ) {
-        info!("Whitelist current preconfer: {current_preconfer}");
         set_active_operator_if_necessary(
             &current_preconfer,
             &preconfer_address,
@@ -65,16 +64,6 @@ pub async fn run<L1Client: ITaikoL1Client>(
         if let Some(slot) = stream.next().await {
             info!("Received slot: {:?}", slot);
             let total_slot = slot.epoch * 32 + slot.slot;
-            info!("Total slot: {}", total_slot);
-            let can_confirm = preconfirmation_slot_model.can_confirm(&slot);
-            let can_preconfirm = preconfirmation_slot_model.can_preconfirm(&slot);
-            let within_handover_period =
-                preconfirmation_slot_model.within_handover_period(slot.slot);
-            let last_slot_before_handover_window =
-                preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot);
-            info!("Can confirm: {}", can_confirm);
-            info!("Can preconfirm: {}", can_preconfirm);
-            info!("within handover period: {}", within_handover_period);
             let l1_slot_timestamp = slot_model.get_timestamp(total_slot);
             info!(
                 "L1 slot timestamp: {} {}",
@@ -86,11 +75,11 @@ pub async fn run<L1Client: ITaikoL1Client>(
                 "Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}"
             );
 
-            if can_confirm
+            if preconfirmation_slot_model.can_confirm(&slot)
                 || (current_epoch_preconfer == preconfer_address
                     && next_epoch_preconfer == preconfer_address)
             {
-                let mut force_send = within_handover_period;
+                let mut force_send = preconfirmation_slot_model.within_handover_period(slot.slot);
                 if !force_send && slot.slot > 16 {
                     let handover_start_slot = Slot::new(slot.epoch, 28);
                     let total_slot = slot_model.get_slot_number(handover_start_slot);
@@ -107,7 +96,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
                 );
             }
 
-            if last_slot_before_handover_window {
+            if preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot) {
                 if let Some(next_preconfer) = log_error(
                     whitelist.getOperatorForNextEpoch().call().await,
                     "Failed to read preconfer for next epoch",
