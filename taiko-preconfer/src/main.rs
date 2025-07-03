@@ -1,6 +1,9 @@
 use std::{
     str::FromStr,
-    sync::{Arc, atomic::AtomicBool},
+    sync::{
+        Arc,
+        atomic::{AtomicBool, AtomicU64},
+    },
 };
 
 use alloy_eips::eip4844::env_settings::EnvKzgSettings;
@@ -195,6 +198,8 @@ async fn main() -> ApplicationResult<()> {
 
     let shared_last_l2_header = Arc::new(RwLock::new(latest_l2_header));
     let taiko_l1_client = get_taiko_l1_client(&config, preconfer_address).await?;
+    let latest_l1_header = taiko_l1_client.get_latest_header().await?;
+    let shared_latest_l1_timestamp = Arc::new(AtomicU64::new(latest_l1_header.timestamp));
     let whitelist = get_whitelist(&config).await?;
 
     let preconfirmation_url = config.l2_preconfirmation_url.clone() + "/status";
@@ -283,6 +288,7 @@ async fn main() -> ApplicationResult<()> {
             l2_header_stream,
             shared_last_l2_header,
             valid_anchor.clone(),
+            shared_latest_l1_timestamp.clone(),
         ),
         preconfirmation_loop::run(
             subslot_stream,
@@ -302,8 +308,9 @@ async fn main() -> ApplicationResult<()> {
             preconfirmation_slot_model,
             whitelist,
             preconfer_address,
-            valid_anchor.clone(),
-            waiting_for_previous_preconfer.clone(),
+            valid_anchor,
+            waiting_for_previous_preconfer,
+            shared_latest_l1_timestamp,
         )
     );
 

@@ -93,7 +93,7 @@ where
         while let Some(stream_data) = merged_stream.next().await {
             match stream_data {
                 StreamData::Unconfirmed(block) => {
-                    info!("Received l2 block: {} #txs: {}", block.header.number, block.transactions.len());
+                    info!("⬅️ Received l2 block: {} #txs: {}", block.header.number, block.transactions.len());
                     if !block.transactions.is_empty() {
                     let header = block.header.inner.clone();
                     let should_yield = if let Some(last_confirmed_block_id) = *last_confirmed_block_id.read().await {
@@ -141,7 +141,7 @@ where
                     }
                 },
                 StreamData::Confirmed(confirmed_block_id) => {
-                    info!("Received confirmation: {}, last: {:?}", confirmed_block_id, last_confirmed_block_id.read().await);
+                    info!("☑️ Received confirmation: {}, last: {:?}", confirmed_block_id, last_confirmed_block_id.read().await);
                     if confirmed_block_id > last_confirmed_block_id.read().await.unwrap_or_default() {
                         let confirmation_successful = verifier.verify(unconfirmed_l2_blocks.read().await.clone()).await?;
                         let header = if confirmation_successful {
