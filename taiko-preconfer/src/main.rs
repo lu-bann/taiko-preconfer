@@ -31,7 +31,7 @@ use preconfirmation::{
     verification::get_latest_confirmed_batch,
 };
 use tokio::{join, sync::RwLock};
-use tracing::info;
+use tracing::{debug, info};
 
 use taiko_preconfer::{
     confirmation_loop,
@@ -54,8 +54,8 @@ fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item 
     let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
     let slot_number = taiko_slot_model.get_slot_number(taiko_slot) + 1;
     let l2_slot_in_epoch = slot_number % (config.l1_slots_per_epoch * subslots_per_slot);
-    info!(
-        "L2 slot on startup: {}, {} {} {:?}",
+    debug!(
+        "L2 slot on startup: slot={}, epoch={} l2_slot_in_epoch={} next_slot_start={:?}",
         slot_number,
         slot_number / subslots_per_slot,
         l2_slot_in_epoch,
@@ -81,7 +81,10 @@ fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = S
     let timestamp = time_provider.timestamp_in_s();
     let taiko_slot = taiko_slot_model.get_slot(timestamp);
     let slot_number = taiko_slot_model.get_slot_number(taiko_slot) + 1;
-    info!("L1 slot on startup: {} {:?}", slot_number, start);
+    debug!(
+        "L1 slot on startup: slot={} next_slot_start{:?}",
+        slot_number, start
+    );
 
     Ok(get_slot_stream(
         start,
@@ -145,6 +148,7 @@ async fn get_taiko_l1_client(
 #[tokio::main]
 #[allow(clippy::result_large_err)]
 async fn main() -> ApplicationResult<()> {
+    info!("Starting preconfer");
     dotenv::dotenv()?;
     let config = Config::try_from_env()?;
 
