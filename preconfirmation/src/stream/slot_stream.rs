@@ -44,7 +44,7 @@ pub fn get_next_slot_start<Provider: ITimeProvider>(
     slot_time: &Duration,
     provider: &Provider,
 ) -> Result<Instant, TryFromIntError> {
-    let duration_now = Duration::from_secs(provider.timestamp_in_s());
+    let duration_now = Duration::from_millis(provider.timestamp_in_ms());
     let in_current_slot_ms: Duration =
         Duration::from_millis((duration_now.as_millis() % slot_time.as_millis()).try_into()?);
     let remaining = if in_current_slot_ms.is_zero() {
@@ -210,10 +210,10 @@ mod tests {
         let slot_time = Duration::from_secs(10);
         let now = Instant::now();
 
-        let timestamp: u64 = 13;
+        let timestamp: u64 = 13000;
         let mut time_provider = MockITimeProvider::new();
         time_provider
-            .expect_timestamp_in_s()
+            .expect_timestamp_in_ms()
             .return_const(timestamp);
 
         let next_slot_start = get_next_slot_start(&slot_time, &time_provider).unwrap();
@@ -225,10 +225,10 @@ mod tests {
         let slot_time = Duration::from_secs(10);
         let now = Instant::now();
 
-        let timestamp: u64 = 20;
+        let timestamp: u64 = 20000;
         let mut time_provider = MockITimeProvider::new();
         time_provider
-            .expect_timestamp_in_s()
+            .expect_timestamp_in_ms()
             .return_const(timestamp);
 
         let next_slot_start = get_next_slot_start(&slot_time, &time_provider).unwrap();
