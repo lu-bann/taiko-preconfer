@@ -211,33 +211,22 @@ impl ITaikoL1Client for TaikoL1Client {
                     let rt = tokio::runtime::Runtime::new()
                         .expect("Failed to get tokio runtime for sending confirmation.");
                     rt.block_on(async move {
-                        let settings = EnvKzgSettings::Default.get();
-
                         let mut txs = Vec::new();
                         let mut block_params = Vec::new();
 
                         let last_timestamp = read_blocks(blocks, &mut block_params, &mut txs);
 
-                        let parent_batch_meta_hash = get_latest_confirmed_batch(&taiko_inbox)
-                            .await
-                            .map(|batch| batch.metaHash)
-                            .unwrap_or_default();
                         let tx_bytes =
                             Bytes::from(compress(txs.clone()).expect("Failed to compress txs"));
                         debug!("tx_list: {tx_bytes:?}");
                         let tx_bytes_len = tx_bytes.len();
-                        let (tx_list, sidecar) = if use_blobs {
-                            (
-                                Bytes::default(),
-                                Some(
-                                    tx_bytes_to_sidecar(tx_bytes, settings)
-                                        .expect("Failed to get sidecar from bytes"),
-                                ),
-                            )
-                        } else {
-                            (tx_bytes, None)
-                        };
+
+                        let (tx_list, sidecar) = get_tx_bytes_and_sidecar(tx_bytes, use_blobs);
                         let blob_params = get_blob_params(&sidecar, tx_bytes_len);
+                        let parent_batch_meta_hash = get_latest_confirmed_batch(&taiko_inbox)
+                            .await
+                            .map(|batch| batch.metaHash)
+                            .unwrap_or_default();
 
                         let propose_batch_params = create_propose_batch_params(
                             preconfer_address,
@@ -278,18 +267,14 @@ impl ITaikoL1Client for TaikoL1Client {
                             gas_limit.map_err(TaikoL1ClientError::from),
                             "Failed to estimate gas",
                         );
-                        if gas_limit.is_none() {
-                            return;
-                        }
 
                         let fee_estimate = log_error(
                             fee_estimate.map_err(TaikoL1ClientError::from),
                             "Failed to estimate fee",
                         );
-                        if fee_estimate.is_none() {
+                        if fee_estimate.is_none() || gas_limit.is_none() {
                             return;
                         }
-                        let gas_limit = gas_limit.expect("Must be present");
                         let fee_estimate = fee_estimate.expect("Must be present");
                         let max_fee_per_gas = ((1.0 + rel_fee_premium)
                             * fee_estimate.max_fee_per_gas as f32)
@@ -299,7 +284,7 @@ impl ITaikoL1Client for TaikoL1Client {
                             .round() as u128;
                         let nonce = nonce.expect("Must be present");
                         let tx = tx
-                            .with_gas_limit(gas_limit)
+                            .with_gas_limit(gas_limit.expect("Must be present"))
                             .with_max_fee_per_gas(max_fee_per_gas)
                             .with_max_priority_fee_per_gas(max_priority_fee_per_gas)
                             .nonce(nonce);
@@ -413,4 +398,21 @@ pub fn create_propose_batch_params(
     Bytes::from(ProposeBatchParams::abi_encode_sequence(
         &propose_batch_wrapper,
     ))
+}
+
+fn get_tx_bytes_and_sidecar(
+    tx_bytes: Bytes,
+    use_blobs: bool,
+) -> (Bytes, Option<BlobTransactionSidecar>) {
+    if use_blobs {
+        (
+            Bytes::default(),
+            Some(
+                tx_bytes_to_sidecar(tx_bytes, EnvKzgSettings::Default.get())
+                    .expect("Failed to get sidecar from bytes"),
+            ),
+        )
+    } else {
+        (tx_bytes, None)
+    }
 }
