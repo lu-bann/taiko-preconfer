@@ -4,7 +4,7 @@ use alloy_consensus::Transaction;
 use alloy_rpc_types_eth::Block;
 use thiserror::Error;
 use tokio::sync::RwLock;
-use tracing::{error, info};
+use tracing::debug;
 
 use crate::{
     taiko::taiko_l1_client::ITaikoL1Client,
@@ -69,16 +69,15 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         force_send: bool,
         current_anchor_id: u64,
     ) -> ConfirmationResult<()> {
-        info!("send force={force_send}");
-        info!("blocks: {}", self.blocks.read().await.len());
+        debug!(
+            "send force={}, #blocks={}",
+            force_send,
+            self.blocks.read().await.len()
+        );
         self.blocks.write().await.retain(|block| {
             self.valid_timestamp
                 .check(l1_slot_timestamp, block.header.timestamp, 0, 0)
         });
-        info!(
-            "after removing outdated blocks: {}",
-            self.blocks.read().await.len()
-        );
         let blocks: Vec<Block> = self
             .blocks
             .read()
@@ -92,7 +91,6 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
                 }
             })
             .collect();
-        info!("after removing too new blocks: {}", blocks.len());
         if blocks.is_empty() {
             return Ok(());
         }
@@ -103,7 +101,6 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             .txns()
             .next();
         if first_anchor_tx.is_none() {
-            error!("{:?}", blocks.first().expect("Must be present"));
             return Err(ConfirmationError::MissingAnchor(
                 blocks.first().expect("Must be present").header.number,
             ));
@@ -117,7 +114,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
                     .transactions
                     .txns()
                     .next()
-                    .expect("Must be present")
+                    .ok_or(ConfirmationError::MissingAnchor(block.header.number))?
                     .input(),
             )?;
             if block_anchor_id == batch_anchor_id {
