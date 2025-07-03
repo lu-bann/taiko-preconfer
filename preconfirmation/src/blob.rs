@@ -3,9 +3,6 @@ use alloy_primitives::Bytes;
 
 use c_kzg::{BYTES_PER_BLOB, Blob, Error as KzgError, KzgSettings};
 use thiserror::Error;
-use tracing::info;
-
-use crate::util::now_as_millis;
 
 const DATA_LENGTH_SIZE: usize = 4;
 const FIELD_ELEMENTS_PER_ITERATION: usize = 4;
@@ -67,7 +64,6 @@ pub fn create_blob(data: &[u8]) -> Result<Blob, BlobEncodeError> {
     write(&mut blob_bytes, &mut write_offset, d, &buf31)?;
 
     let iterations = std::cmp::min(ITERATIONS, data.len() / 32 + 1);
-    tracing::info!("iter");
 
     let result: Result<Vec<()>, BlobEncodeError> = (1..iterations)
         .map(|_| {
@@ -113,7 +109,6 @@ pub fn tx_bytes_to_sidecar(
     kzg_settings: &KzgSettings,
 ) -> Result<BlobTransactionSidecar, BlobEncodeError> {
     let blobs = tx_bytes_to_blobs(tx_bytes)?;
-    tracing::info!("blobs to sidecar");
     blobs_to_sidecar(blobs, kzg_settings)
 }
 
@@ -121,12 +116,9 @@ pub fn blobs_to_sidecar(
     blobs: Vec<c_kzg::Blob>,
     kzg_settings: &KzgSettings,
 ) -> Result<BlobTransactionSidecar, BlobEncodeError> {
-    info!("blobs to sidecar start");
-
     let mut commitments = Vec::with_capacity(blobs.len());
     let mut proofs = Vec::with_capacity(blobs.len());
 
-    let start = now_as_millis();
     for blob in blobs.iter() {
         let commitment = kzg_settings.blob_to_kzg_commitment(blob)?.to_bytes();
         let proof = kzg_settings
@@ -135,8 +127,6 @@ pub fn blobs_to_sidecar(
         commitments.push(commitment);
         proofs.push(proof);
     }
-    let end = now_as_millis();
-    info!("sidecar elapsed {} ms", end - start);
 
     Ok(BlobTransactionSidecar::from_kzg(blobs, commitments, proofs))
 }
