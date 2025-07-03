@@ -1,3 +1,5 @@
+use std::thread::JoinHandle;
+
 use alloy_consensus::Header;
 use alloy_eips::BlockNumberOrTag;
 use alloy_network::EthereumWallet;
@@ -16,7 +18,7 @@ use std::{
     time::{Duration, SystemTime},
 };
 use thiserror::Error;
-use tokio::{sync::RwLock, task::JoinHandle};
+use tokio::sync::RwLock;
 use tracing::info;
 
 use crate::{blob::BlobEncodeError, util::log_error, verification::TaikoInboxError};
@@ -51,6 +53,9 @@ pub enum TaikoL1ClientError {
 
     #[error("{0}")]
     Reqwest(#[from] reqwest::Error),
+
+    #[error("{0}")]
+    IO(#[from] std::io::Error),
 
     #[error("{0}")]
     FromUInt128(#[from] alloy_primitives::ruint::FromUintError<u128>),
@@ -157,26 +162,33 @@ impl ITaikoL1Client for TaikoL1Client {
         }
         let provider = self.provider.clone();
         let timeout = self.propose_timeout;
-        *self.tx_handle.write().await = Some(tokio::spawn(async move {
-            let start = SystemTime::now();
-            if let Some(tx_builder) = log_error(
-                provider.send_transaction(tx).await,
-                "Failed to get transaction builder",
-            ) {
-                if let Some(receipt) = log_error(
-                    tx_builder
-                        .with_required_confirmations(2)
-                        .with_timeout(Some(timeout))
-                        .get_receipt()
-                        .await,
-                    "Failed to send transaction",
-                ) {
-                    let end = SystemTime::now();
-                    let elapsed = end.duration_since(start).unwrap().as_millis();
-                    info!("receipt: {receipt:?}, elapsed={elapsed} ms");
-                }
-            }
-        }));
+        *self.tx_handle.write().await = Some(
+            std::thread::Builder::new()
+                .stack_size(8 * 1024 * 1024)
+                .spawn(move || {
+                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    rt.block_on(async move {
+                        let start = SystemTime::now();
+                        if let Some(tx_builder) = log_error(
+                            provider.send_transaction(tx).await,
+                            "Failed to get transaction builder",
+                        ) {
+                            if let Some(receipt) = log_error(
+                                tx_builder
+                                    .with_required_confirmations(2)
+                                    .with_timeout(Some(timeout))
+                                    .get_receipt()
+                                    .await,
+                                "Failed to send transaction",
+                            ) {
+                                let end = SystemTime::now();
+                                let elapsed = end.duration_since(start).unwrap().as_millis();
+                                info!("receipt: {receipt:?}, elapsed={elapsed} ms");
+                            }
+                        }
+                    });
+                })?,
+        );
         Ok(())
     }
 }
