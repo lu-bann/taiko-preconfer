@@ -37,6 +37,8 @@ pub struct Config {
     pub max_blocks_per_batch: usize,
     pub use_blobs: bool,
     pub propose_timeout: Duration,
+    pub relative_fee_premium: f32,
+    pub relative_blob_fee_premium: f32,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -46,6 +48,9 @@ pub enum ConfigError {
 
     #[error("{0}")]
     ParseInt(#[from] std::num::ParseIntError),
+
+    #[error("{0}")]
+    ParseFloat(#[from] std::num::ParseFloatError),
 
     #[error("{0}")]
     ParseBool(#[from] std::str::ParseBoolError),
@@ -88,6 +93,12 @@ impl Config {
             max_blocks_per_batch: std::env::var("MAX_BLOCKS_PER_BATCH")?.parse()?,
             use_blobs: std::env::var("USE_BLOBS")?.parse()?,
             propose_timeout: Duration::from_secs(std::env::var("PROPOSE_TIMEOUT_S")?.parse()?),
+            relative_fee_premium: std::env::var("RELATIVE_FEE_PREMIUM_IN_PERCENT")?
+                .parse::<u32>()? as f32
+                / 100.0,
+            relative_blob_fee_premium: std::env::var("RELATIVE_BLOB_FEE_PREMIUM_IN_PERCENT")?
+                .parse::<u32>()? as f32
+                / 100.0,
         })
     }
 }
