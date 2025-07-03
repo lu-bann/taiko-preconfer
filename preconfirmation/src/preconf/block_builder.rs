@@ -1,7 +1,7 @@
 use alloy_consensus::Header;
 use std::sync::Arc;
 use tokio::{join, sync::RwLock};
-use tracing::{debug, info, trace};
+use tracing::{debug, info};
 
 use alloy_primitives::Address;
 
@@ -50,7 +50,6 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
         end_of_sequencing: bool,
     ) -> BlockBuilderResult<()> {
         let last_l2_header = self.last_l2_header.read().await.clone();
-        trace!("build_block: last_l2_header={last_l2_header:?}");
 
         info!("Start preconfirming block: #{}", last_l2_header.number + 1,);
         let now = self.time_provider.timestamp_in_s();
@@ -60,7 +59,6 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
         );
 
         let (anchor_block_id, anchor_state_root) = self.valid_anchor_id.id_and_state_root().await;
-        info!("Anchor {anchor_block_id}");
         let (golden_touch_nonce, base_fee) = join!(
             self.l2_client.get_nonce(self.golden_touch_address),
             self.l2_client
@@ -68,16 +66,14 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
         );
 
         let base_fee: u128 = base_fee?;
-        info!("base fee: {base_fee}");
+        debug!("base fee={base_fee}, anchor id={anchor_block_id}");
         let mut txs = self
             .l2_client
             .get_mempool_txs(self.address, base_fee as u64)
             .await?;
-        info!("mempool {:?}", txs);
-        debug!("#txs in mempool: {}", txs.len());
-        trace!("{:?}", txs);
+        info!("Found {} transactions in the mempool.", txs.len());
+        debug!("{:?}", txs);
         if txs.is_empty() && !end_of_sequencing {
-            info!("Empty mempool: skipping block building.");
             return Ok(());
         }
 
@@ -90,8 +86,7 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
         )?;
         txs.insert(0, anchor_tx);
 
-        info!("Publish preconfirmed block with {} transactions", txs.len());
-        info! {"last header {} {}", last_l2_header.number, last_l2_header.hash_slow()};
+        debug!("Publish preconfirmed block with {} transactions", txs.len());
         let header = self
             .l2_client
             .publish_preconfirmed_transactions(
@@ -103,7 +98,7 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
                 end_of_sequencing,
             )
             .await?;
-        trace!("Preconfirmed block header: {header:?}");
+        debug!("Received header: {header:?}");
 
         Ok(())
     }
