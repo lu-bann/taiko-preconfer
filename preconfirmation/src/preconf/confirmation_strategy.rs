@@ -5,10 +5,7 @@ use thiserror::Error;
 use tokio::sync::RwLock;
 use tracing::{error, info};
 
-use crate::{
-    taiko::{anchor::ValidAnchor, taiko_l1_client::ITaikoL1Client},
-    util::ValidTimestamp,
-};
+use crate::{taiko::taiko_l1_client::ITaikoL1Client, util::ValidTimestamp};
 
 #[derive(Debug, Error)]
 pub enum ConfirmationError {
@@ -41,7 +38,6 @@ pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     client: Client,
     blocks: Arc<RwLock<Vec<Block>>>,
     max_blocks: usize,
-    valid_anchor: ValidAnchor,
     valid_timestamp: ValidTimestamp,
 }
 
@@ -50,14 +46,12 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         client: Client,
         blocks: Arc<RwLock<Vec<Block>>>,
         max_blocks: usize,
-        valid_anchor: ValidAnchor,
         valid_timestamp: ValidTimestamp,
     ) -> Self {
         Self {
             client,
             blocks,
             max_blocks,
-            valid_anchor,
             valid_timestamp,
         }
     }
@@ -87,11 +81,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             })
             .collect();
         info!("after removing too new blocks: {}", blocks.len());
-        if blocks.is_empty()
-            || (blocks.len() < self.max_blocks
-                && !force_send
-                && !self.valid_anchor.is_valid_after(2).await)
-        {
+        if blocks.is_empty() || (blocks.len() < self.max_blocks && !force_send) {
             return Ok(());
         }
 

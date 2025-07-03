@@ -234,7 +234,6 @@ async fn main() -> ApplicationResult<()> {
         taiko_l1_client.clone(),
         unconfirmed_l2_blocks.clone(),
         config.max_blocks_per_batch,
-        valid_anchor.clone(),
         valid_timestamp,
     );
 
