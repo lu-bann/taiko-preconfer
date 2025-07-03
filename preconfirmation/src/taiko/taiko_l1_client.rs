@@ -21,7 +21,7 @@ use std::{
 };
 use thiserror::Error;
 use tokio::{join, sync::RwLock};
-use tracing::{debug, info, warn};
+use tracing::{debug, info, info_span, warn};
 
 use crate::{
     blob::{BlobEncodeError, tx_bytes_to_sidecar},
@@ -208,9 +208,17 @@ impl ITaikoL1Client for TaikoL1Client {
             std::thread::Builder::new()
                 .stack_size(8 * 1024 * 1024)
                 .spawn(move || {
+                    let span = info_span!("🗳️:");
+                    let _enter = span.enter();
+
                     let rt = tokio::runtime::Runtime::new()
                         .expect("Failed to get tokio runtime for sending confirmation.");
                     rt.block_on(async move {
+                        info!(
+                            "🟡 Confirming {} blocks for anchor {}.",
+                            blocks.len(),
+                            anchor_id
+                        );
                         let mut txs = Vec::new();
                         let mut block_params = Vec::new();
 
@@ -308,7 +316,8 @@ impl ITaikoL1Client for TaikoL1Client {
                                     .duration_since(start)
                                     .expect("time went backwards during tx")
                                     .as_millis();
-                                info!("receipt: {receipt:?}, elapsed={elapsed} ms");
+                                info!("🟢 received receipt after {} ms", elapsed);
+                                debug!("receipt: {receipt:?}");
                             }
                         }
                     });

@@ -145,11 +145,11 @@ where
                     if confirmed_block_id > last_confirmed_block_id.read().await.unwrap_or_default() {
                         let confirmation_successful = verifier.verify(unconfirmed_l2_blocks.read().await.clone()).await?;
                         let header = if confirmation_successful {
-                            info!("L1 and L2 state in sync. Last confirmed block {confirmed_block_id}.");
+                            info!("✅ L1 and L2 state in sync. Last confirmed block {confirmed_block_id}.");
                             unconfirmed_l2_blocks.write().await.retain(|block| block.header.number > confirmed_block_id);
                             None
                         } else {
-                            warn!("L1 and L2 state out of sync. Last confirmed block {confirmed_block_id}.");
+                            warn!("❌ L1 and L2 state out of sync. Last confirmed block {confirmed_block_id}.");
                             unconfirmed_l2_blocks.write().await.clear();
                             log_error(get_block(Some(confirmed_block_id)).await, "Failed to query last block").map(|block| block.header.into())
                         };

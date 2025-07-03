@@ -38,7 +38,7 @@ async fn stream_l1_headers<'a, E, T: Fn(Header, ValidAnchor) -> BoxFuture<'a, Re
 
 async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> ApplicationResult<()> {
     info!(
-        "L2 🗣 #{} timestamp={} now={}",
+        "🗣 L2 #{} timestamp={} now={}",
         header.number,
         header.timestamp,
         now_as_secs(),
@@ -49,7 +49,7 @@ async fn store_header_l2(header: Header, current: Arc<RwLock<Header>>) -> Applic
 
 async fn store_valid_anchor(header: Header, valid_anchor: ValidAnchor) -> ApplicationResult<()> {
     info!(
-        "L1 🗣 #{} timestamp={} now={}",
+        "🗣 L1 #{} timestamp={} now={}",
         header.number,
         header.timestamp,
         now_as_secs(),

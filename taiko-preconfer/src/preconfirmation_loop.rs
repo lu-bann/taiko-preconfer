@@ -77,7 +77,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     info!("Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}");
     loop {
         if let Some(subslot) = stream.next().await {
-            info!("Received subslot: {:?}", subslot);
+            info!("📩 Received subslot: {:?}", subslot);
             if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
                 info!("Waiting for previous preconfer to finish.");
                 continue;
@@ -116,17 +116,19 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                         if log_error(
                             tokio::time::timeout(handover_timeout, sequencing_monitor.ready())
                                 .await,
-                            "Out of sync after handover period",
+                            "❌ Out of sync after handover period",
                         )
                         .is_some()
                         {
-                            info!("In sync after handover period");
+                            info!("✅ In sync after handover period");
                         }
                         waiting_for_previous_preconfer_spawn.store(false, Ordering::Relaxed);
                     });
+                }
+                if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
                     let slot_timestamp_ms = slot_timestamp as u128 * 1000;
                     let mut skip_slot = true;
-                    while now_as_millis() - slot_timestamp_ms < status_sync_max_delay.as_millis() {
+                    while now_as_millis() < slot_timestamp_ms + status_sync_max_delay.as_millis() {
                         skip_slot = waiting_for_previous_preconfer.load(Ordering::Relaxed);
                         tokio::time::sleep(polling_period).await;
                     }
