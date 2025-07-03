@@ -8,7 +8,7 @@ use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolValue;
 use c_kzg::Blob;
 use thiserror::Error;
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::{
     blob::tx_bytes_to_blobs,
@@ -20,7 +20,7 @@ use crate::{
         },
         taiko_l1_client::TaikoL1ClientError,
     },
-    util::{get_tx_envelopes_without_anchor_from_blocks, now_as_millis, pad_left},
+    util::{get_tx_envelopes_without_anchor_from_blocks, pad_left},
 };
 
 pub fn verify_signature(
@@ -172,8 +172,7 @@ pub fn compute_batch_meta_hash(
     base_fee_config: BaseFeeConfig,
     use_blobs: bool,
 ) -> Result<B256, TaikoL1ClientError> {
-    info!("Compute batch meta hash, last batch:");
-    info!("{:?}", batch);
+    debug!("Last batch {:?}", batch);
     let mut last_timestamp = blocks
         .first()
         .expect("Batch must have at least one block")
@@ -182,7 +181,7 @@ pub fn compute_batch_meta_hash(
     let block_params = blocks
         .iter()
         .map(|block| {
-            info!(
+            debug!(
                 "block: {} {}",
                 block.header.number,
                 block.transactions.len()
@@ -196,15 +195,12 @@ pub fn compute_batch_meta_hash(
             }
         })
         .collect();
-    info!("last timestamp {last_timestamp}");
 
-    info!("get envelopes {}", now_as_millis());
     let txs = get_tx_envelopes_without_anchor_from_blocks(blocks);
     debug!("txs: {txs:?}");
     let tx_bytes = Bytes::from(compress(txs)?);
     let tx_bytes_len = tx_bytes.len();
 
-    info!("blb hashes {}", now_as_millis());
     let (tx_bytes_hash, blob_hashes) = if use_blobs {
         let blobs = tx_bytes_to_blobs(tx_bytes)?;
         (keccak256([]), get_blob_hashes(blobs)?)
@@ -218,8 +214,6 @@ pub fn compute_batch_meta_hash(
     ));
     let abi_encoded: Vec<_> = abi_encoded.drain(32..).collect();
     let txs_hash = keccak256(&abi_encoded);
-
-    debug!("txs_hash {}", txs_hash);
 
     let info = BatchInfo {
         txsHash: txs_hash,
@@ -238,15 +232,14 @@ pub fn compute_batch_meta_hash(
         anchorBlockHash: anchor_hash,
         baseFeeConfig: base_fee_config,
     };
-    info!("info: {info:?}");
+    debug!("info: {info:?}");
     let meta = BatchMetadata {
         infoHash: keccak256(info.abi_encode()),
         proposer: preconfer_address,
         batchId: batch.batchId,
         proposedAt: proposed_at,
     };
-    info!("meta: {meta:?}");
-    info!("end {}", now_as_millis());
+    debug!("meta: {meta:?}");
     Ok(keccak256(meta.abi_encode()))
 }
 
@@ -257,9 +250,7 @@ fn get_blob_hashes(blobs: Vec<Blob>) -> Result<Vec<FixedBytes<32>>, TaikoInboxEr
         .iter()
         .map(|blob| -> Result<FixedBytes<32>, c_kzg::Error> {
             let commitment = kzg_settings.blob_to_kzg_commitment(blob)?;
-            let hash = kzg_to_versioned_hash(commitment.as_slice());
-            info!("blob hash: {:?}", hash);
-            Ok(hash)
+            Ok(kzg_to_versioned_hash(commitment.as_slice()))
         })
         .collect();
     Ok(blob_hashes?)
