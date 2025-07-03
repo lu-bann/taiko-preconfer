@@ -109,7 +109,10 @@ pub async fn create_l2_head_stream(
         .into_stream()
         .filter_map(move |result| async move {
             match result {
-                Ok((batch_proposed, _log)) => Some(batch_proposed.info.lastBlockId),
+                Ok((batch_proposed, _log)) => {
+                    info!("batch proposed: {:?}", batch_proposed);
+                    Some(batch_proposed.info.lastBlockId)
+                }
                 Err(_) => None,
             }
         });

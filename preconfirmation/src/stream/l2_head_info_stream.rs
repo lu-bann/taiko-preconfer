@@ -20,6 +20,9 @@ enum StreamData {
 }
 
 async fn update_unconfirmed_blocks(block: Block, unconfirmed_l2_blocks: &Arc<RwLock<Vec<Block>>>) {
+    if block.transactions.is_empty() {
+        warn!("Ignoring empty block {}", block.header.number);
+    }
     let mut unconfirmed = unconfirmed_l2_blocks.write().await;
     if let Some(current) = unconfirmed
         .iter_mut()
@@ -92,7 +95,8 @@ where
         while let Some(stream_data) = merged_stream.next().await {
             match stream_data {
                 StreamData::Unconfirmed(block) => {
-                    info!("Received l2 block: {}", block.header.number);
+                    info!("Received l2 block: {} #txs: {}", block.header.number, block.transactions.len());
+                    if !block.transactions.is_empty() {
                     let header = block.header.inner.clone();
                     let should_yield = if let Some(last_confirmed_block_id) = *last_confirmed_block_id.read().await {
                         info!("last confirmed block: {last_confirmed_block_id}");
@@ -108,6 +112,7 @@ where
                         update_unconfirmed_blocks(*block, &unconfirmed_l2_blocks).await;
                         true
                     };
+
                     if should_yield {
                         let current_block_number = header.number;
                         yield Ok(header);
@@ -122,6 +127,7 @@ where
                                     for id in (current_block_number + 1)..latest_block.header.number {
                                         if let Some(block) = log_error(get_block(Some(id)).await, &format!("Failed to update block {id}")) {
                                             let header = block.header.inner.clone();
+                                            info!("Updated block {} with {} txs.", header.number, block.transactions.len());
                                             update_unconfirmed_blocks(block, &unconfirmed_l2_blocks).await;
                                             yield Ok(header);
                                         }
@@ -133,6 +139,7 @@ where
                             }
                             unconfirmed_l2_blocks.write().await.retain(|block| block.header.number <= latest_block_number);
                         }
+                    }
                     }
                 },
                 StreamData::Confirmed(confirmed_block_id) => {
@@ -179,50 +186,18 @@ pub async fn stream_l2_headers<
 
 #[cfg(test)]
 mod tests {
-    use alloy_consensus::{TxEnvelope, TxLegacy, TypedTransaction, transaction::Recovered};
-    use alloy_primitives::{Address, Bytes, TxKind, U256, address};
-    use alloy_rpc_types_eth::{Transaction, TransactionInfo};
+
     use async_stream::stream;
-    use k256::ecdsa::SigningKey;
+
     use std::{pin::pin, sync::Arc};
     use tokio::sync::Notify;
 
     use crate::{
-        taiko::sign::{get_signing_key, sign_anchor_tx},
-        test_util::{get_block, get_block_with_txs, get_header},
+        test_util::{get_block, get_block_with_txs, get_dummy_signed_transaction, get_header},
         verification::MockILastBatchVerifier,
     };
 
     use super::*;
-
-    const TEST_SIGNER_ADDRESS: Address = address!("0x1670090000000000000000000000000000010001");
-
-    fn get_test_signing_key() -> SigningKey {
-        get_signing_key("0x92954368afd3caa1f3ce3ead0069c1af414054aefe1ef9aeacc1bf426222ce38")
-    }
-
-    fn get_test_typed_transaction(nonce: u64) -> TypedTransaction {
-        TypedTransaction::from(TxLegacy {
-            chain_id: Some(167009u64),
-            nonce,
-            gas_price: 0u128,
-            gas_limit: 0u64,
-            to: TxKind::Call(TEST_SIGNER_ADDRESS),
-            value: U256::default(),
-            input: Bytes::default(),
-        })
-    }
-
-    fn get_test_signed_transaction(nonce: u64) -> Transaction<TxEnvelope> {
-        let tx = get_test_typed_transaction(nonce);
-        let signing_key = get_test_signing_key();
-        let signature = sign_anchor_tx(&signing_key, &tx).unwrap();
-        let tx = TxEnvelope::new_unhashed(tx, signature);
-        Transaction::from_transaction(
-            Recovered::new_unchecked(tx, TEST_SIGNER_ADDRESS),
-            TransactionInfo::default(),
-        )
-    }
 
     #[tokio::test]
     async fn header_info_stream_returns_info_from_l2_blocks_if_no_confirmed_blocks_are_yet_available()
@@ -505,7 +480,7 @@ mod tests {
         let confirmation_stream_start = Arc::new(Notify::new());
         let confirmation_stream_trigger = confirmation_stream_start.clone();
 
-        let txs = vec![get_test_signed_transaction(0)];
+        let txs = vec![get_dummy_signed_transaction(0)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
             yield 1;
@@ -559,7 +534,7 @@ mod tests {
         let confirmation_stream_start = Arc::new(Notify::new());
         let confirmation_stream_trigger = confirmation_stream_start.clone();
 
-        let txs = vec![get_test_signed_transaction(0)];
+        let txs = vec![get_dummy_signed_transaction(0)];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
             yield 1;
@@ -614,8 +589,8 @@ mod tests {
         let confirmation_stream_trigger = confirmation_stream_start.clone();
 
         let txs = vec![
-            get_test_signed_transaction(0),
-            get_test_signed_transaction(1),
+            get_dummy_signed_transaction(0),
+            get_dummy_signed_transaction(1),
         ];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
@@ -672,12 +647,12 @@ mod tests {
         let confirmation_stream_trigger = confirmation_stream_start.clone();
 
         let txs1 = vec![
-            get_test_signed_transaction(0),
-            get_test_signed_transaction(1),
+            get_dummy_signed_transaction(0),
+            get_dummy_signed_transaction(1),
         ];
         let txs2 = vec![
-            get_test_signed_transaction(2),
-            get_test_signed_transaction(3),
+            get_dummy_signed_transaction(2),
+            get_dummy_signed_transaction(3),
         ];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;

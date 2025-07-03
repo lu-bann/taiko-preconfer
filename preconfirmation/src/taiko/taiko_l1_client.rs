@@ -2,7 +2,7 @@ use std::thread::JoinHandle;
 
 use alloy_consensus::Header;
 use alloy_eips::BlockNumberOrTag;
-use alloy_network::EthereumWallet;
+use alloy_network::{EthereumWallet, TransactionBuilder};
 use alloy_primitives::Address;
 use alloy_provider::{
     Identity, Provider, RootProvider,
@@ -18,8 +18,8 @@ use std::{
     time::{Duration, SystemTime},
 };
 use thiserror::Error;
-use tokio::sync::RwLock;
-use tracing::info;
+use tokio::{join, sync::RwLock};
+use tracing::{error, info};
 
 use crate::{blob::BlobEncodeError, util::log_error, verification::TaikoInboxError};
 
@@ -98,14 +98,23 @@ pub struct TaikoL1Client {
     provider: TaikoProvider,
     propose_timeout: Duration,
     tx_handle: Arc<RwLock<Option<JoinHandle<()>>>>,
+    preconfer_address: Address,
+    taiko_inbox: Address,
 }
 
 impl TaikoL1Client {
-    pub fn new(provider: TaikoProvider, propose_timeout: Duration) -> Self {
+    pub fn new(
+        provider: TaikoProvider,
+        propose_timeout: Duration,
+        preconfer_address: Address,
+        taiko_inbox: Address,
+    ) -> Self {
         Self {
             provider,
             propose_timeout,
             tx_handle: Arc::new(None.into()),
+            preconfer_address,
+            taiko_inbox,
         }
     }
 }
@@ -162,6 +171,8 @@ impl ITaikoL1Client for TaikoL1Client {
         }
         let provider = self.provider.clone();
         let timeout = self.propose_timeout;
+        let preconfer_address = self.preconfer_address;
+        let taiko_inbox_address = self.taiko_inbox;
         *self.tx_handle.write().await = Some(
             std::thread::Builder::new()
                 .stack_size(8 * 1024 * 1024)
@@ -169,6 +180,47 @@ impl ITaikoL1Client for TaikoL1Client {
                     let rt = tokio::runtime::Runtime::new().unwrap();
                     rt.block_on(async move {
                         let start = SystemTime::now();
+
+                        let mut tx = tx;
+                        if tx.sidecar.is_some() {
+                            info!("Set blob base fee");
+                            if let Some(blob_base_fee) = log_error(
+                                provider.get_blob_base_fee().await,
+                                "Failed to get blob base fee",
+                            ) {
+                                tx = tx.max_fee_per_blob_gas(blob_base_fee);
+                            }
+                        }
+                        info!("tx: {:?}", tx);
+                        let (nonce, gas_limit, fee_estimate) = join!(
+                            provider.get_transaction_count(preconfer_address),
+                            provider.estimate_gas(tx.clone()),
+                            provider.estimate_eip1559_fees(),
+                        );
+
+                        info!(
+                            "sign tx {} {:?} {:?} {:?}",
+                            taiko_inbox_address, nonce, gas_limit, fee_estimate
+                        );
+                        if gas_limit.is_err() || fee_estimate.is_err() {
+                            error!("Failed to estimate gas or fees for block confirmation.");
+                            error!("{}", gas_limit.unwrap_err());
+                            error!("{}", fee_estimate.unwrap_err());
+                            return;
+                        }
+                        let gas_limit = gas_limit.expect("Must be present");
+                        let fee_estimate = fee_estimate.expect("Must be present");
+                        let nonce = nonce.expect("Must be present");
+                        let tx = tx
+                            .with_gas_limit(gas_limit)
+                            .with_max_fee_per_gas(fee_estimate.max_fee_per_gas * 12 / 10)
+                            .with_max_priority_fee_per_gas(
+                                fee_estimate.max_priority_fee_per_gas * 12 / 10,
+                            )
+                            .nonce(nonce);
+
+                        info!("propose batch tx {tx:?}");
+
                         if let Some(tx_builder) = log_error(
                             provider.send_transaction(tx).await,
                             "Failed to get transaction builder",
