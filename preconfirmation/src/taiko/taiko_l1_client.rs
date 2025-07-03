@@ -191,17 +191,16 @@ impl ITaikoL1Client for TaikoL1Client {
         let provider = self.provider.clone();
         let timeout = self.propose_timeout;
         let preconfer_address = self.preconfer_address;
+        let router_address = self.preconf_router_address;
         let taiko_inbox = self.taiko_inbox.clone();
         let use_blobs = self.use_blobs;
-        let tx = TransactionRequest::default()
-            .with_from(preconfer_address)
-            .with_to(self.preconf_router_address);
 
         *self.tx_handle.write().await = Some(
             std::thread::Builder::new()
                 .stack_size(8 * 1024 * 1024)
                 .spawn(move || {
-                    let rt = tokio::runtime::Runtime::new().unwrap();
+                    let rt = tokio::runtime::Runtime::new()
+                        .expect("Failed to get tokio runtime for sending confirmation.");
                     rt.block_on(async move {
                         let settings = EnvKzgSettings::Default.get();
 
@@ -225,7 +224,6 @@ impl ITaikoL1Client for TaikoL1Client {
                         let last_timestamp =
                             read_blocks(blocks, batch_anchor_id, &mut block_params, &mut txs);
 
-                        info!("get parent meta hash {}", now_as_millis());
                         let parent_batch_meta_hash = get_latest_confirmed_batch(&taiko_inbox)
                             .await
                             .map(|batch| batch.metaHash)
@@ -234,9 +232,7 @@ impl ITaikoL1Client for TaikoL1Client {
                             Bytes::from(compress(txs.clone()).expect("Failed to compress txs"));
                         debug!("tx_list: {tx_bytes:?}");
                         let tx_bytes_len = tx_bytes.len();
-                        info!("get sidecar {}", now_as_millis());
                         info!("tx bytes: {}", tx_bytes_len);
-                        let start = now_as_millis();
                         let (tx_list, sidecar) = if use_blobs {
                             (
                                 Bytes::default(),
@@ -248,9 +244,6 @@ impl ITaikoL1Client for TaikoL1Client {
                         } else {
                             (tx_bytes, None)
                         };
-                        let end = now_as_millis();
-                        info!("elapsed: {} ms", end - start);
-                        info!("has sidecar: {}", sidecar.is_some());
                         let blob_params = get_blob_params(&sidecar, tx_bytes_len);
                         info!("blob params: {:?}", blob_params);
 
@@ -266,10 +259,13 @@ impl ITaikoL1Client for TaikoL1Client {
 
                         debug!("params: {propose_batch_params:?}");
                         info!("send tx {}", now_as_millis());
-                        let mut tx = tx.with_call(&TaikoInbox::proposeBatchCall {
-                            _params: propose_batch_params,
-                            _txList: tx_list,
-                        });
+                        let mut tx = TransactionRequest::default()
+                            .with_from(preconfer_address)
+                            .with_to(router_address)
+                            .with_call(&TaikoInbox::proposeBatchCall {
+                                _params: propose_batch_params,
+                                _txList: tx_list,
+                            });
                         if let Some(sidecar) = sidecar {
                             tx.set_blob_sidecar(sidecar);
                             info!("Set blob base fee");
@@ -287,21 +283,19 @@ impl ITaikoL1Client for TaikoL1Client {
                             provider.estimate_eip1559_fees(),
                         );
 
-                        if gas_limit.is_err() {
-                            error!("Failed to estimate gas for block confirmation.");
-                            error!(
-                                "{}",
-                                gas_limit.map_err(TaikoL1ClientError::from).unwrap_err()
-                            );
+                        let gas_limit = log_error(
+                            gas_limit.map_err(TaikoL1ClientError::from),
+                            "Failed to estimate gas",
+                        );
+                        if gas_limit.is_none() {
                             return;
                         }
 
-                        if fee_estimate.is_err() {
-                            error!("Failed to estimate fees for block confirmation.");
-                            error!(
-                                "{}",
-                                fee_estimate.map_err(TaikoL1ClientError::from).unwrap_err()
-                            );
+                        let fee_estimate = log_error(
+                            fee_estimate.map_err(TaikoL1ClientError::from),
+                            "Failed to estimate fee",
+                        );
+                        if fee_estimate.is_none() {
                             return;
                         }
                         let gas_limit = gas_limit.expect("Must be present");
@@ -331,7 +325,10 @@ impl ITaikoL1Client for TaikoL1Client {
                                 "Failed to send transaction",
                             ) {
                                 let end = SystemTime::now();
-                                let elapsed = end.duration_since(start).unwrap().as_millis();
+                                let elapsed = end
+                                    .duration_since(start)
+                                    .expect("time went backwards during tx")
+                                    .as_millis();
                                 info!("receipt: {receipt:?}, elapsed={elapsed} ms");
                             }
                         }
