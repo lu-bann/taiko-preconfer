@@ -1,6 +1,9 @@
-use std::sync::{
-    Arc,
-    atomic::{AtomicU64, Ordering},
+use std::{
+    sync::{
+        Arc,
+        atomic::{AtomicU64, Ordering},
+    },
+    time::{Duration, SystemTime},
 };
 
 use alloy_consensus::{TxEip1559, TypedTransaction};
@@ -9,7 +12,9 @@ use alloy_sol_types::SolCall;
 use tokio::sync::RwLock;
 use tracing::{debug, info};
 
-use crate::{client::reqwest::get_header_by_id, taiko::contracts::TaikoAnchor};
+use crate::{
+    client::reqwest::get_header_by_id, taiko::contracts::TaikoAnchor, util::get_system_time_from_s,
+};
 
 const ANCHOR_GAS_LIMIT: u64 = 1_000_000;
 
@@ -53,10 +58,11 @@ pub struct ValidAnchor {
     max_offset: u64,
     desired_offset: u64,
     block_number: Arc<AtomicU64>,
-    current_anchor: Arc<RwLock<(u64, FixedBytes<32>)>>,
+    current_anchor: Arc<RwLock<(u64, SystemTime, FixedBytes<32>)>>,
     last_anchor_id: Arc<AtomicU64>,
     anchor_id_update_tol: u64,
     url: String,
+    slot_duration: Duration,
 }
 
 impl ValidAnchor {
@@ -65,15 +71,17 @@ impl ValidAnchor {
         desired_offset: u64,
         anchor_id_update_tol: u64,
         url: String,
+        slot_duration: Duration,
     ) -> Self {
         Self {
             max_offset,
             desired_offset,
             block_number: Arc::new(0.into()),
-            current_anchor: Arc::new((0, FixedBytes::default()).into()),
+            current_anchor: Arc::new((0, get_system_time_from_s(0), FixedBytes::default()).into()),
             last_anchor_id: Arc::new(0.into()),
             anchor_id_update_tol,
             url,
+            slot_duration,
         }
     }
 
@@ -94,7 +102,11 @@ impl ValidAnchor {
         if new_anchor_id > current_anchor_id + self.anchor_id_update_tol {
             info!("Request header {} for {}", new_anchor_id, self.url);
             let anchor_header = get_header_by_id(self.url.clone(), new_anchor_id).await?;
-            *self.current_anchor.write().await = (new_anchor_id, anchor_header.state_root);
+            *self.current_anchor.write().await = (
+                new_anchor_id,
+                get_system_time_from_s(anchor_header.timestamp),
+                anchor_header.state_root,
+            );
             info!("anchor id update to {}", new_anchor_id);
         }
         Ok(())
@@ -108,6 +120,11 @@ impl ValidAnchor {
                 self.desired_offset,
                 self.last_anchor_id.load(Ordering::Relaxed),
             )
+    }
+
+    pub async fn is_valid_at(&self, timestamp: SystemTime) -> bool {
+        let current_anchor = *self.current_anchor.read().await;
+        current_anchor.1 + self.slot_duration * self.anchor_id_update_tol as u32 >= timestamp
     }
 
     pub async fn is_valid(&self) -> bool {
@@ -131,7 +148,8 @@ impl ValidAnchor {
     }
 
     pub async fn id_and_state_root(&self) -> (u64, FixedBytes<32>) {
-        *self.current_anchor.read().await
+        let current = *self.current_anchor.read().await;
+        (current.0, current.2)
     }
 }
 

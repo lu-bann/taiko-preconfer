@@ -63,7 +63,12 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         }
     }
 
-    pub async fn send(&self, l1_slot_timestamp: u64, force_send: bool) -> ConfirmationResult<()> {
+    pub async fn send(
+        &self,
+        l1_slot_timestamp: u64,
+        force_send: bool,
+        current_anchor_id: u64,
+    ) -> ConfirmationResult<()> {
         info!("send force={force_send}");
         info!("blocks: {}", self.blocks.read().await.len());
         self.blocks.write().await.retain(|block| {
@@ -121,8 +126,10 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
                 break;
             }
         }
-        // force sending it more than one anchor id is used
-        let force_send = force_send || batch_blocks.len() != blocks.len();
+        // force sending it more than one anchor id is used or all new blocks will get another anchor
+        let force_send = force_send
+            || batch_blocks.len() != blocks.len()
+            || batch_anchor_id != current_anchor_id;
         if batch_blocks.is_empty() || (batch_blocks.len() < self.max_blocks && !force_send) {
             return Ok(());
         }

@@ -188,6 +188,7 @@ async fn main() -> ApplicationResult<()> {
         config.anchor_id_lag,
         config.anchor_id_update_tol,
         config.l1_client_url.clone(),
+        config.l1_slot_time,
     );
 
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
@@ -258,7 +259,7 @@ async fn main() -> ApplicationResult<()> {
             l1_header_stream,
             l2_header_stream,
             shared_last_l2_header,
-            valid_anchor
+            valid_anchor.clone(),
         ),
         preconfirmation_loop::run(
             subslot_stream,
@@ -275,6 +276,7 @@ async fn main() -> ApplicationResult<()> {
             preconfirmation_slot_model,
             whitelist,
             preconfer_address,
+            valid_anchor.clone(),
         )
     );
 
