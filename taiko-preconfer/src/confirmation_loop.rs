@@ -7,8 +7,10 @@ use preconfirmation::{
     },
     slot::Slot,
     slot_model::SlotModel,
-    taiko::{contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client},
-    util::{log_error, now_as_secs},
+    taiko::{
+        anchor::ValidAnchor, contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client,
+    },
+    util::{get_system_time_from_s, log_error, now_as_secs},
 };
 use tracing::{info, instrument};
 
@@ -24,6 +26,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
     preconfirmation_slot_model: PreconfirmationSlotModel,
     whitelist: TaikoWhitelistInstance,
     preconfer_address: Address,
+    valid_anchor: ValidAnchor,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     pin_mut!(stream);
@@ -87,10 +90,18 @@ pub async fn run<L1Client: ITaikoL1Client>(
                 || (current_epoch_preconfer == preconfer_address
                     && next_epoch_preconfer == preconfer_address)
             {
-                let force_send = within_handover_period;
+                let mut force_send = within_handover_period;
+                if !force_send && slot.slot > 16 {
+                    let handover_start_slot = Slot::new(slot.epoch, 28);
+                    let total_slot = slot_model.get_slot_number(handover_start_slot);
+                    let handover_start_timestamp =
+                        get_system_time_from_s(slot_model.get_timestamp(total_slot));
+                    force_send = !valid_anchor.is_valid_at(handover_start_timestamp).await;
+                }
+                let current_anchor_id = valid_anchor.id_and_state_root().await.0;
                 log_error(
                     confirmation_strategy
-                        .send(l1_slot_timestamp, force_send)
+                        .send(l1_slot_timestamp, force_send, current_anchor_id)
                         .await,
                     "Failed to send blocks",
                 );

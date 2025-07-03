@@ -1,4 +1,4 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use alloy_consensus::TxEnvelope;
 use alloy_primitives::Bytes;
@@ -185,6 +185,10 @@ pub fn now_as_millis() -> u128 {
         .duration_since(UNIX_EPOCH)
         .unwrap()
         .as_millis()
+}
+
+pub fn get_system_time_from_s(timestamp: u64) -> SystemTime {
+    UNIX_EPOCH + Duration::from_secs(timestamp)
 }
 
 #[cfg(test)]

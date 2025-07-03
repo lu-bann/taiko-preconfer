@@ -135,11 +135,13 @@ mod tests {
         let max_offset = 10;
         let desired_offset = 4;
         let anchor_id_update_tol = 10;
+        let slot_duration = Duration::from_secs(12);
         ValidAnchor::new(
             max_offset,
             desired_offset,
             anchor_id_update_tol,
             "url".into(),
+            slot_duration,
         )
     }
 
