@@ -39,6 +39,7 @@ pub struct Config {
     pub propose_timeout: Duration,
     pub relative_fee_premium: f32,
     pub relative_blob_fee_premium: f32,
+    pub status_sync_max_delay: Duration,
 }
 
 #[derive(Debug, PartialEq, Error)]
@@ -99,6 +100,9 @@ impl Config {
             relative_blob_fee_premium: std::env::var("RELATIVE_BLOB_FEE_PREMIUM_IN_PERCENT")?
                 .parse::<u32>()? as f32
                 / 100.0,
+            status_sync_max_delay: Duration::from_millis(
+                std::env::var("STATUS_SYNC_MAX_DELAY_MS")?.parse()?,
+            ),
         })
     }
 }

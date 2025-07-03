@@ -9,9 +9,9 @@ pub const TAIKO_HOLESKY_GENESIS_TIMESTAMP: u64 = 1_711_697_940;
 
 #[derive(Debug)]
 pub struct SlotModel {
-    genesis_timestamp: u64,
-    slot_duration: Duration,
-    epoch_duration: Duration,
+    pub genesis_timestamp: u64,
+    pub slot_duration: Duration,
+    pub epoch_duration: Duration,
 }
 
 impl SlotModel {
