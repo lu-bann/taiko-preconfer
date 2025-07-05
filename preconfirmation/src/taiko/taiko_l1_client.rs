@@ -284,12 +284,12 @@ impl ITaikoL1Client for TaikoL1Client {
                             return;
                         }
                         let fee_estimate = fee_estimate.expect("Must be present");
-                        let max_fee_per_gas = fee_estimate.max_fee_per_gas
-                            + (rel_fee_premium * fee_estimate.max_priority_fee_per_gas as f32)
-                                .round() as u128;
-                        let max_priority_fee_per_gas = ((1.0 + rel_fee_premium)
+                        let fee_premium = (rel_fee_premium
                             * fee_estimate.max_priority_fee_per_gas as f32)
                             .round() as u128;
+                        let max_fee_per_gas = fee_estimate.max_fee_per_gas + fee_premium;
+                        let max_priority_fee_per_gas =
+                            fee_estimate.max_priority_fee_per_gas + fee_premium;
                         let nonce = nonce.expect("Must be present");
                         let tx = tx
                             .with_gas_limit(gas_limit.expect("Must be present"))
