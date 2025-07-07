@@ -106,7 +106,9 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                 || (current_epoch_preconfer == preconfer_address
                     && next_epoch_preconfer == preconfer_address)
             {
-                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot) {
+                if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot)
+                    && subslot.sub_slot == 0
+                {
                     let handover_timeout = handover_timeout;
                     let sequencing_monitor = sequencing_monitor.clone();
                     waiting_for_previous_preconfer.store(true, Ordering::Relaxed);
