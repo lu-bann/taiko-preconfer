@@ -282,7 +282,6 @@ async fn main() -> ApplicationResult<()> {
 
     let l2_header_stream = create_l2_head_stream(
         &config,
-        preconfer_address,
         latest_confirmed_block_id,
         unconfirmed_l2_blocks,
         valid_anchor.clone(),
