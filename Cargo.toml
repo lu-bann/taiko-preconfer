@@ -10,7 +10,7 @@ edition = "2024"
 alloy-consensus = "1.0.9"
 alloy-contract = { version = "1.0.9", features = ["pubsub"] }
 alloy-eips = { version = "1.0.17", features = ["kzg"] }
-alloy-json-rpc = "1.0.9"
+alloy-json-rpc = "1.0.17"
 alloy-network = "1.0.16"
 alloy-provider = { version = "1.0.16", features = [
     "reqwest", "ws"
