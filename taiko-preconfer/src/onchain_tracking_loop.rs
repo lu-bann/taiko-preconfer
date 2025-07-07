@@ -7,7 +7,6 @@ use std::{
 };
 
 use alloy_consensus::Header;
-use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_eth::Block;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
@@ -116,7 +115,6 @@ pub async fn create_header_stream(
 
 pub async fn create_l2_head_stream(
     config: &Config,
-    preconfer_address: Address,
     latest_confirmed_block_id: u64,
     unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>>,
     valid_anchor: ValidAnchor,
@@ -151,7 +149,6 @@ pub async fn create_l2_head_stream(
     let base_fee_config = taiko_inbox.pacayaConfig().call().await?.baseFeeConfig;
     let last_batch_verifier = LastBatchVerifier::new(
         taiko_inbox,
-        preconfer_address,
         base_fee_config,
         config.use_blobs,
         valid_anchor.clone(),

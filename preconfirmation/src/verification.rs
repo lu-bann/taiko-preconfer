@@ -63,7 +63,6 @@ pub async fn get_latest_confirmed_batch(
 pub async fn verify_last_batch(
     taiko_inbox: &TaikoInboxInstance,
     valid_anchor: ValidAnchor,
-    preconfer_address: Address,
     unconfirmed_l2_blocks: Vec<Block>,
     base_fee_config: BaseFeeConfig,
     use_blobs: bool,
@@ -99,8 +98,9 @@ pub async fn verify_last_batch(
         .expect("TODO: can be re-orged away by L1 reorg")
         .header;
     let confirmed_batch_meta_hash = batch.metaHash;
+    let fee_recipient = blocks.first().expect("Must be present").header.beneficiary;
     let computed_last_batch_meta_hash = compute_batch_meta_hash(
-        preconfer_address,
+        fee_recipient,
         blocks,
         batch,
         anchor_header.hash_slow(),
@@ -123,7 +123,6 @@ pub trait ILastBatchVerifier {
 #[derive(Debug)]
 pub struct LastBatchVerifier {
     taiko_inbox: TaikoInboxInstance,
-    preconfer_address: Address,
     base_fee_config: BaseFeeConfig,
     use_blobs: bool,
     valid_anchor: ValidAnchor,
@@ -132,14 +131,12 @@ pub struct LastBatchVerifier {
 impl LastBatchVerifier {
     pub fn new(
         taiko_inbox: TaikoInboxInstance,
-        preconfer_address: Address,
         base_fee_config: BaseFeeConfig,
         use_blobs: bool,
         valid_anchor: ValidAnchor,
     ) -> Self {
         Self {
             taiko_inbox,
-            preconfer_address,
             base_fee_config,
             use_blobs,
             valid_anchor,
@@ -152,7 +149,6 @@ impl ILastBatchVerifier for LastBatchVerifier {
         verify_last_batch(
             &self.taiko_inbox,
             self.valid_anchor.clone(),
-            self.preconfer_address,
             unconfirmed_l2_blocks,
             self.base_fee_config.clone(),
             self.use_blobs,
