@@ -247,6 +247,7 @@ impl ITaikoL1Client for TaikoL1Client {
                         );
 
                         debug!("params: {propose_batch_params:?}");
+                        debug!("tx_list: {tx_list:?}");
                         let mut tx = TransactionRequest::default()
                             .with_from(preconfer_address)
                             .with_to(router_address)
