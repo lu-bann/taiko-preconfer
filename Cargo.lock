@@ -427,9 +427,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-rpc-types-eth"
-version = "1.0.16"
+version = "1.0.17"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "bb082c325bdfd05a7c71f52cd1060e62491fbf6edf55962720bdc380847b0784"
+checksum = "391e59f81bacbffc7bddd2da3a26d6eec0e2058e9237c279e9b1052bdf21b49e"
 dependencies = [
  "alloy-consensus",
  "alloy-consensus-any",
