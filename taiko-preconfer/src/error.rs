@@ -36,6 +36,9 @@ pub enum ApplicationError {
     Signer(#[from] alloy_signer_local::LocalSignerError),
 
     #[error("{0}")]
+    SolType(#[from] alloy_sol_types::Error),
+
+    #[error("{0}")]
     Reqwest(#[from] reqwest::Error),
 
     #[error("{0}")]
