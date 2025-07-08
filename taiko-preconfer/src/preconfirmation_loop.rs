@@ -12,7 +12,6 @@ use preconfirmation::{
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
-    slot::SubSlot,
     slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
     taiko::{contracts::TaikoWhitelistInstance, taiko_l2_client::ITaikoL2Client},
     time_provider::{ITimeProvider, SystemTimeProvider},
@@ -45,7 +44,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     whitelist_monitor.update_current_operator(slot.epoch).await;
     whitelist_monitor.update_next_operator(slot.epoch).await;
     if whitelist_monitor.is_active_in(preconfer_address, slot.epoch) {
-        info!("Active on startup");
+        info!("Can preconfirm on startup");
         preconfirmation_slot_model.set_active_epoch(slot.epoch);
     }
 
@@ -59,44 +58,37 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         let slot_start = slot_model.get_timestamp(slot_number);
         let sub =
             (timestamp - slot_start) / (slot_model.slot_duration.as_secs() / subslots_per_slot);
-        info!(
-            "Current slot {:?} {} {}",
-            slot,
-            sub,
-            slot.slot * subslots_per_slot + sub
-        );
+        let subslot = slot.slot * subslots_per_slot + sub;
+        info!("Current slot {:?} {} {}", slot, sub, subslot,);
         info!("slot {slot_number} {slot_start} {timestamp}");
-        let subslot = SubSlot::new(slot, slot.slot * subslots_per_slot + sub);
         info!("📩 Received subslot: {:?}", subslot);
         if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
             info!("Waiting for previous preconfer to finish.");
             continue;
         }
-        let slot_timestamp =
-            HOLESKY_GENESIS_TIMESTAMP + subslot.slot.epoch * 32 * 12 + subslot.sub_slot * 6;
+        let slot_timestamp = HOLESKY_GENESIS_TIMESTAMP + slot.epoch * 32 * 12 + subslot * 6;
         info!(
             "slot number: L1={}, L2={}, L2 time={}, now={}",
-            subslot.slot.epoch * 32 + subslot.slot.slot,
-            subslot.slot.epoch * 64 + subslot.sub_slot,
+            slot.epoch * 32 + slot.slot,
+            slot.epoch * 64 + subslot,
             slot_timestamp,
             now_as_secs(),
         );
-        if subslot.sub_slot == 0 {
+        if subslot == 0 {
+            info!("Change active epoch to {}", slot.epoch);
             whitelist_monitor.change_epoch(slot.epoch);
         }
-        if preconfirmation_slot_model.is_handover_start_slot(subslot.slot.slot)
-            && subslot.sub_slot == 0
-            && whitelist_monitor.is_active_in(preconfer_address, subslot.slot.epoch + 1)
+        if preconfirmation_slot_model.is_handover_start_slot(slot.slot)
+            && sub == 0
+            && whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1)
         {
             preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
         }
 
-        if preconfirmation_slot_model.can_preconfirm(&subslot.slot)
+        if preconfirmation_slot_model.can_preconfirm(&slot)
             || whitelist_monitor.is_current_and_next(preconfer_address)
         {
-            if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot)
-                && subslot.sub_slot == 0
-            {
+            if preconfirmation_slot_model.is_first_preconfirmation_slot(&slot) && subslot == 0 {
                 let handover_timeout = handover_timeout;
                 let sequencing_monitor = sequencing_monitor.clone();
                 waiting_for_previous_preconfer.store(true, Ordering::Relaxed);
@@ -126,8 +118,8 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             }
 
             let end_of_sequencing = preconfirmation_slot_model
-                .is_last_slot_before_handover_window(subslot.slot.slot)
-                && subslot.sub_slot % subslots_per_slot == subslots_per_slot - 1;
+                .is_last_slot_before_handover_window(slot.slot)
+                && subslot % subslots_per_slot == subslots_per_slot - 1;
             log_error(
                 tokio::time::timeout(
                     Duration::from_millis(1500),
@@ -140,7 +132,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             info!("Not active operator. Skip block building.");
         }
 
-        if preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot) {
+        if preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot) {
             whitelist_monitor.update_next_operator(slot.epoch).await;
         }
 
