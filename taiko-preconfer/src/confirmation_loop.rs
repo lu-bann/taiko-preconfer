@@ -76,8 +76,9 @@ pub async fn run<L1Client: ITaikoL1Client>(
             preconfirmation::util::now_as_secs(),
         );
 
-        if preconfirmation_slot_model.can_confirm(&slot)
-            || whitelist_monitor.is_current_and_next(preconfer_address)
+        if (preconfirmation_slot_model.can_confirm(&slot)
+            || whitelist_monitor.is_current_and_next(preconfer_address))
+            && !preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot)
         {
             let mut force_send = preconfirmation_slot_model.within_handover_period(slot.slot);
             if !force_send && slot.slot > 16 {
