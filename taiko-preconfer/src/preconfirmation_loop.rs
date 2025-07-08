@@ -6,6 +6,7 @@ use std::{
     time::Duration,
 };
 
+use alloy_primitives::Address;
 use preconfirmation::{
     preconf::{
         BlockBuilder,
@@ -33,9 +34,9 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     waiting_for_previous_preconfer: Arc<AtomicBool>,
     polling_period: Duration,
     status_sync_max_delay: Duration,
+    preconfer_address: Address,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
-    let preconfer_address = builder.address();
     let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
 
     let slot_model = SlotModel::holesky();

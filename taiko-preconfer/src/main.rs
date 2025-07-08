@@ -51,6 +51,7 @@ const PRECONF_BLOCKS: &str = "preconfBlocks";
 async fn get_taiko_l2_client(
     config: &Config,
     base_fee_config: &BaseFeeConfig,
+    preconfer_address: Address,
 ) -> ApplicationResult<TaikoL2Client> {
     let provider = ProviderBuilder::new()
         .connect(&config.l2_client_url)
@@ -68,6 +69,7 @@ async fn get_taiko_l2_client(
         get_signing_key(&config.golden_touch_private_key),
         preconfirmation_url,
         config.jwt_secret.clone(),
+        preconfer_address,
     ))
 }
 
@@ -139,7 +141,12 @@ async fn main() -> ApplicationResult<()> {
     let preconfer_address = signer.address();
     info!("Preconfer address: {}", preconfer_address);
 
-    let taiko_l2_client = get_taiko_l2_client(&config, &taiko_inbox_config.baseFeeConfig).await?;
+    let taiko_l2_client = get_taiko_l2_client(
+        &config,
+        &taiko_inbox_config.baseFeeConfig,
+        preconfer_address,
+    )
+    .await?;
     let latest_l2_header = taiko_l2_client.get_latest_header().await?;
     let latest_l2_header_number = latest_l2_header.number;
 
@@ -172,7 +179,6 @@ async fn main() -> ApplicationResult<()> {
     let block_builder = BlockBuilder::new(
         valid_anchor.clone(),
         taiko_l2_client,
-        preconfer_address,
         SystemTimeProvider::new(),
         shared_last_l2_header.clone(),
         config.golden_touch_address,
@@ -254,6 +260,7 @@ async fn main() -> ApplicationResult<()> {
             waiting_for_previous_preconfer.clone(),
             config.poll_period,
             config.status_sync_max_delay,
+            preconfer_address,
         ),
         confirmation_loop::run(
             confirmation_strategy,

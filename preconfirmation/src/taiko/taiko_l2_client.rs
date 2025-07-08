@@ -68,7 +68,6 @@ pub type TaikoL2ClientResult<T> = Result<T, TaikoL2ClientError>;
 pub trait ITaikoL2Client {
     fn get_mempool_txs(
         &self,
-        beneficiary: Address,
         base_fee: u64,
     ) -> impl Future<Output = TaikoL2ClientResult<Vec<TxEnvelope>>>;
 
@@ -101,7 +100,6 @@ pub trait ITaikoL2Client {
 
     fn publish_preconfirmed_transactions(
         &self,
-        fee_recipient: Address,
         base_fee: u64,
         timestamp: u64,
         parent_header: &Header,
@@ -120,6 +118,7 @@ pub struct TaikoL2Client {
     golden_touch_signing_key: SigningKey,
     preconfirmation_url: String,
     jwt_secret: Secret,
+    address: Address,
 }
 
 impl TaikoL2Client {
@@ -133,6 +132,7 @@ impl TaikoL2Client {
         golden_touch_signing_key: SigningKey,
         preconfirmation_url: String,
         jwt_secret: Secret,
+        address: Address,
     ) -> Self {
         Self {
             auth_url,
@@ -143,21 +143,18 @@ impl TaikoL2Client {
             golden_touch_signing_key,
             preconfirmation_url,
             jwt_secret,
+            address,
         }
     }
 }
 
 impl ITaikoL2Client for TaikoL2Client {
-    async fn get_mempool_txs(
-        &self,
-        beneficiary: Address,
-        base_fee: u64,
-    ) -> TaikoL2ClientResult<Vec<TxEnvelope>> {
+    async fn get_mempool_txs(&self, base_fee: u64) -> TaikoL2ClientResult<Vec<TxEnvelope>> {
         let jwt_secret = JwtSecret::from_hex(self.jwt_secret.read()).unwrap();
         let auth_client = get_alloy_auth_client(&self.auth_url, jwt_secret, true)?;
         let mempool_tx_lists = get_mempool_txs(
             &auth_client,
-            beneficiary,
+            self.address,
             base_fee,
             GAS_LIMIT,
             MAX_BLOB_DATA_SIZE as u64,
@@ -237,7 +234,6 @@ impl ITaikoL2Client for TaikoL2Client {
 
     async fn publish_preconfirmed_transactions(
         &self,
-        fee_recipient: Address,
         base_fee: u64,
         timestamp: u64,
         parent_header: &Header,
@@ -248,7 +244,7 @@ impl ITaikoL2Client for TaikoL2Client {
             base_fee,
             parent_header.number + 1,
             self.base_fee_config.sharingPctg,
-            fee_recipient,
+            self.address,
             GAS_LIMIT,
             parent_header.hash_slow(),
             timestamp,
