@@ -2,7 +2,6 @@ use alloy_consensus::BlobTransactionSidecar;
 use alloy_primitives::Bytes;
 
 use c_kzg::{BYTES_PER_BLOB, Blob, Error as KzgError, KzgSettings};
-use thiserror::Error;
 
 const DATA_LENGTH_SIZE: usize = 4;
 const FIELD_ELEMENTS_PER_ITERATION: usize = 4;
@@ -11,92 +10,111 @@ const ITERATIONS: usize = 1024;
 pub const MAX_BLOB_DATA_SIZE: usize = DATA_SIZE_PER_ITERATION * ITERATIONS - DATA_LENGTH_SIZE;
 const ENCODING_VERSION: u8 = 0;
 
-#[derive(Error, Debug)]
-pub enum BlobEncodeError {
-    #[error("Blob size of {size} bytes exceeds {MAX_BLOB_DATA_SIZE} failed.")]
-    BlobSize { size: usize },
-
-    #[error("Invalid byte offset {offset}%32 != {mod_expected}.")]
-    InvalidByteOffset { offset: usize, mod_expected: usize },
-
-    #[error("Invalid byte encoding {byte} & {mask} != 0.")]
-    InvalidByteEncoding { byte: u8, mask: u8 },
-
-    #[error("Failed fitting data into blob. Processed {processed_bytes} of {total_bytes}.")]
-    FailedFittingData {
-        processed_bytes: usize,
-        total_bytes: usize,
-    },
-
-    #[error("{0}")]
-    Kzg(#[from] KzgError),
+pub struct ByteWriter {
+    written_bytes: usize,
 }
 
-pub fn create_blob(data: &[u8]) -> Result<Blob, BlobEncodeError> {
+impl Default for ByteWriter {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl ByteWriter {
+    pub fn new() -> Self {
+        Self { written_bytes: 0 }
+    }
+
+    fn write_byte(&mut self, blob_bytes: &mut [u8; BYTES_PER_BLOB], v: u8) {
+        blob_bytes[self.written_bytes] = v;
+        self.written_bytes += 1;
+    }
+
+    fn write_31_bytes(&mut self, blob_bytes: &mut [u8; BYTES_PER_BLOB], buf31: &[u8; 31]) {
+        blob_bytes[self.written_bytes..self.written_bytes + 31].copy_from_slice(buf31);
+        self.written_bytes += 31;
+    }
+
+    fn write(&mut self, blob_bytes: &mut [u8; BYTES_PER_BLOB], v: u8, buf31: &[u8; 31]) {
+        self.write_byte(blob_bytes, v);
+        self.write_31_bytes(blob_bytes, buf31);
+    }
+}
+
+pub struct ByteReader {
+    pub read_bytes: usize,
+}
+
+impl ByteReader {
+    pub fn new(read_bytes: usize) -> Self {
+        Self { read_bytes }
+    }
+
+    pub fn read_byte(&mut self, data: &[u8]) -> u8 {
+        let result = if self.read_bytes >= data.len() {
+            0
+        } else {
+            data[self.read_bytes]
+        };
+        self.read_bytes += 1;
+        result
+    }
+
+    fn read_bytes(&mut self, data: &[u8], buf: &mut [u8], length: usize) {
+        if self.read_bytes >= data.len() {
+            buf.fill(0);
+            return;
+        }
+
+        let remaining = data.len() - self.read_bytes;
+        let n = std::cmp::min(length, remaining);
+        buf[..n].copy_from_slice(&data[self.read_bytes..self.read_bytes + n]);
+        buf[n..].fill(0);
+        self.read_bytes += n
+    }
+}
+
+pub fn create_blob(data: &[u8]) -> Result<Blob, KzgError> {
     let mut blob_bytes = [0; BYTES_PER_BLOB];
-    let mut read_offset = 0;
-    let mut write_offset = 0;
     let mut buf31 = [0u8; 31];
+    let mut writer = ByteWriter::new();
 
     let next_idx = write_version_and_data_size(data.len() as u32, &mut buf31);
+    let mut reader = ByteReader::new(0);
 
-    let n = std::cmp::min(buf31.len() - next_idx, data.len());
-    buf31[next_idx..next_idx + n].copy_from_slice(&data[read_offset..read_offset + n]);
-    buf31[next_idx + n..].fill(0);
-    read_offset += n;
+    let iterations = std::cmp::min(ITERATIONS, data.len() / DATA_SIZE_PER_ITERATION + 1);
 
-    let x = read_byte(data, &mut read_offset);
-    let a = x & MASK_1;
-    write(&mut blob_bytes, &mut write_offset, a, &buf31)?;
+    (0..iterations).for_each(|idx| {
+        if idx == 0 {
+            let n = std::cmp::min(buf31.len() - next_idx, data.len());
+            reader.read_bytes(data, &mut buf31[next_idx..], n);
+        } else {
+            reader.read_bytes(data, &mut buf31, 31);
+        }
 
-    read_31_bytes(data, &mut read_offset, &mut buf31);
-    let y = read_byte(data, &mut read_offset);
-    let b = (y & MASK_2) | ((x & MASK_3) >> 2);
-    write(&mut blob_bytes, &mut write_offset, b, &buf31)?;
+        let x = reader.read_byte(data);
+        let a = x & MASK_1;
+        writer.write(&mut blob_bytes, a, &buf31);
 
-    read_31_bytes(data, &mut read_offset, &mut buf31);
-    let z = read_byte(data, &mut read_offset);
-    let c = z & MASK_1;
-    write(&mut blob_bytes, &mut write_offset, c, &buf31)?;
+        reader.read_bytes(data, &mut buf31, 31);
+        let y = reader.read_byte(data);
+        let a = (y & MASK_2) | ((x & MASK_3) >> 2);
+        writer.write(&mut blob_bytes, a, &buf31);
 
-    read_31_bytes(data, &mut read_offset, &mut buf31);
-    let d = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
-    write(&mut blob_bytes, &mut write_offset, d, &buf31)?;
+        reader.read_bytes(data, &mut buf31, 31);
+        let z = reader.read_byte(data);
+        let a = z & MASK_1;
+        writer.write(&mut blob_bytes, a, &buf31);
 
-    let iterations = std::cmp::min(ITERATIONS, data.len() / 32 + 1);
-
-    let result: Result<Vec<()>, BlobEncodeError> = (1..iterations)
-        .map(|_| {
-            read_31_bytes(data, &mut read_offset, &mut buf31);
-
-            let x = read_byte(data, &mut read_offset);
-            let a = x & MASK_1;
-            write(&mut blob_bytes, &mut write_offset, a, &buf31)?;
-
-            read_31_bytes(data, &mut read_offset, &mut buf31);
-            let y = read_byte(data, &mut read_offset);
-            let b = (y & MASK_2) | ((x & MASK_3) >> 2);
-            write(&mut blob_bytes, &mut write_offset, b, &buf31)?;
-
-            read_31_bytes(data, &mut read_offset, &mut buf31);
-            let z = read_byte(data, &mut read_offset);
-            let c = z & MASK_1;
-            write(&mut blob_bytes, &mut write_offset, c, &buf31)?;
-
-            read_31_bytes(data, &mut read_offset, &mut buf31);
-            let d = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
-            write(&mut blob_bytes, &mut write_offset, d, &buf31)?;
-            Ok(())
-        })
-        .collect();
-    result?;
-
-    assert_all_bytes_processed(read_offset, data.len())?;
+        reader.read_bytes(data, &mut buf31, 31);
+        let a = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
+        writer.write(&mut blob_bytes, a, &buf31);
+    });
 
     Ok(c_kzg::Blob::from(blob_bytes))
 }
 
-pub fn tx_bytes_to_blobs(tx_bytes: Bytes) -> Result<Vec<Blob>, BlobEncodeError> {
+pub fn tx_bytes_to_blobs(tx_bytes: Bytes) -> Result<Vec<Blob>, KzgError> {
     let blobs: Result<_, _> = tx_bytes
         .chunks(MAX_BLOB_DATA_SIZE)
         .map(create_blob)
@@ -107,7 +125,7 @@ pub fn tx_bytes_to_blobs(tx_bytes: Bytes) -> Result<Vec<Blob>, BlobEncodeError> 
 pub fn tx_bytes_to_sidecar(
     tx_bytes: Bytes,
     kzg_settings: &KzgSettings,
-) -> Result<BlobTransactionSidecar, BlobEncodeError> {
+) -> Result<BlobTransactionSidecar, KzgError> {
     let blobs = tx_bytes_to_blobs(tx_bytes)?;
     blobs_to_sidecar(blobs, kzg_settings)
 }
@@ -115,7 +133,7 @@ pub fn tx_bytes_to_sidecar(
 pub fn blobs_to_sidecar(
     blobs: Vec<c_kzg::Blob>,
     kzg_settings: &KzgSettings,
-) -> Result<BlobTransactionSidecar, BlobEncodeError> {
+) -> Result<BlobTransactionSidecar, KzgError> {
     let mut commitments = Vec::with_capacity(blobs.len());
     let mut proofs = Vec::with_capacity(blobs.len());
 
@@ -129,91 +147,6 @@ pub fn blobs_to_sidecar(
     }
 
     Ok(BlobTransactionSidecar::from_kzg(blobs, commitments, proofs))
-}
-
-fn assert_byte_offset(offset: usize, mod_expected: usize) -> Result<(), BlobEncodeError> {
-    if offset % 32 != mod_expected {
-        return Err(BlobEncodeError::InvalidByteOffset {
-            offset,
-            mod_expected,
-        });
-    }
-    Ok(())
-}
-
-fn assert_byte_encoding(byte: u8, mask: u8) -> Result<(), BlobEncodeError> {
-    if byte & mask != 0 {
-        return Err(BlobEncodeError::InvalidByteEncoding { byte, mask });
-    }
-    Ok(())
-}
-
-fn assert_all_bytes_processed(
-    processed_bytes: usize,
-    total_bytes: usize,
-) -> Result<(), BlobEncodeError> {
-    if processed_bytes != total_bytes {
-        return Err(BlobEncodeError::FailedFittingData {
-            processed_bytes,
-            total_bytes,
-        });
-    }
-    Ok(())
-}
-
-fn read_byte(data: &[u8], read_offset: &mut usize) -> u8 {
-    if *read_offset >= data.len() {
-        0
-    } else {
-        let out = data[*read_offset];
-        *read_offset += 1;
-        out
-    }
-}
-
-fn read_31_bytes(data: &[u8], read_offset: &mut usize, buf31: &mut [u8; 31]) {
-    if *read_offset >= data.len() {
-        buf31.fill(0);
-    } else {
-        let remaining = data.len() - *read_offset;
-        let n = std::cmp::min(31, remaining);
-        buf31[..n].copy_from_slice(&data[*read_offset..*read_offset + n]);
-        buf31[n..].fill(0);
-        *read_offset += n;
-    }
-}
-
-fn write_1(
-    blob_bytes: &mut [u8; BYTES_PER_BLOB],
-    write_offset: &mut usize,
-    v: u8,
-) -> Result<(), BlobEncodeError> {
-    assert_byte_offset(*write_offset, 0)?;
-    assert_byte_encoding(v, MASK_3)?;
-    blob_bytes[*write_offset] = v;
-    *write_offset += 1;
-    Ok(())
-}
-
-fn write_31(
-    blob_bytes: &mut [u8; BYTES_PER_BLOB],
-    write_offset: &mut usize,
-    buf31: &[u8; 31],
-) -> Result<(), BlobEncodeError> {
-    assert_byte_offset(*write_offset, 1)?;
-    blob_bytes[*write_offset..*write_offset + 31].copy_from_slice(buf31);
-    *write_offset += 31;
-    Ok(())
-}
-
-fn write(
-    blob_bytes: &mut [u8; BYTES_PER_BLOB],
-    write_offset: &mut usize,
-    v: u8,
-    buf31: &[u8; 31],
-) -> Result<(), BlobEncodeError> {
-    write_1(blob_bytes, write_offset, v)?;
-    write_31(blob_bytes, write_offset, buf31)
 }
 
 fn write_version_and_data_size(size: u32, buf31: &mut [u8; 31]) -> usize {

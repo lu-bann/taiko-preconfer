@@ -37,9 +37,6 @@ pub fn verify_signature(
 #[derive(Debug, Error)]
 pub enum TaikoInboxError {
     #[error("{0}")]
-    BlobEncode(#[from] crate::blob::BlobEncodeError),
-
-    #[error("{0}")]
     RpcError(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
 
     #[error("{0}")]

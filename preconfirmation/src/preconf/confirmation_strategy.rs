@@ -14,7 +14,7 @@ use crate::{
 #[derive(Debug, Error)]
 pub enum ConfirmationError {
     #[error("{0}")]
-    BlobEncode(#[from] crate::blob::BlobEncodeError),
+    Kzg(#[from] c_kzg::Error),
 
     #[error("{0}")]
     Compression(#[from] libdeflater::CompressionError),
