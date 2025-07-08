@@ -24,7 +24,7 @@ use tokio::{join, sync::RwLock};
 use tracing::{debug, info, info_span, warn};
 
 use crate::{
-    blob::{BlobEncodeError, tx_bytes_to_sidecar},
+    blob::tx_bytes_to_sidecar,
     compression::compress,
     taiko::contracts::{
         BatchParams, BlobParams, BlockParams, ProposeBatchParams, TaikoInbox, TaikoInboxInstance,
@@ -50,7 +50,7 @@ pub enum TaikoL1ClientError {
     Rpc(String),
 
     #[error("{0}")]
-    BlobEncode(#[from] BlobEncodeError),
+    Kzg(#[from] c_kzg::Error),
 
     #[error("{0}")]
     Compression(#[from] CompressionError),
