@@ -32,6 +32,7 @@ use preconfirmation::{
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
     },
     time_provider::SystemTimeProvider,
+    tx_cache::TxCache,
     util::get_anchor_block_id_from_bytes,
     verification::get_latest_confirmed_batch,
 };
@@ -209,14 +210,15 @@ async fn main() -> ApplicationResult<()> {
         "Picked up {} unconfirmed blocks at startup",
         unconfirmed_l2_blocks.len()
     );
-    let unconfirmed_l2_blocks = Arc::new(RwLock::new(unconfirmed_l2_blocks));
+
+    let tx_cache = TxCache::new(unconfirmed_l2_blocks);
     let valid_timestamp = preconfirmation::util::ValidTimestamp::new(
         max_anchor_id_offset * config.l1_slot_time.as_secs(),
     );
 
     let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
         taiko_l1_client.clone(),
-        unconfirmed_l2_blocks.clone(),
+        tx_cache.clone(),
         config.max_blocks_per_batch,
         valid_timestamp,
     );
@@ -227,7 +229,7 @@ async fn main() -> ApplicationResult<()> {
     let l2_header_stream = create_l2_head_stream(
         &config,
         latest_confirmed_block_id,
-        unconfirmed_l2_blocks,
+        tx_cache,
         valid_anchor.clone(),
         taiko_inbox,
     )

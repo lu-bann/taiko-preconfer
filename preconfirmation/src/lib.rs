@@ -10,5 +10,6 @@ pub mod taiko;
 #[cfg(test)]
 pub mod test_util;
 pub mod time_provider;
+pub mod tx_cache;
 pub mod util;
 pub mod verification;

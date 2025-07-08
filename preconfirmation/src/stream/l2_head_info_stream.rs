@@ -10,6 +10,7 @@ use tracing::{debug, info, warn};
 
 use crate::{
     taiko::{contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1ClientError},
+    tx_cache::TxCache,
     util::log_error,
     verification::ILastBatchVerifier,
 };
@@ -17,22 +18,6 @@ use crate::{
 enum StreamData {
     Unconfirmed(Box<Block>),
     Confirmed(u64),
-}
-
-async fn update_unconfirmed_blocks(block: Block, unconfirmed_l2_blocks: &Arc<RwLock<Vec<Block>>>) {
-    if block.transactions.is_empty() {
-        warn!("Ignoring empty block {}", block.header.number);
-    }
-    let mut unconfirmed = unconfirmed_l2_blocks.write().await;
-    if let Some(current) = unconfirmed
-        .iter_mut()
-        .find(|unconfirmed_block| unconfirmed_block.header.number == block.header.number)
-    {
-        *current = block;
-    } else {
-        unconfirmed.push(block);
-    }
-    unconfirmed.sort_by(|a, b| a.header.number.cmp(&b.header.number));
 }
 
 pub fn get_id_stream(
@@ -73,7 +58,7 @@ pub fn get_confirmed_id_polling_stream(
 pub async fn get_l2_head_stream<F, FnFut, Verifier>(
     l2_block_stream: impl Stream<Item = Block>,
     confirmed_last_block_id_stream: impl Stream<Item = u64>,
-    unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>>,
+    tx_cache: TxCache,
     get_block: F,
     initial_confirmed_block_id: Option<u64>,
     verifier: Verifier,
@@ -90,6 +75,7 @@ where
 
         let last_confirmed_block_id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(initial_confirmed_block_id));
         pin_mut!(merged_stream);
+        let mut tx_cache = tx_cache.clone();
         while let Some(stream_data) = merged_stream.next().await {
             match stream_data {
                 StreamData::Unconfirmed(block) => {
@@ -100,14 +86,14 @@ where
                         debug!("last confirmed block: {last_confirmed_block_id}");
                         if block.header.number >= last_confirmed_block_id {
                             if block.header.number > last_confirmed_block_id {
-                                update_unconfirmed_blocks(*block, &unconfirmed_l2_blocks).await;
+                                tx_cache.add_block(*block).await;
                             }
                             true
                         } else {
                             false
                         }
                     } else {
-                        update_unconfirmed_blocks(*block, &unconfirmed_l2_blocks).await;
+                        tx_cache.add_block(*block).await;
                         true
                     };
 
@@ -115,7 +101,7 @@ where
                         let current_block_number = header.number;
                         yield Ok(header);
 
-                        let current_max_header_number = unconfirmed_l2_blocks.read().await.iter().map(|block| block.header.number).max().unwrap_or(current_block_number);
+                        let current_max_header_number = tx_cache.blocks().await.iter().map(|block| block.header.number).max().unwrap_or(current_block_number);
                         if current_block_number < current_max_header_number {
                             let mut latest_block_number = current_block_number;
                             // update other headers
@@ -126,16 +112,17 @@ where
                                         if let Some(block) = log_error(get_block(Some(id)).await, &format!("Failed to update block {id}")) {
                                             let header = block.header.inner.clone();
                                             info!("Updated block {} with {} txs.", header.number, block.transactions.len());
-                                            update_unconfirmed_blocks(block, &unconfirmed_l2_blocks).await;
+                                            tx_cache.add_block(block).await;
                                             yield Ok(header);
                                         }
                                     }
                                     let header = latest_block.header.inner.clone();
-                                    update_unconfirmed_blocks(latest_block, &unconfirmed_l2_blocks).await;
+                                    tx_cache.add_block(latest_block).await;
                                     yield Ok(header);
                                 }
                             }
-                            unconfirmed_l2_blocks.write().await.retain(|block| block.header.number <= latest_block_number);
+
+                            tx_cache.retain(|block| block.header.number <= latest_block_number).await;
                         }
                     }
                     }
@@ -143,14 +130,14 @@ where
                 StreamData::Confirmed(confirmed_block_id) => {
                     info!("☑️ Received confirmation: {}, last: {:?}", confirmed_block_id, last_confirmed_block_id.read().await);
                     if confirmed_block_id > last_confirmed_block_id.read().await.unwrap_or_default() {
-                        let confirmation_successful = verifier.verify(unconfirmed_l2_blocks.read().await.clone()).await?;
+                        let confirmation_successful = verifier.verify(tx_cache.blocks().await).await?;
                         let header = if confirmation_successful {
                             info!("✅ L1 and L2 state in sync. Last confirmed block {confirmed_block_id}.");
-                            unconfirmed_l2_blocks.write().await.retain(|block| block.header.number > confirmed_block_id);
+                            tx_cache.retain(|block| block.header.number > confirmed_block_id).await;
                             None
                         } else {
                             warn!("❌ L1 and L2 state out of sync. Last confirmed block {confirmed_block_id}.");
-                            unconfirmed_l2_blocks.write().await.clear();
+                            tx_cache.clear().await;
                             log_error(get_block(Some(confirmed_block_id)).await, "Failed to query last block").map(|block| block.header.into())
                         };
 
@@ -213,14 +200,14 @@ mod tests {
             yield block1;
             yield block2;
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier.expect_verify().never();
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -231,10 +218,7 @@ mod tests {
         assert_eq!(received, get_header(1, 3));
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(2, 5));
-        assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
-            expected_unconfirmed_l2_blocks
-        );
+        assert_eq!(*tx_cache.blocks().await, expected_unconfirmed_l2_blocks);
     }
 
     #[tokio::test]
@@ -252,14 +236,14 @@ mod tests {
             yield block1;
             yield block2;
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier.expect_verify().never();
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -270,10 +254,7 @@ mod tests {
         assert_eq!(received, get_header(1, 3));
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(1, 5));
-        assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
-            expected_unconfirmed_l2_blocks
-        );
+        assert_eq!(*tx_cache.blocks().await, expected_unconfirmed_l2_blocks);
     }
 
     #[tokio::test]
@@ -294,7 +275,7 @@ mod tests {
             yield block2;
             yield block3;
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move {
             if let Some(id) = id {
                 Ok(get_block(id, 0))
@@ -307,7 +288,7 @@ mod tests {
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -319,17 +300,14 @@ mod tests {
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(2, 4));
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             vec![get_block(1, 3), get_block(2, 4)],
         );
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(1, 5));
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(2, 0));
-        assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
-            expected_unconfirmed_l2_blocks
-        );
+        assert_eq!(*tx_cache.blocks().await, expected_unconfirmed_l2_blocks);
     }
 
     #[tokio::test]
@@ -348,14 +326,14 @@ mod tests {
             yield block1;
             yield block2;
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier.expect_verify().never();
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             Some(1),
             verifier,
@@ -366,10 +344,7 @@ mod tests {
         assert_eq!(received, get_header(1, 3));
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(1, 5));
-        assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
-            expected_unconfirmed_l2_blocks
-        );
+        assert_eq!(*tx_cache.blocks().await, expected_unconfirmed_l2_blocks);
     }
 
     #[tokio::test]
@@ -390,14 +365,14 @@ mod tests {
             yield get_block(2, 5);
             yield block3;
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier.expect_verify().never();
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             Some(2),
             verifier,
@@ -410,10 +385,7 @@ mod tests {
         assert_eq!(received, get_header(3, 3));
         let received = stream.next().await;
         assert!(received.is_none());
-        assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
-            expected_unconfirmed_l2_blocks
-        );
+        assert_eq!(*tx_cache.blocks().await, expected_unconfirmed_l2_blocks);
     }
 
     #[tokio::test]
@@ -437,7 +409,7 @@ mod tests {
             yield block3;
             confirmation_stream_trigger.notify_one();
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier
@@ -446,7 +418,7 @@ mod tests {
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -461,14 +433,14 @@ mod tests {
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(3, 3));
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
         );
 
         let received = stream.next().await;
         assert!(received.is_none());
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             final_expected_unconfirmed_l2_blocks
         );
     }
@@ -493,7 +465,7 @@ mod tests {
             yield block2;
             confirmation_stream_trigger.notify_one();
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier
@@ -502,7 +474,7 @@ mod tests {
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -515,14 +487,14 @@ mod tests {
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(2, 5));
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
         );
 
         let received = stream.next().await;
         assert!(received.is_none());
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             final_expected_unconfirmed_l2_blocks
         );
     }
@@ -547,7 +519,7 @@ mod tests {
             yield block2;
             confirmation_stream_trigger.notify_one();
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier
@@ -556,7 +528,7 @@ mod tests {
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -569,14 +541,14 @@ mod tests {
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(2, 5));
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
         );
 
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(1, 0));
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             final_expected_unconfirmed_l2_blocks
         );
     }
@@ -604,7 +576,7 @@ mod tests {
             yield block2;
             confirmation_stream_trigger.notify_one();
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier
@@ -613,7 +585,7 @@ mod tests {
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -626,14 +598,14 @@ mod tests {
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(2, 5));
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
         );
 
         let received = stream.next().await;
         assert!(received.is_none());
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             final_expected_unconfirmed_l2_blocks
         );
     }
@@ -668,7 +640,7 @@ mod tests {
             yield block3;
             confirmation_stream_trigger.notify_one();
         });
-        let unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>> = Arc::new(RwLock::new(vec![]));
+        let tx_cache = TxCache::new(vec![]);
         let f = |id: Option<u64>| async move { Ok(get_block(id.unwrap_or_default(), 0u64)) };
         let mut verifier = MockILastBatchVerifier::new();
         verifier
@@ -677,7 +649,7 @@ mod tests {
         let stream = get_l2_head_stream(
             l2_block_stream,
             confirmation_stream,
-            unconfirmed_l2_blocks.clone(),
+            tx_cache.clone(),
             f,
             None,
             verifier,
@@ -692,14 +664,14 @@ mod tests {
         let received = stream.next().await.unwrap().unwrap();
         assert_eq!(received, get_header(3, 3));
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
         );
 
         let received = stream.next().await;
         assert!(received.is_none());
         assert_eq!(
-            *unconfirmed_l2_blocks.read().await,
+            *tx_cache.blocks().await,
             final_expected_unconfirmed_l2_blocks
         );
     }
