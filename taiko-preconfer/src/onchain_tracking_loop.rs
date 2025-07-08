@@ -21,6 +21,7 @@ use preconfirmation::{
     taiko::{
         anchor::ValidAnchor, contracts::TaikoInboxInstance, taiko_l1_client::TaikoL1ClientError,
     },
+    tx_cache::TxCache,
     util::now_as_secs,
     verification::LastBatchVerifier,
 };
@@ -116,7 +117,7 @@ pub async fn create_header_stream(
 pub async fn create_l2_head_stream(
     config: &Config,
     latest_confirmed_block_id: u64,
-    unconfirmed_l2_blocks: Arc<RwLock<Vec<Block>>>,
+    tx_cache: TxCache,
     valid_anchor: ValidAnchor,
     taiko_inbox: TaikoInboxInstance,
 ) -> ApplicationResult<impl Stream<Item = Result<Header, TaikoL1ClientError>>> {
@@ -156,7 +157,7 @@ pub async fn create_l2_head_stream(
     Ok(get_l2_head_stream(
         l2_block_stream,
         id_stream,
-        unconfirmed_l2_blocks,
+        tx_cache,
         get_header_call,
         Some(latest_confirmed_block_id),
         last_batch_verifier,

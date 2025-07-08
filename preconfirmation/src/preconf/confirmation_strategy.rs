@@ -1,13 +1,13 @@
-use std::{num::TryFromIntError, sync::Arc};
+use std::num::TryFromIntError;
 
 use alloy_consensus::Transaction;
 use alloy_rpc_types_eth::Block;
 use thiserror::Error;
-use tokio::sync::RwLock;
 use tracing::debug;
 
 use crate::{
     taiko::taiko_l1_client::ITaikoL1Client,
+    tx_cache::TxCache,
     util::{ValidTimestamp, get_anchor_block_id_from_bytes},
 };
 
@@ -43,7 +43,7 @@ pub type ConfirmationResult<T> = Result<T, ConfirmationError>;
 #[derive(Debug, Clone)]
 pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
     client: Client,
-    blocks: Arc<RwLock<Vec<Block>>>,
+    tx_cache: TxCache,
     max_blocks: usize,
     valid_timestamp: ValidTimestamp,
 }
@@ -51,13 +51,13 @@ pub struct BlockConstrainedConfirmationStrategy<Client: ITaikoL1Client> {
 impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
     pub fn new(
         client: Client,
-        blocks: Arc<RwLock<Vec<Block>>>,
+        tx_cache: TxCache,
         max_blocks: usize,
         valid_timestamp: ValidTimestamp,
     ) -> Self {
         Self {
             client,
-            blocks,
+            tx_cache,
             max_blocks,
             valid_timestamp,
         }
@@ -69,19 +69,16 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
         force_send: bool,
         current_anchor_id: u64,
     ) -> ConfirmationResult<()> {
-        debug!(
-            "send force={}, #blocks={}",
-            force_send,
-            self.blocks.read().await.len()
-        );
-        self.blocks.write().await.retain(|block| {
-            self.valid_timestamp
-                .check(l1_slot_timestamp, block.header.timestamp, 0, 0)
-        });
-        let blocks: Vec<Block> = self
-            .blocks
-            .read()
-            .await
+        let mut tx_cache = self.tx_cache.clone();
+        tx_cache
+            .retain(|block| {
+                self.valid_timestamp
+                    .check(l1_slot_timestamp, block.header.timestamp, 0, 0)
+            })
+            .await;
+        let blocks = tx_cache.blocks().await;
+        debug!("send force={}, #blocks={}", force_send, blocks.len());
+        let blocks: Vec<Block> = blocks
             .iter()
             .filter_map(|block| {
                 if block.header.timestamp < l1_slot_timestamp {
