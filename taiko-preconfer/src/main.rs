@@ -13,7 +13,6 @@ use alloy_primitives::Address;
 use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_signer::k256::ecdsa::SigningKey;
 use alloy_signer_local::{LocalSigner, PrivateKeySigner};
-use futures::Stream;
 use preconfirmation::{
     client::reqwest::get_block_by_id,
     preconf::{
@@ -23,9 +22,6 @@ use preconfirmation::{
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
-    slot::{Slot, SubSlot},
-    slot_model::SlotModel,
-    stream::{get_next_slot_start, get_slot_stream, get_subslot_stream},
     taiko::{
         anchor::ValidAnchor,
         contracts::{
@@ -35,12 +31,12 @@ use preconfirmation::{
         taiko_l1_client::{ITaikoL1Client, TaikoL1Client},
         taiko_l2_client::{ITaikoL2Client, TaikoL2Client},
     },
-    time_provider::{ITimeProvider, SystemTimeProvider},
+    time_provider::SystemTimeProvider,
     util::get_anchor_block_id_from_bytes,
     verification::get_latest_confirmed_batch,
 };
 use tokio::{join, sync::RwLock};
-use tracing::{debug, info};
+use tracing::info;
 
 use taiko_preconfer::{
     confirmation_loop,
@@ -50,58 +46,6 @@ use taiko_preconfer::{
 };
 
 const PRECONF_BLOCKS: &str = "preconfBlocks";
-
-#[allow(clippy::result_large_err)]
-fn create_subslot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = SubSlot>> {
-    let taiko_slot_model = SlotModel::taiko_holesky(config.l2_slot_time);
-
-    let time_provider = SystemTimeProvider::new();
-    let start = get_next_slot_start(&config.l2_slot_time, &time_provider)?;
-    let timestamp = time_provider.timestamp_in_s();
-    let taiko_slot = taiko_slot_model.get_slot(timestamp);
-
-    let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
-    let slot_number = taiko_slot_model.get_slot_number(taiko_slot) + 1;
-    let l2_slot_in_epoch = slot_number % (config.l1_slots_per_epoch * subslots_per_slot);
-    debug!(
-        "L2 slot on startup: slot={}, epoch={} l2_slot_in_epoch={} next_slot_start={:?}",
-        slot_number,
-        slot_number / subslots_per_slot,
-        l2_slot_in_epoch,
-        start,
-    );
-    Ok(get_subslot_stream(
-        get_slot_stream(
-            start,
-            slot_number,
-            config.l2_slot_time,
-            taiko_slot_model.slots_per_epoch(),
-        )?,
-        subslots_per_slot,
-    ))
-}
-
-#[allow(clippy::result_large_err)]
-fn create_slot_stream(config: &Config) -> ApplicationResult<impl Stream<Item = Slot>> {
-    let taiko_slot_model = SlotModel::holesky();
-
-    let time_provider = SystemTimeProvider::new();
-    let start = get_next_slot_start(&config.l1_slot_time, &time_provider)?;
-    let timestamp = time_provider.timestamp_in_s();
-    let taiko_slot = taiko_slot_model.get_slot(timestamp);
-    let slot_number = taiko_slot_model.get_slot_number(taiko_slot) + 1;
-    debug!(
-        "L1 slot on startup: slot={} next_slot_start{:?}",
-        slot_number, start
-    );
-
-    Ok(get_slot_stream(
-        start,
-        slot_number,
-        config.l1_slot_time,
-        config.l1_slots_per_epoch,
-    )?)
-}
 
 async fn get_taiko_l2_client(
     config: &Config,
@@ -290,9 +234,6 @@ async fn main() -> ApplicationResult<()> {
     .await?;
 
     let waiting_for_previous_preconfer = Arc::new(AtomicBool::new(false));
-    let subslot_stream = create_subslot_stream(&config)?;
-    let slot_stream = create_slot_stream(&config)?;
-    let subslots_per_slot = config.l1_slot_time.as_secs() / config.l2_slot_time.as_secs();
     let (onchain_tracking_result, preconfirmation_result, confirmation_result) = join!(
         onchain_tracking_loop::run(
             l1_header_stream,
@@ -302,19 +243,17 @@ async fn main() -> ApplicationResult<()> {
             shared_latest_l1_timestamp.clone(),
         ),
         preconfirmation_loop::run(
-            subslot_stream,
             block_builder,
             preconfirmation_slot_model.clone(),
             whitelist.clone(),
             taiko_sequencing_monitor,
             config.handover_start_buffer,
-            subslots_per_slot,
+            config.l2_slot_time,
             waiting_for_previous_preconfer.clone(),
             config.poll_period,
             config.status_sync_max_delay,
         ),
         confirmation_loop::run(
-            slot_stream,
             confirmation_strategy,
             preconfirmation_slot_model,
             whitelist,
