@@ -40,7 +40,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
     whitelist_monitor.update_current_operator(slot.epoch).await;
     whitelist_monitor.update_next_operator(slot.epoch).await;
     if whitelist_monitor.is_active_in(preconfer_address, slot.epoch) {
-        info!("Active on startup");
+        info!("Can confirm on startup");
         preconfirmation_slot_model.set_active_epoch(slot.epoch);
     }
 
