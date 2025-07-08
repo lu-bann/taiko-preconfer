@@ -1,5 +1,6 @@
 use alloy_primitives::Address;
 use preconfirmation::{taiko::contracts::TaikoWhitelistInstance, util::log_error};
+use tracing::info;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct ActiveOperator {
@@ -59,6 +60,7 @@ impl WhitelistMonitor {
             self.whitelist.getOperatorForCurrentEpoch().call().await,
             "Failed to read current preconfer",
         ) {
+            info!("Current epoch operator: {operator}");
             self.operators.retain(|operator| operator.epoch > epoch);
 
             if self.operators.is_empty() {
@@ -75,6 +77,7 @@ impl WhitelistMonitor {
             self.whitelist.getOperatorForNextEpoch().call().await,
             "Failed to read preconfer for next epoch",
         ) {
+            info!("🔜 Next epoch operator: {operator}");
             let next_epoch = epoch + 1;
             self.operators
                 .retain(|operator| operator.epoch >= epoch && operator.epoch <= epoch + 1);
