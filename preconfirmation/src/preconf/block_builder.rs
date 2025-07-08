@@ -14,7 +14,6 @@ use crate::time_provider::ITimeProvider;
 pub struct BlockBuilder<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> {
     valid_anchor_id: ValidAnchor,
     l2_client: L2Client,
-    address: Address,
     time_provider: TimeProvider,
     last_l2_header: Arc<RwLock<Header>>,
     golden_touch_address: Address,
@@ -25,7 +24,6 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
     pub fn new(
         valid_anchor_id: ValidAnchor,
         l2_client: L2Client,
-        address: Address,
         time_provider: TimeProvider,
         last_l2_header: Arc<RwLock<Header>>,
         golden_touch_address: Address,
@@ -33,15 +31,10 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
         Self {
             valid_anchor_id,
             l2_client,
-            address,
             time_provider,
             last_l2_header,
             golden_touch_address,
         }
-    }
-
-    pub fn address(&self) -> Address {
-        self.address
     }
 
     pub async fn build_block(
@@ -67,10 +60,7 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
 
         let base_fee: u128 = base_fee?;
         debug!("base fee={base_fee}, anchor id={anchor_block_id}");
-        let mut txs = self
-            .l2_client
-            .get_mempool_txs(self.address, base_fee as u64)
-            .await?;
+        let mut txs = self.l2_client.get_mempool_txs(base_fee as u64).await?;
         info!(
             "{} Found {} transactions in the mempool.",
             if txs.is_empty() { "∅" } else { "👀" },
@@ -97,7 +87,6 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
         let header = self
             .l2_client
             .publish_preconfirmed_transactions(
-                self.address,
                 base_fee as u64,
                 slot_timestamp,
                 &last_l2_header,
@@ -173,8 +162,8 @@ mod tests {
             .return_once(|_| Box::pin(async { Ok(DUMMY_GAS) }));
         l2_client
             .expect_publish_preconfirmed_transactions()
-            .withf(|_, _, _, _, txs, _| txs.len() == 2 && txs[0].signature().r() == U256::ONE)
-            .return_once(|_, _, _, _, _, _| {
+            .withf(|_, _, _, txs, _| txs.len() == 2 && txs[0].signature().r() == U256::ONE)
+            .return_once(|_, _, _, _, _| {
                 Box::pin(async {
                     Ok(get_rpc_header(get_header(
                         DUMMY_BLOCK_NUMBER,
@@ -182,7 +171,7 @@ mod tests {
                     )))
                 })
             });
-        l2_client.expect_get_mempool_txs().return_once(|_, _| {
+        l2_client.expect_get_mempool_txs().return_once(|_| {
             Box::pin(async {
                 Ok(vec![TxEnvelope::new_unhashed(
                     TxEip1559::default().into(),
@@ -201,8 +190,6 @@ mod tests {
             .expect_timestamp_in_s()
             .return_const(next_block_desired_timestamp);
 
-        let preconfer_address = Address::random();
-
         let valid_anchor_id = test_valid_anchor_id();
         let last_l2_header = Arc::new(RwLock::new(get_header(
             DUMMY_BLOCK_NUMBER,
@@ -212,7 +199,6 @@ mod tests {
         let preconfer = BlockBuilder::new(
             valid_anchor_id,
             l2_client,
-            preconfer_address,
             time_provider,
             last_l2_header,
             golden_touch_addr,
@@ -239,7 +225,7 @@ mod tests {
         l2_client.expect_publish_preconfirmed_transactions().never();
         l2_client
             .expect_get_mempool_txs()
-            .return_once(|_, _| Box::pin(async { Ok(vec![]) }));
+            .return_once(|_| Box::pin(async { Ok(vec![]) }));
 
         let mut time_provider = MockITimeProvider::new();
         time_provider.expect_now().return_const(
@@ -251,8 +237,6 @@ mod tests {
             .expect_timestamp_in_s()
             .return_const(next_block_desired_timestamp);
 
-        let preconfer_address = Address::random();
-
         let valid_anchor_id = test_valid_anchor_id();
         let last_l2_header = Arc::new(RwLock::new(get_header(
             DUMMY_BLOCK_NUMBER,
@@ -262,7 +246,6 @@ mod tests {
         let preconfer = BlockBuilder::new(
             valid_anchor_id,
             l2_client,
-            preconfer_address,
             time_provider,
             last_l2_header,
             golden_touch_addr,
