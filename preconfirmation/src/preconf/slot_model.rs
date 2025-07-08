@@ -47,6 +47,10 @@ impl SlotModel {
         false
     }
 
+    pub fn is_handover_start_slot(&self, slot: u64) -> bool {
+        slot == self.slots_per_epoch - self.handover_slots
+    }
+
     pub fn is_last_slot_before_handover_window(&self, slot: u64) -> bool {
         slot == self.slots_per_epoch - self.handover_slots - 1
     }

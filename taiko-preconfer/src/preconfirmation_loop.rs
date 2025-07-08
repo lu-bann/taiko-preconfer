@@ -81,13 +81,16 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             slot_timestamp,
             now_as_secs(),
         );
-        if slot_timestamp + 10 < now_as_secs() {
-            panic!("Out of sync");
+        if subslot.sub_slot == 0 {
+            whitelist_monitor.change_epoch(slot.epoch);
         }
-        whitelist_monitor.change_epoch(slot.epoch);
+        if preconfirmation_slot_model.is_handover_start_slot(subslot.slot.slot)
+            && subslot.sub_slot == 0
+            && whitelist_monitor.is_active_in(preconfer_address, subslot.slot.epoch + 1)
+        {
+            preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
+        }
 
-        let is_last_slot_before_handover_window =
-            preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot);
         if preconfirmation_slot_model.can_preconfirm(&subslot.slot)
             || whitelist_monitor.is_current_and_next(preconfer_address)
         {
@@ -122,7 +125,8 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                 }
             }
 
-            let end_of_sequencing = is_last_slot_before_handover_window
+            let end_of_sequencing = preconfirmation_slot_model
+                .is_last_slot_before_handover_window(subslot.slot.slot)
                 && subslot.sub_slot % subslots_per_slot == subslots_per_slot - 1;
             log_error(
                 tokio::time::timeout(
@@ -138,9 +142,6 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
 
         if preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot) {
             whitelist_monitor.update_next_operator(slot.epoch).await;
-            if whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1) {
-                preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
-            }
         }
 
         tokio::time::sleep(remaining_until_next_slot(&l2_slot_duration, &provider)?).await;

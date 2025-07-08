@@ -54,6 +54,15 @@ pub async fn run<L1Client: ITaikoL1Client>(
         let timestamp = now_as_secs();
         let slot = slot_model.get_slot(timestamp);
         info!("📩 Received slot: {:?}", slot);
+        if slot.slot == 0 {
+            whitelist_monitor.change_epoch(slot.epoch);
+        }
+        if preconfirmation_slot_model.is_handover_start_slot(slot.slot)
+            && whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1)
+        {
+            preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
+        }
+
         if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
             info!("Waiting for previous preconfer to finish.");
             continue;
@@ -94,9 +103,6 @@ pub async fn run<L1Client: ITaikoL1Client>(
 
         if preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot) {
             whitelist_monitor.update_next_operator(slot.epoch).await;
-            if whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1) {
-                preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
-            }
         }
 
         tokio::time::sleep(remaining_until_next_slot(
