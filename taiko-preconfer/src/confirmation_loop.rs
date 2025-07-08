@@ -92,9 +92,11 @@ pub async fn run<L1Client: ITaikoL1Client>(
             );
         }
 
-        whitelist_monitor.update_next_operator(slot.epoch).await;
-        if whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1) {
-            preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
+        if preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot) {
+            whitelist_monitor.update_next_operator(slot.epoch).await;
+            if whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1) {
+                preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
+            }
         }
 
         tokio::time::sleep(remaining_until_next_slot(
