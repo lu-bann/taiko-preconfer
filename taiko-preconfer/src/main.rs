@@ -191,7 +191,7 @@ async fn main() -> ApplicationResult<()> {
     let mut unconfirmed_l2_blocks = vec![];
     for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
         let block = get_block_by_id(config.l2_client_url.clone(), Some(block_id)).await?;
-        if !block.transactions.is_empty() {
+        if !block.transactions.is_empty() && block.header.beneficiary == preconfer_address {
             let anchor_id = get_anchor_block_id_from_bytes(
                 block
                     .transactions
