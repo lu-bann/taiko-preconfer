@@ -6,7 +6,6 @@ use std::{
     time::Duration,
 };
 
-use alloy_primitives::Address;
 use preconfirmation::{
     preconf::{
         BlockBuilder,
@@ -19,12 +18,9 @@ use preconfirmation::{
     time_provider::{ITimeProvider, SystemTimeProvider},
     util::{log_error, now_as_millis, now_as_secs, remaining_until_next_slot},
 };
-use tracing::{debug, info, instrument};
+use tracing::{info, instrument};
 
-use crate::{
-    error::ApplicationResult,
-    util::{set_active_operator_for_next_period, set_active_operator_if_necessary},
-};
+use crate::{error::ApplicationResult, util::WhitelistMonitor};
 
 #[instrument(name = "📋", skip_all)]
 #[allow(clippy::too_many_arguments)]
@@ -41,41 +37,21 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     let preconfer_address = builder.address();
-    let mut current_epoch_preconfer = Address::ZERO;
-    let mut next_epoch_preconfer = Address::ZERO;
+    let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
 
     let slot_model = SlotModel::holesky();
     let subslots_per_slot = slot_model.slot_duration.as_secs() / l2_slot_duration.as_secs();
-    let current_slot = slot_model.get_slot(now_as_secs());
-    if let Some(current_preconfer) = log_error(
-        whitelist.getOperatorForCurrentEpoch().call().await,
-        "Failed to read current preconfer",
-    ) {
-        set_active_operator_if_necessary(
-            &current_preconfer,
-            &preconfer_address,
-            &mut preconfirmation_slot_model,
-            &current_slot,
-        );
-        current_epoch_preconfer = current_preconfer;
-    }
-    if let Some(next_preconfer) = log_error(
-        whitelist.getOperatorForNextEpoch().call().await,
-        "Failed to read preconfer for next epoch",
-    ) {
-        set_active_operator_for_next_period(
-            &next_preconfer,
-            &preconfer_address,
-            &mut preconfirmation_slot_model,
-            &current_slot,
-        );
-        next_epoch_preconfer = next_preconfer;
+    let slot = slot_model.get_slot(now_as_secs());
+    whitelist_monitor.update_current_operator(slot.epoch).await;
+    whitelist_monitor.update_next_operator(slot.epoch).await;
+    if whitelist_monitor.is_active_in(preconfer_address, slot.epoch) {
+        info!("Active on startup");
+        preconfirmation_slot_model.set_active_epoch(slot.epoch);
     }
 
     let provider = SystemTimeProvider::new();
     tokio::time::sleep(remaining_until_next_slot(&l2_slot_duration, &provider)?).await;
 
-    info!("Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}");
     loop {
         let timestamp = now_as_secs();
         let slot = slot_model.get_slot(timestamp);
@@ -108,20 +84,12 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         if slot_timestamp + 10 < now_as_secs() {
             panic!("Out of sync");
         }
-        if subslot.sub_slot == 0 {
-            current_epoch_preconfer = next_epoch_preconfer;
-            next_epoch_preconfer = Address::ZERO;
-        }
-
-        debug!(
-            "Current preconfer: {current_epoch_preconfer}, next preconfer: {next_epoch_preconfer}"
-        );
+        whitelist_monitor.change_epoch(slot.epoch);
 
         let is_last_slot_before_handover_window =
             preconfirmation_slot_model.is_last_slot_before_handover_window(subslot.slot.slot);
         if preconfirmation_slot_model.can_preconfirm(&subslot.slot)
-            || (current_epoch_preconfer == preconfer_address
-                && next_epoch_preconfer == preconfer_address)
+            || whitelist_monitor.is_current_and_next(preconfer_address)
         {
             if preconfirmation_slot_model.is_first_preconfirmation_slot(&subslot.slot)
                 && subslot.sub_slot == 0
@@ -168,19 +136,9 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             info!("Not active operator. Skip block building.");
         }
 
-        if is_last_slot_before_handover_window {
-            if let Some(next_preconfer) = log_error(
-                whitelist.getOperatorForNextEpoch().call().await,
-                "Failed to read preconfer for next epoch",
-            ) {
-                set_active_operator_for_next_period(
-                    &next_preconfer,
-                    &preconfer_address,
-                    &mut preconfirmation_slot_model,
-                    &subslot.slot,
-                );
-                next_epoch_preconfer = next_preconfer;
-            }
+        whitelist_monitor.update_next_operator(slot.epoch).await;
+        if whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1) {
+            preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
         }
 
         tokio::time::sleep(remaining_until_next_slot(&l2_slot_duration, &provider)?).await;
