@@ -1,11 +1,14 @@
-use std::thread::JoinHandle;
+use std::{
+    sync::atomic::{AtomicU16, Ordering},
+    thread::JoinHandle,
+};
 
 use alloy_consensus::{BlobTransactionSidecar, Header, TxEnvelope};
 use alloy_eips::{BlockNumberOrTag, eip4844::env_settings::EnvKzgSettings};
 use alloy_network::{EthereumWallet, TransactionBuilder, TransactionBuilder4844};
 use alloy_primitives::{Address, Bytes, FixedBytes};
 use alloy_provider::{
-    Identity, Provider, RootProvider,
+    Identity, PendingTransactionError, Provider, RootProvider, WatchTxError,
     fillers::{
         BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
     },
@@ -118,6 +121,7 @@ pub struct TaikoL1Client {
     use_blobs: bool,
     relative_fee_premium: f32,
     relative_blob_fee_premium: f32,
+    timeout_count: Arc<AtomicU16>,
 }
 
 impl TaikoL1Client {
@@ -142,6 +146,7 @@ impl TaikoL1Client {
             use_blobs,
             relative_fee_premium,
             relative_blob_fee_premium,
+            timeout_count: Arc::new(0.into()),
         }
     }
 }
@@ -201,8 +206,17 @@ impl ITaikoL1Client for TaikoL1Client {
         let router_address = self.preconf_router_address;
         let taiko_inbox = self.taiko_inbox.clone();
         let use_blobs = self.use_blobs;
-        let rel_fee_premium = self.relative_fee_premium;
-        let rel_blob_fee_premium = self.relative_blob_fee_premium;
+        let mut rel_fee_premium = self.relative_fee_premium;
+        let mut rel_blob_fee_premium = self.relative_blob_fee_premium;
+        info!(
+            "Timeout count: {}",
+            self.timeout_count.load(Ordering::Relaxed)
+        );
+        for _ in 0..self.timeout_count.load(Ordering::Relaxed) {
+            rel_fee_premium *= 1.5;
+            rel_blob_fee_premium *= 1.5;
+        }
+        let timeout_count = self.timeout_count.clone();
 
         *self.tx_handle.write().await = Some(
             std::thread::Builder::new()
@@ -304,21 +318,29 @@ impl ITaikoL1Client for TaikoL1Client {
                             "Failed to get transaction builder",
                         ) {
                             let start = SystemTime::now();
-                            if let Some(receipt) = log_error(
-                                tx_builder
-                                    .with_required_confirmations(2)
-                                    .with_timeout(Some(timeout))
-                                    .get_receipt()
-                                    .await,
-                                "Failed to send transaction",
-                            ) {
-                                let end = SystemTime::now();
-                                let elapsed = end
-                                    .duration_since(start)
-                                    .expect("time went backwards during tx")
-                                    .as_millis();
-                                info!("🟢 received receipt after {} ms", elapsed);
-                                debug!("receipt: {receipt:?}");
+                            match tx_builder
+                                .with_required_confirmations(2)
+                                .with_timeout(Some(timeout))
+                                .get_receipt()
+                                .await
+                            {
+                                Err(PendingTransactionError::TxWatcher(WatchTxError::Timeout)) => {
+                                    timeout_count.fetch_add(1, Ordering::Relaxed);
+                                }
+                                result => {
+                                    timeout_count.store(0, Ordering::Relaxed);
+                                    if let Some(receipt) =
+                                        log_error(result, "Failed to send transaction")
+                                    {
+                                        let end = SystemTime::now();
+                                        let elapsed = end
+                                            .duration_since(start)
+                                            .expect("time went backwards during tx")
+                                            .as_millis();
+                                        info!("🟢 received receipt after {} ms", elapsed);
+                                        debug!("receipt: {receipt:?}");
+                                    }
+                                }
                             }
                         }
                     });
