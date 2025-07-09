@@ -25,19 +25,9 @@ impl ByteWriter {
         Self { written_bytes: 0 }
     }
 
-    fn write_byte(&mut self, blob_bytes: &mut [u8; BYTES_PER_BLOB], v: u8) {
-        blob_bytes[self.written_bytes] = v;
-        self.written_bytes += 1;
-    }
-
-    fn write_31_bytes(&mut self, blob_bytes: &mut [u8; BYTES_PER_BLOB], buf31: &[u8; 31]) {
-        blob_bytes[self.written_bytes..self.written_bytes + 31].copy_from_slice(buf31);
-        self.written_bytes += 31;
-    }
-
-    fn write(&mut self, blob_bytes: &mut [u8; BYTES_PER_BLOB], v: u8, buf31: &[u8; 31]) {
-        self.write_byte(blob_bytes, v);
-        self.write_31_bytes(blob_bytes, buf31);
+    pub fn write(&mut self, blob_bytes: &mut [u8; BYTES_PER_BLOB], buffer: &[u8; 32]) {
+        blob_bytes[self.written_bytes..self.written_bytes + 32].copy_from_slice(buffer);
+        self.written_bytes += 32;
     }
 }
 
@@ -45,9 +35,15 @@ pub struct ByteReader {
     pub read_bytes: usize,
 }
 
+impl Default for ByteReader {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ByteReader {
-    pub fn new(read_bytes: usize) -> Self {
-        Self { read_bytes }
+    pub fn new() -> Self {
+        Self { read_bytes: 0 }
     }
 
     pub fn read_byte(&mut self, data: &[u8]) -> u8 {
@@ -76,39 +72,37 @@ impl ByteReader {
 
 pub fn create_blob(data: &[u8]) -> Result<Blob, KzgError> {
     let mut blob_bytes = [0; BYTES_PER_BLOB];
-    let mut buf31 = [0u8; 31];
+    let mut buffer = [0u8; 32];
+    let mut reader = ByteReader::new();
     let mut writer = ByteWriter::new();
 
-    let next_idx = write_version_and_data_size(data.len() as u32, &mut buf31);
-    let mut reader = ByteReader::new(0);
-
     let iterations = std::cmp::min(ITERATIONS, data.len() / DATA_SIZE_PER_ITERATION + 1);
-
     (0..iterations).for_each(|idx| {
         if idx == 0 {
-            let n = std::cmp::min(buf31.len() - next_idx, data.len());
-            reader.read_bytes(data, &mut buf31[next_idx..], n);
+            let next_idx = write_version_and_data_size(data.len() as u32, &mut buffer[1..]);
+            let n = std::cmp::min(31 - next_idx, data.len());
+            reader.read_bytes(data, &mut buffer[1 + next_idx..], n);
         } else {
-            reader.read_bytes(data, &mut buf31, 31);
+            reader.read_bytes(data, &mut buffer[1..], 31);
         }
 
         let x = reader.read_byte(data);
-        let a = x & MASK_1;
-        writer.write(&mut blob_bytes, a, &buf31);
+        buffer[0] = x & MASK_1;
+        writer.write(&mut blob_bytes, &buffer);
 
-        reader.read_bytes(data, &mut buf31, 31);
+        reader.read_bytes(data, &mut buffer[1..], 31);
         let y = reader.read_byte(data);
-        let a = (y & MASK_2) | ((x & MASK_3) >> 2);
-        writer.write(&mut blob_bytes, a, &buf31);
+        buffer[0] = (y & MASK_2) | ((x & MASK_3) >> 2);
+        writer.write(&mut blob_bytes, &buffer);
 
-        reader.read_bytes(data, &mut buf31, 31);
+        reader.read_bytes(data, &mut buffer[1..], 31);
         let z = reader.read_byte(data);
-        let a = z & MASK_1;
-        writer.write(&mut blob_bytes, a, &buf31);
+        buffer[0] = z & MASK_1;
+        writer.write(&mut blob_bytes, &buffer);
 
-        reader.read_bytes(data, &mut buf31, 31);
-        let a = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
-        writer.write(&mut blob_bytes, a, &buf31);
+        reader.read_bytes(data, &mut buffer[1..], 31);
+        buffer[0] = ((z & MASK_3) >> 2) | ((y & MASK_4) >> 4);
+        writer.write(&mut blob_bytes, &buffer);
     });
 
     Ok(c_kzg::Blob::from(blob_bytes))
@@ -149,7 +143,7 @@ pub fn blobs_to_sidecar(
     Ok(BlobTransactionSidecar::from_kzg(blobs, commitments, proofs))
 }
 
-fn write_version_and_data_size(size: u32, buf31: &mut [u8; 31]) -> usize {
+fn write_version_and_data_size(size: u32, buf31: &mut [u8]) -> usize {
     buf31[0] = ENCODING_VERSION;
     buf31[1] = (size >> 16) as u8;
     buf31[2] = (size >> 8) as u8;
