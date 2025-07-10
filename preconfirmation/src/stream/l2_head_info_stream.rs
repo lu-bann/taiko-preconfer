@@ -76,6 +76,7 @@ where
         let last_confirmed_block_id: Arc<RwLock<Option<u64>>> = Arc::new(RwLock::new(initial_confirmed_block_id));
         pin_mut!(merged_stream);
         let mut tx_cache = tx_cache.clone();
+        let mut first_confirmation = true;
         while let Some(stream_data) = merged_stream.next().await {
             match stream_data {
                 StreamData::Unconfirmed(block) => {
@@ -130,7 +131,8 @@ where
                 StreamData::Confirmed(confirmed_block_id) => {
                     info!("☑️ Received confirmation: {}, last: {:?}", confirmed_block_id, last_confirmed_block_id.read().await);
                     if confirmed_block_id > last_confirmed_block_id.read().await.unwrap_or_default() {
-                        let confirmation_successful = verifier.verify(tx_cache.blocks().await).await?;
+                        let confirmation_successful = first_confirmation || verifier.verify(tx_cache.blocks().await).await?;
+                        first_confirmation = false;
                         let header = if confirmation_successful {
                             info!("✅ L1 and L2 state in sync. Last confirmed block {confirmed_block_id}.");
                             tx_cache.retain(|block| block.header.number > confirmed_block_id).await;
