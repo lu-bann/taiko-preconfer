@@ -10,6 +10,7 @@ use alloy_primitives::Address;
 use preconfirmation::{
     preconf::{
         BlockBuilder,
+        config::Config,
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
@@ -33,19 +34,16 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     whitelist: TaikoWhitelistInstance,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
     valid_anchor: ValidAnchor,
-    handover_timeout: Duration,
-    l2_slot_duration: Duration,
     waiting_for_previous_preconfer: Arc<AtomicBool>,
-    polling_period: Duration,
-    status_sync_max_delay: Duration,
     preconfer_address: Address,
+    config: Config,
 ) -> ApplicationResult<()> {
     let mut valid_anchor = valid_anchor;
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
     let provider = SystemTimeProvider::new();
 
-    let subslots_per_slot = slot_model.slot_duration.as_secs() / l2_slot_duration.as_secs();
+    let subslots_per_slot = slot_model.slot_duration.as_secs() / config.l2_slot_duration.as_secs();
     let slot = slot_model.get_slot(provider.timestamp_in_s());
     whitelist_monitor.update_current_operator(slot.epoch).await;
     whitelist_monitor.update_next_operator(slot.epoch).await;
@@ -58,7 +56,11 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
     }
 
-    tokio::time::sleep(remaining_until_next_slot(&l2_slot_duration, &provider)?).await;
+    tokio::time::sleep(remaining_until_next_slot(
+        &config.l2_slot_duration,
+        &provider,
+    )?)
+    .await;
 
     loop {
         let timestamp = provider.timestamp_in_s();
@@ -75,7 +77,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             info!("Waiting for previous preconfer to finish.");
             continue;
         }
-        let slot_timestamp = slot_start + sub * l2_slot_duration.as_secs();
+        let slot_timestamp = slot_start + sub * config.l2_slot_duration.as_secs();
         info!(
             "slot number: L1={}, L2={}, L2 time={}",
             slot.epoch * 32 + slot.slot,
@@ -97,7 +99,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             || whitelist_monitor.is_current_and_next(preconfer_address)
         {
             let shifted_slot = slot.slot + preconfirmation_slot_model.handover_slots();
-            if shifted_slot % 8 == 0 && sub == 0 {
+            if shifted_slot % config.anchor_id_lag == 0 && sub == 0 {
                 if shifted_slot == 0 {
                     valid_anchor.update_to_latest().await?;
                 } else {
@@ -105,7 +107,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                 }
             }
             if preconfirmation_slot_model.is_first_preconfirmation_slot(&slot) && subslot == 0 {
-                let handover_timeout = handover_timeout;
+                let handover_timeout = config.handover_start_buffer;
                 let sequencing_monitor = sequencing_monitor.clone();
                 waiting_for_previous_preconfer.store(true, Ordering::Relaxed);
                 let waiting_for_previous_preconfer_spawn = waiting_for_previous_preconfer.clone();
@@ -125,10 +127,10 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
                 let slot_timestamp_ms = slot_timestamp as u128 * 1000;
                 let mut skip_slot = true;
                 while provider.timestamp_in_ms()
-                    < slot_timestamp_ms + status_sync_max_delay.as_millis()
+                    < slot_timestamp_ms + config.status_sync_max_delay.as_millis()
                 {
                     skip_slot = waiting_for_previous_preconfer.load(Ordering::Relaxed);
-                    tokio::time::sleep(polling_period).await;
+                    tokio::time::sleep(config.poll_period).await;
                 }
                 if skip_slot {
                     continue;
@@ -154,6 +156,10 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             whitelist_monitor.update_next_operator(slot.epoch).await;
         }
 
-        tokio::time::sleep(remaining_until_next_slot(&l2_slot_duration, &provider)?).await;
+        tokio::time::sleep(remaining_until_next_slot(
+            &config.l2_slot_duration,
+            &provider,
+        )?)
+        .await;
     }
 }
