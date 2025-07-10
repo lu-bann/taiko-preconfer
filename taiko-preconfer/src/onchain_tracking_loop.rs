@@ -76,7 +76,7 @@ async fn process_header(
     );
     let mut valid_anchor = valid_anchor;
     shared_last_l1_timestamp.store(header.timestamp, Ordering::Relaxed);
-    valid_anchor.update_block_number(header.number).await?;
+    valid_anchor.update_block_number(header.number);
     Ok(())
 }
 

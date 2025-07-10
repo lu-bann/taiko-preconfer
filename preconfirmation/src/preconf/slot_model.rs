@@ -16,6 +16,10 @@ impl SlotModel {
         }
     }
 
+    pub fn handover_slots(&self) -> u64 {
+        self.handover_slots
+    }
+
     pub fn set_active_epoch(&mut self, epoch: u64) {
         self.active_epoch = Some(epoch);
     }

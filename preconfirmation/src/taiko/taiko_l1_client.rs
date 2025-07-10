@@ -105,6 +105,8 @@ pub trait ITaikoL1Client {
         blocks: Vec<Block>,
         anchor_id: u64,
     ) -> impl Future<Output = TaikoL1ClientResult<()>>;
+
+    fn address(&self) -> Address;
 }
 
 #[derive(Debug, Clone)]
@@ -325,6 +327,10 @@ impl ITaikoL1Client for TaikoL1Client {
                 })?,
         );
         Ok(())
+    }
+
+    fn address(&self) -> Address {
+        self.preconfer_address
     }
 }
 

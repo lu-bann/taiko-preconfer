@@ -3,7 +3,7 @@ use std::{
         Arc,
         atomic::{AtomicU64, Ordering},
     },
-    time::{Duration, SystemTime},
+    time::SystemTime,
 };
 
 use alloy_consensus::{TxEip1559, TypedTransaction};
@@ -60,28 +60,18 @@ pub struct ValidAnchor {
     block_number: Arc<AtomicU64>,
     current_anchor: Arc<RwLock<(u64, SystemTime, FixedBytes<32>)>>,
     last_anchor_id: Arc<AtomicU64>,
-    anchor_id_update_tol: u64,
     url: String,
-    slot_duration: Duration,
 }
 
 impl ValidAnchor {
-    pub fn new(
-        max_offset: u64,
-        desired_offset: u64,
-        anchor_id_update_tol: u64,
-        url: String,
-        slot_duration: Duration,
-    ) -> Self {
+    pub fn new(max_offset: u64, desired_offset: u64, url: String) -> Self {
         Self {
             max_offset,
             desired_offset,
             block_number: Arc::new(0.into()),
             current_anchor: Arc::new((0, get_system_time_from_s(0), FixedBytes::default()).into()),
             last_anchor_id: Arc::new(0.into()),
-            anchor_id_update_tol,
             url,
-            slot_duration,
         }
     }
 
@@ -98,17 +88,15 @@ impl ValidAnchor {
             self.desired_offset,
             last_anchor_id,
         );
-        let current_anchor_id = self.current_anchor.read().await.0;
-        if new_anchor_id > current_anchor_id + self.anchor_id_update_tol {
-            debug!("Request header {} for {}", new_anchor_id, self.url);
-            let anchor_header = get_header_by_id(self.url.clone(), new_anchor_id).await?;
-            *self.current_anchor.write().await = (
-                new_anchor_id,
-                get_system_time_from_s(anchor_header.timestamp),
-                anchor_header.state_root,
-            );
-            debug!("anchor id update to {}", new_anchor_id);
-        }
+
+        debug!("Request header {} for {}", new_anchor_id, self.url);
+        let anchor_header = get_header_by_id(self.url.clone(), new_anchor_id).await?;
+        *self.current_anchor.write().await = (
+            new_anchor_id,
+            get_system_time_from_s(anchor_header.timestamp),
+            anchor_header.state_root,
+        );
+        debug!("anchor id update to {}", new_anchor_id);
         Ok(())
     }
 
@@ -122,29 +110,18 @@ impl ValidAnchor {
             )
     }
 
-    pub async fn is_valid_at(&self, timestamp: SystemTime) -> bool {
-        let current_anchor = *self.current_anchor.read().await;
-        current_anchor.1 + self.slot_duration * self.anchor_id_update_tol as u32 >= timestamp
-    }
-
     pub async fn is_valid(&self) -> bool {
         self.is_valid_after(0).await
     }
 
-    pub async fn update_block_number(&mut self, block_number: u64) -> Result<(), reqwest::Error> {
+    pub fn update_block_number(&mut self, block_number: u64) {
         if block_number > self.block_number.load(Ordering::Relaxed) {
             self.block_number.store(block_number, Ordering::Relaxed);
-            return self.update().await;
         }
-        Ok(())
     }
 
-    pub async fn update_last_anchor_id(
-        &mut self,
-        last_anchor_id: u64,
-    ) -> Result<(), reqwest::Error> {
+    pub fn update_last_anchor_id(&mut self, last_anchor_id: u64) {
         self.last_anchor_id.store(last_anchor_id, Ordering::Relaxed);
-        self.update().await
     }
 
     pub async fn id_and_state_root(&self) -> (u64, FixedBytes<32>) {

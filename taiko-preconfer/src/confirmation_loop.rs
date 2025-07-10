@@ -9,13 +9,12 @@ use preconfirmation::{
         confirmation_strategy::BlockConstrainedConfirmationStrategy,
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
-    slot::Slot,
     slot_model::SlotModel,
     taiko::{
         anchor::ValidAnchor, contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client,
     },
     time_provider::SystemTimeProvider,
-    util::{get_system_time_from_s, log_error, now_as_secs, remaining_until_next_slot},
+    util::{log_error, now_as_secs, remaining_until_next_slot},
 };
 use tracing::{info, instrument};
 
@@ -80,14 +79,8 @@ pub async fn run<L1Client: ITaikoL1Client>(
             || whitelist_monitor.is_current_and_next(preconfer_address))
             && !preconfirmation_slot_model.is_last_slot_before_handover_window(slot.slot)
         {
-            let mut force_send = preconfirmation_slot_model.within_handover_period(slot.slot);
-            if !force_send && slot.slot > 16 {
-                let handover_start_slot = Slot::new(slot.epoch, 28);
-                let total_slot = slot_model.get_slot_number(handover_start_slot);
-                let handover_start_timestamp =
-                    get_system_time_from_s(slot_model.get_timestamp(total_slot));
-                force_send = !valid_anchor.is_valid_at(handover_start_timestamp).await;
-            }
+            let force_send = preconfirmation_slot_model.within_handover_period(slot.slot);
+
             let current_anchor_id = valid_anchor.id_and_state_root().await.0;
             log_error(
                 confirmation_strategy
