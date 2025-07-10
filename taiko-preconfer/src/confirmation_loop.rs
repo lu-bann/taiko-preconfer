@@ -13,10 +13,10 @@ use preconfirmation::{
     taiko::{
         anchor::ValidAnchor, contracts::TaikoWhitelistInstance, taiko_l1_client::ITaikoL1Client,
     },
-    time_provider::SystemTimeProvider,
-    util::{log_error, now_as_secs, remaining_until_next_slot},
+    time_provider::{ITimeProvider, SystemTimeProvider},
+    util::{log_error, remaining_until_next_slot},
 };
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
 use crate::{error::ApplicationResult, util::WhitelistMonitor};
 
@@ -34,23 +34,27 @@ pub async fn run<L1Client: ITaikoL1Client>(
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     let slot_model = SlotModel::holesky();
     let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
+    let provider = SystemTimeProvider::new();
 
-    let slot = slot_model.get_slot(now_as_secs());
+    let slot = slot_model.get_slot(provider.timestamp_in_s());
     whitelist_monitor.update_current_operator(slot.epoch).await;
     whitelist_monitor.update_next_operator(slot.epoch).await;
     if whitelist_monitor.is_active_in(preconfer_address, slot.epoch) {
-        info!("Can confirm on startup");
+        info!("Can confirm in current epoch on startup");
         preconfirmation_slot_model.set_active_epoch(slot.epoch);
     }
+    if whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1) {
+        info!("Can confirm in next epoch on startup");
+        preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
+    }
 
-    let provider = SystemTimeProvider::new();
     tokio::time::sleep(remaining_until_next_slot(
         &slot_model.slot_duration,
         &provider,
     )?)
     .await;
     loop {
-        let timestamp = now_as_secs();
+        let timestamp = provider.timestamp_in_s();
         let slot = slot_model.get_slot(timestamp);
         info!("📩 Received slot: {:?}", slot);
         if slot.slot == 0 {
@@ -69,10 +73,10 @@ pub async fn run<L1Client: ITaikoL1Client>(
 
         let total_slot = slot.epoch * 32 + slot.slot;
         let l1_slot_timestamp = slot_model.get_timestamp(total_slot);
-        info!(
+        debug!(
             "L1 slot timestamp: {} {}",
             l1_slot_timestamp,
-            preconfirmation::util::now_as_secs(),
+            provider.timestamp_in_s(),
         );
 
         if (preconfirmation_slot_model.can_confirm(&slot)

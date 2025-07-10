@@ -18,7 +18,7 @@ use preconfirmation::{
         anchor::ValidAnchor, contracts::TaikoWhitelistInstance, taiko_l2_client::ITaikoL2Client,
     },
     time_provider::{ITimeProvider, SystemTimeProvider},
-    util::{log_error, now_as_millis, now_as_secs, remaining_until_next_slot},
+    util::{log_error, remaining_until_next_slot},
 };
 use tracing::{info, instrument};
 
@@ -42,22 +42,26 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     let mut valid_anchor = valid_anchor;
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
+    let provider = SystemTimeProvider::new();
 
     let slot_model = SlotModel::holesky();
     let subslots_per_slot = slot_model.slot_duration.as_secs() / l2_slot_duration.as_secs();
-    let slot = slot_model.get_slot(now_as_secs());
+    let slot = slot_model.get_slot(provider.timestamp_in_s());
     whitelist_monitor.update_current_operator(slot.epoch).await;
     whitelist_monitor.update_next_operator(slot.epoch).await;
     if whitelist_monitor.is_active_in(preconfer_address, slot.epoch) {
-        info!("Can preconfirm on startup");
+        info!("Can preconfirm in current epoch on startup");
         preconfirmation_slot_model.set_active_epoch(slot.epoch);
     }
+    if whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1) {
+        info!("Can preconfirm in next epoch on startup");
+        preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
+    }
 
-    let provider = SystemTimeProvider::new();
     tokio::time::sleep(remaining_until_next_slot(&l2_slot_duration, &provider)?).await;
 
     loop {
-        let timestamp = now_as_secs();
+        let timestamp = provider.timestamp_in_s();
         let slot = slot_model.get_slot(timestamp);
         let slot_number = slot_model.get_slot_number(slot);
         let slot_start = slot_model.get_timestamp(slot_number);
@@ -73,11 +77,10 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         }
         let slot_timestamp = HOLESKY_GENESIS_TIMESTAMP + slot.epoch * 32 * 12 + subslot * 6;
         info!(
-            "slot number: L1={}, L2={}, L2 time={}, now={}",
+            "slot number: L1={}, L2={}, L2 time={}",
             slot.epoch * 32 + slot.slot,
             slot.epoch * 64 + subslot,
             slot_timestamp,
-            now_as_secs(),
         );
         if subslot == 0 {
             info!("Change active epoch to {}", slot.epoch);
@@ -116,7 +119,9 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
                 let slot_timestamp_ms = slot_timestamp as u128 * 1000;
                 let mut skip_slot = true;
-                while now_as_millis() < slot_timestamp_ms + status_sync_max_delay.as_millis() {
+                while provider.timestamp_in_ms()
+                    < slot_timestamp_ms + status_sync_max_delay.as_millis()
+                {
                     skip_slot = waiting_for_previous_preconfer.load(Ordering::Relaxed);
                     tokio::time::sleep(polling_period).await;
                 }
