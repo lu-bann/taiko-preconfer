@@ -264,12 +264,9 @@ async fn main() -> ApplicationResult<()> {
             whitelist.clone(),
             taiko_sequencing_monitor,
             valid_anchor.clone(),
-            config.handover_start_buffer,
-            config.l2_slot_duration,
             waiting_for_previous_preconfer.clone(),
-            config.poll_period,
-            config.status_sync_max_delay,
             preconfer_address,
+            config.clone(),
         ),
         confirmation_loop::run(
             confirmation_strategy,
