@@ -96,8 +96,13 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         if preconfirmation_slot_model.can_preconfirm(&slot)
             || whitelist_monitor.is_current_and_next(preconfer_address)
         {
-            if (slot.slot + preconfirmation_slot_model.handover_slots()) % 8 == 0 && sub == 0 {
-                valid_anchor.update().await?;
+            let shifted_slot = slot.slot + preconfirmation_slot_model.handover_slots();
+            if shifted_slot % 8 == 0 && sub == 0 {
+                if shifted_slot == 0 {
+                    valid_anchor.update_to_latest().await?;
+                } else {
+                    valid_anchor.update().await?;
+                }
             }
             if preconfirmation_slot_model.is_first_preconfirmation_slot(&slot) && subslot == 0 {
                 let handover_timeout = handover_timeout;
