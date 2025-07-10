@@ -167,15 +167,11 @@ async fn main() -> ApplicationResult<()> {
     let mut valid_anchor = ValidAnchor::new(
         max_anchor_id_offset,
         config.anchor_id_lag,
-        config.anchor_id_update_tol,
         config.l1_client_url.clone(),
-        config.l1_slot_time,
     );
 
     let latest_l1_header = taiko_l1_client.get_latest_header().await?;
-    valid_anchor
-        .update_block_number(latest_l1_header.number)
-        .await?;
+    valid_anchor.update_block_number(latest_l1_header.number);
     let block_builder = BlockBuilder::new(
         valid_anchor.clone(),
         taiko_l2_client,
@@ -191,9 +187,8 @@ async fn main() -> ApplicationResult<()> {
 
     let latest_confirmed_batch = get_latest_confirmed_batch(&taiko_inbox).await?;
     let latest_confirmed_block_id = latest_confirmed_batch.lastBlockId;
-    valid_anchor
-        .update_last_anchor_id(latest_confirmed_batch.anchorBlockId)
-        .await?;
+    valid_anchor.update_last_anchor_id(latest_confirmed_batch.anchorBlockId);
+    valid_anchor.update().await?;
 
     let mut unconfirmed_l2_blocks = vec![];
     for block_id in (latest_confirmed_block_id + 1)..=latest_l2_header_number {
@@ -255,6 +250,7 @@ async fn main() -> ApplicationResult<()> {
             preconfirmation_slot_model.clone(),
             whitelist.clone(),
             taiko_sequencing_monitor,
+            valid_anchor.clone(),
             config.handover_start_buffer,
             config.l2_slot_time,
             waiting_for_previous_preconfer.clone(),

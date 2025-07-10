@@ -69,9 +69,7 @@ pub async fn verify_last_batch(
     debug!("stats {stats2:?}");
     let batch = taiko_inbox.getBatch(stats2.numBatches - 1).call().await?;
     debug!("batch {batch:?}");
-    valid_anchor
-        .update_last_anchor_id(batch.anchorBlockId)
-        .await?;
+    valid_anchor.update_last_anchor_id(batch.anchorBlockId);
     let blocks: Vec<_> = unconfirmed_l2_blocks
         .into_iter()
         .filter(|block| block.header.number <= batch.lastBlockId)

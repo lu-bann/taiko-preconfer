@@ -74,6 +74,7 @@ impl<Client: ITaikoL1Client> BlockConstrainedConfirmationStrategy<Client> {
             .retain(|block| {
                 self.valid_timestamp
                     .check(l1_slot_timestamp, block.header.timestamp, 0, 0)
+                    && block.header.beneficiary == self.client.address()
             })
             .await;
         let blocks = tx_cache.blocks().await;

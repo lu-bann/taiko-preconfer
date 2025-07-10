@@ -14,7 +14,9 @@ use preconfirmation::{
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
     slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
-    taiko::{contracts::TaikoWhitelistInstance, taiko_l2_client::ITaikoL2Client},
+    taiko::{
+        anchor::ValidAnchor, contracts::TaikoWhitelistInstance, taiko_l2_client::ITaikoL2Client,
+    },
     time_provider::{ITimeProvider, SystemTimeProvider},
     util::{log_error, now_as_millis, now_as_secs, remaining_until_next_slot},
 };
@@ -29,6 +31,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     preconfirmation_slot_model: PreconfirmationSlotModel,
     whitelist: TaikoWhitelistInstance,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
+    valid_anchor: ValidAnchor,
     handover_timeout: Duration,
     l2_slot_duration: Duration,
     waiting_for_previous_preconfer: Arc<AtomicBool>,
@@ -36,6 +39,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     status_sync_max_delay: Duration,
     preconfer_address: Address,
 ) -> ApplicationResult<()> {
+    let mut valid_anchor = valid_anchor;
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
     let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
 
@@ -89,6 +93,9 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
         if preconfirmation_slot_model.can_preconfirm(&slot)
             || whitelist_monitor.is_current_and_next(preconfer_address)
         {
+            if (slot.slot + preconfirmation_slot_model.handover_slots()) % 8 == 0 && sub == 0 {
+                valid_anchor.update().await?;
+            }
             if preconfirmation_slot_model.is_first_preconfirmation_slot(&slot) && subslot == 0 {
                 let handover_timeout = handover_timeout;
                 let sequencing_monitor = sequencing_monitor.clone();
