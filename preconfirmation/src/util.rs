@@ -198,7 +198,7 @@ pub fn remaining_until_next_slot<Provider: ITimeProvider>(
     slot_duration: &Duration,
     provider: &Provider,
 ) -> Result<Duration, TryFromIntError> {
-    let duration_now = Duration::from_millis(provider.timestamp_in_ms());
+    let duration_now = Duration::from_millis(provider.timestamp_in_ms().try_into()?);
     let in_current_slot_ms: Duration =
         Duration::from_millis((duration_now.as_millis() % slot_duration.as_millis()).try_into()?);
     Ok(if in_current_slot_ms.is_zero() {
