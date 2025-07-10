@@ -75,6 +75,23 @@ impl ValidAnchor {
         }
     }
 
+    async fn _update(&mut self, anchor_id: u64) -> Result<(), reqwest::Error> {
+        debug!("Request header {} for {}", anchor_id, self.url);
+        let anchor_header = get_header_by_id(self.url.clone(), anchor_id).await?;
+        *self.current_anchor.write().await = (
+            anchor_id,
+            get_system_time_from_s(anchor_header.timestamp),
+            anchor_header.state_root,
+        );
+        debug!("anchor id update to {}", anchor_id);
+        Ok(())
+    }
+
+    pub async fn update_to_latest(&mut self) -> Result<(), reqwest::Error> {
+        let anchor_id = self.block_number.load(Ordering::Relaxed);
+        self._update(anchor_id).await
+    }
+
     pub async fn update(&mut self) -> Result<(), reqwest::Error> {
         let block_number = self.block_number.load(Ordering::Relaxed);
         let last_anchor_id = self.last_anchor_id.load(Ordering::Relaxed);
@@ -82,22 +99,14 @@ impl ValidAnchor {
             "compute anchor id block={}, max_offset={}, desired_offset={}, last_anchor={}",
             block_number, self.max_offset, self.desired_offset, last_anchor_id
         );
-        let new_anchor_id = compute_valid_anchor_id(
+        let anchor_id = compute_valid_anchor_id(
             block_number,
             self.max_offset,
             self.desired_offset,
             last_anchor_id,
         );
 
-        debug!("Request header {} for {}", new_anchor_id, self.url);
-        let anchor_header = get_header_by_id(self.url.clone(), new_anchor_id).await?;
-        *self.current_anchor.write().await = (
-            new_anchor_id,
-            get_system_time_from_s(anchor_header.timestamp),
-            anchor_header.state_root,
-        );
-        debug!("anchor id update to {}", new_anchor_id);
-        Ok(())
+        self._update(anchor_id).await
     }
 
     pub async fn is_valid_after(&self, offset: u64) -> bool {

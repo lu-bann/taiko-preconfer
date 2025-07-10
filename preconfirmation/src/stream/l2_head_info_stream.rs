@@ -397,6 +397,7 @@ mod tests {
 
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
+            yield 1;
             yield 2;
         });
         let block1 = get_block(1, 3);
@@ -456,9 +457,10 @@ mod tests {
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
             yield 1;
+            yield 2;
         });
-        let block1 = get_block_with_txs(1, 3, txs);
-        let block2 = get_block(2, 5);
+        let block1 = get_block_with_txs(2, 3, txs);
+        let block2 = get_block(3, 5);
         let expected_unconfirmed_l2_blocks_before_confirmation =
             vec![block1.clone(), block2.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![block2.clone()];
@@ -485,9 +487,9 @@ mod tests {
         pin_mut!(stream);
 
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(1, 3));
+        assert_eq!(received, get_header(2, 3));
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(2, 5));
+        assert_eq!(received, get_header(3, 5));
         assert_eq!(
             *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
@@ -510,9 +512,10 @@ mod tests {
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
             yield 1;
+            yield 2;
         });
-        let block1 = get_block_with_txs(1, 3, txs);
-        let block2 = get_block(2, 5);
+        let block1 = get_block_with_txs(2, 3, txs);
+        let block2 = get_block(3, 5);
         let expected_unconfirmed_l2_blocks_before_confirmation =
             vec![block1.clone(), block2.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![];
@@ -539,16 +542,16 @@ mod tests {
         pin_mut!(stream);
 
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(1, 3));
+        assert_eq!(received, get_header(2, 3));
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(2, 5));
+        assert_eq!(received, get_header(3, 5));
         assert_eq!(
             *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
         );
 
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(1, 0));
+        assert_eq!(received, get_header(2, 0));
         assert_eq!(
             *tx_cache.blocks().await,
             final_expected_unconfirmed_l2_blocks
@@ -567,9 +570,10 @@ mod tests {
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
             yield 1;
+            yield 2;
         });
-        let block1 = get_block_with_txs(1, 3, txs);
-        let block2 = get_block(2, 5);
+        let block1 = get_block_with_txs(2, 3, txs);
+        let block2 = get_block(3, 5);
         let expected_unconfirmed_l2_blocks_before_confirmation =
             vec![block1.clone(), block2.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![block2.clone()];
@@ -596,9 +600,9 @@ mod tests {
         pin_mut!(stream);
 
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(1, 3));
+        assert_eq!(received, get_header(2, 3));
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(2, 5));
+        assert_eq!(received, get_header(3, 5));
         assert_eq!(
             *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
@@ -628,11 +632,12 @@ mod tests {
         ];
         let confirmation_stream = pin!(stream! {
             confirmation_stream_start.notified().await;
-            yield 2;
+            yield 1;
+            yield 3;
         });
-        let block1 = get_block_with_txs(1, 3, txs1);
-        let block2 = get_block_with_txs(2, 5, txs2);
-        let block3 = get_block(3, 3);
+        let block1 = get_block_with_txs(2, 3, txs1);
+        let block2 = get_block_with_txs(3, 5, txs2);
+        let block3 = get_block(4, 3);
         let expected_unconfirmed_l2_blocks_before_confirmation =
             vec![block1.clone(), block2.clone(), block3.clone()];
         let final_expected_unconfirmed_l2_blocks = vec![block3.clone()];
@@ -660,11 +665,11 @@ mod tests {
         pin_mut!(stream);
 
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(1, 3));
+        assert_eq!(received, get_header(2, 3));
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(2, 5));
+        assert_eq!(received, get_header(3, 5));
         let received = stream.next().await.unwrap().unwrap();
-        assert_eq!(received, get_header(3, 3));
+        assert_eq!(received, get_header(4, 3));
         assert_eq!(
             *tx_cache.blocks().await,
             expected_unconfirmed_l2_blocks_before_confirmation
