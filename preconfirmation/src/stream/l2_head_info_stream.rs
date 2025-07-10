@@ -83,6 +83,8 @@ where
                     info!("⬅️ Received l2 block: {} #txs: {}", block.header.number, block.transactions.len());
                     if !block.transactions.is_empty() {
                     let header = block.header.inner.clone();
+
+                    // store block
                     let should_yield = if let Some(last_confirmed_block_id) = *last_confirmed_block_id.read().await {
                         debug!("last confirmed block: {last_confirmed_block_id}");
                         if block.header.number >= last_confirmed_block_id {
@@ -105,7 +107,7 @@ where
                         let current_max_header_number = tx_cache.blocks().await.iter().map(|block| block.header.number).max().unwrap_or(current_block_number);
                         if current_block_number < current_max_header_number {
                             let mut latest_block_number = current_block_number;
-                            // update other headers
+                            // update blocks
                             if let Some(latest_block) = log_error(get_block(None).await, "Failed to get latest block") {
                                 if latest_block.header.number > current_block_number {
                                     latest_block_number = latest_block.header.number;
