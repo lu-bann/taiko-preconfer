@@ -1,13 +1,8 @@
 use std::time::Duration;
 
-use alloy_eips::merge::{EPOCH_DURATION, SLOT_DURATION};
-
 use crate::slot::Slot;
 
-pub const HOLESKY_GENESIS_TIMESTAMP: u64 = 1_695_902_400;
-pub const TAIKO_HOLESKY_GENESIS_TIMESTAMP: u64 = 1_711_697_940;
-
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub struct SlotModel {
     pub genesis_timestamp: u64,
     pub slot_duration: Duration,
@@ -25,18 +20,6 @@ impl SlotModel {
             slot_duration,
             epoch_duration,
         }
-    }
-
-    pub const fn holesky() -> Self {
-        Self::new(HOLESKY_GENESIS_TIMESTAMP, SLOT_DURATION, EPOCH_DURATION)
-    }
-
-    pub const fn taiko_holesky(slot_duration: Duration) -> Self {
-        Self::new(HOLESKY_GENESIS_TIMESTAMP, slot_duration, EPOCH_DURATION)
-    }
-
-    pub const fn generic(genesis_timestamp: u64, slot_duration: Duration) -> Self {
-        Self::new(genesis_timestamp, slot_duration, EPOCH_DURATION)
     }
 
     pub fn get_slot(&self, timestamp: u64) -> Slot {

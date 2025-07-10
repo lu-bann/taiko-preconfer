@@ -12,9 +12,9 @@ use crate::secret::Secret;
 #[derive(Debug, Clone)]
 pub struct Config {
     pub l1_genesis_time: SystemTime,
-    pub l1_slot_time: Duration,
+    pub l1_slot_duration: Duration,
     pub l1_slots_per_epoch: u64,
-    pub l2_slot_time: Duration,
+    pub l2_slot_duration: Duration,
     pub handover_window_slots: u32,
     pub handover_start_buffer: Duration,
     pub anchor_id_lag: u64,
@@ -33,7 +33,6 @@ pub struct Config {
     pub golden_touch_private_key: String,
     pub private_key: Secret,
     pub jwt_secret: Secret,
-    pub anchor_id_update_tol: u64,
     pub max_blocks_per_batch: usize,
     pub use_blobs: bool,
     pub propose_timeout: Duration,
@@ -65,9 +64,9 @@ impl Config {
         Ok(Self {
             l1_genesis_time: UNIX_EPOCH
                 + Duration::from_secs(env::var("L1_GENESIS_TIMESTAMP_S")?.parse()?),
-            l1_slot_time: Duration::from_millis(std::env::var("L1_SLOT_TIME_MS")?.parse()?),
+            l1_slot_duration: Duration::from_millis(std::env::var("L1_SLOT_TIME_MS")?.parse()?),
             l1_slots_per_epoch: env::var("L1_SLOTS_PER_EPOCH")?.parse()?,
-            l2_slot_time: Duration::from_millis(std::env::var("L2_SLOT_TIME_MS")?.parse()?),
+            l2_slot_duration: Duration::from_millis(std::env::var("L2_SLOT_TIME_MS")?.parse()?),
             handover_window_slots: std::env::var("HANDOVER_WINDOW_SLOTS")?.parse()?,
             handover_start_buffer: Duration::from_millis(
                 std::env::var("HANDOVER_WINDOW_START_BUFFER_MS")?.parse()?,
@@ -90,7 +89,6 @@ impl Config {
             golden_touch_private_key: std::env::var("GOLDEN_TOUCH_PRIVATE_KEY")?,
             private_key: Secret::new(std::env::var("PRIVATE_KEY")?),
             jwt_secret: Secret::new(std::env::var("JWT_SECRET")?),
-            anchor_id_update_tol: std::env::var("ANCHOR_ID_UPDATE_TOL")?.parse()?,
             max_blocks_per_batch: std::env::var("MAX_BLOCKS_PER_BATCH")?.parse()?,
             use_blobs: std::env::var("USE_BLOBS")?.parse()?,
             propose_timeout: Duration::from_secs(std::env::var("PROPOSE_TIMEOUT_S")?.parse()?),

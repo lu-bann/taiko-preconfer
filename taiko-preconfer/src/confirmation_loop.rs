@@ -24,6 +24,7 @@ use crate::{error::ApplicationResult, util::WhitelistMonitor};
 #[allow(clippy::too_many_arguments)]
 pub async fn run<L1Client: ITaikoL1Client>(
     confirmation_strategy: BlockConstrainedConfirmationStrategy<L1Client>,
+    slot_model: SlotModel,
     preconfirmation_slot_model: PreconfirmationSlotModel,
     whitelist: TaikoWhitelistInstance,
     preconfer_address: Address,
@@ -32,7 +33,6 @@ pub async fn run<L1Client: ITaikoL1Client>(
     shared_latest_l1_timestamp: Arc<AtomicU64>,
 ) -> ApplicationResult<()> {
     let mut preconfirmation_slot_model = preconfirmation_slot_model;
-    let slot_model = SlotModel::holesky();
     let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
     let provider = SystemTimeProvider::new();
 
