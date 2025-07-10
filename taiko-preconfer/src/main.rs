@@ -4,6 +4,7 @@ use std::{
         Arc,
         atomic::{AtomicBool, AtomicU64},
     },
+    time::UNIX_EPOCH,
 };
 
 use alloy_consensus::Transaction;
@@ -22,6 +23,7 @@ use preconfirmation::{
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
+    slot_model::SlotModel,
     taiko::{
         anchor::ValidAnchor,
         contracts::{
@@ -133,6 +135,16 @@ async fn main() -> ApplicationResult<()> {
         .with_target(false)
         .init();
 
+    let genesis_timestamp = config
+        .l1_genesis_time
+        .duration_since(UNIX_EPOCH)
+        .expect("Genesis must be after epoch")
+        .as_secs();
+    let slot_model = SlotModel::new(
+        genesis_timestamp,
+        config.l1_slot_duration,
+        config.l1_slot_duration * config.l1_slots_per_epoch as u32,
+    );
     let taiko_inbox = get_inbox(&config).await?;
     let taiko_inbox_config = taiko_inbox.pacayaConfig().call().await?;
 
@@ -214,7 +226,7 @@ async fn main() -> ApplicationResult<()> {
 
     let tx_cache = TxCache::new(unconfirmed_l2_blocks);
     let valid_timestamp = preconfirmation::util::ValidTimestamp::new(
-        max_anchor_id_offset * config.l1_slot_time.as_secs(),
+        max_anchor_id_offset * config.l1_slot_duration.as_secs(),
     );
 
     let confirmation_strategy = BlockConstrainedConfirmationStrategy::new(
@@ -247,12 +259,13 @@ async fn main() -> ApplicationResult<()> {
         ),
         preconfirmation_loop::run(
             block_builder,
+            slot_model,
             preconfirmation_slot_model.clone(),
             whitelist.clone(),
             taiko_sequencing_monitor,
             valid_anchor.clone(),
             config.handover_start_buffer,
-            config.l2_slot_time,
+            config.l2_slot_duration,
             waiting_for_previous_preconfer.clone(),
             config.poll_period,
             config.status_sync_max_delay,
@@ -260,6 +273,7 @@ async fn main() -> ApplicationResult<()> {
         ),
         confirmation_loop::run(
             confirmation_strategy,
+            slot_model,
             preconfirmation_slot_model,
             whitelist,
             preconfer_address,

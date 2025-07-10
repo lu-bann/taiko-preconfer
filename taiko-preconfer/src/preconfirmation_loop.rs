@@ -13,7 +13,7 @@ use preconfirmation::{
         sequencing_monitor::{TaikoSequencingMonitor, TaikoStatusMonitor},
         slot_model::SlotModel as PreconfirmationSlotModel,
     },
-    slot_model::{HOLESKY_GENESIS_TIMESTAMP, SlotModel},
+    slot_model::SlotModel,
     taiko::{
         anchor::ValidAnchor, contracts::TaikoWhitelistInstance, taiko_l2_client::ITaikoL2Client,
     },
@@ -28,6 +28,7 @@ use crate::{error::ApplicationResult, util::WhitelistMonitor};
 #[allow(clippy::too_many_arguments)]
 pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     builder: BlockBuilder<L2Client, TimeProvider>,
+    slot_model: SlotModel,
     preconfirmation_slot_model: PreconfirmationSlotModel,
     whitelist: TaikoWhitelistInstance,
     sequencing_monitor: TaikoSequencingMonitor<TaikoStatusMonitor>,
@@ -44,7 +45,6 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     let mut whitelist_monitor = WhitelistMonitor::new(whitelist);
     let provider = SystemTimeProvider::new();
 
-    let slot_model = SlotModel::holesky();
     let subslots_per_slot = slot_model.slot_duration.as_secs() / l2_slot_duration.as_secs();
     let slot = slot_model.get_slot(provider.timestamp_in_s());
     whitelist_monitor.update_current_operator(slot.epoch).await;
@@ -75,7 +75,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             info!("Waiting for previous preconfer to finish.");
             continue;
         }
-        let slot_timestamp = HOLESKY_GENESIS_TIMESTAMP + slot.epoch * 32 * 12 + subslot * 6;
+        let slot_timestamp = slot_start + sub * l2_slot_duration.as_secs();
         info!(
             "slot number: L1={}, L2={}, L2 time={}",
             slot.epoch * 32 + slot.slot,
