@@ -56,7 +56,7 @@ pub async fn run<L1Client: ITaikoL1Client>(
     loop {
         let timestamp = provider.timestamp_in_s();
         let slot = slot_model.get_slot(timestamp);
-        info!("📩 Received slot: {:?}", slot);
+        info!("📩 Current slot: {:?}", slot);
         if slot.slot == 0 {
             whitelist_monitor.change_epoch(slot.epoch);
         }
@@ -71,11 +71,9 @@ pub async fn run<L1Client: ITaikoL1Client>(
             continue;
         }
 
-        let total_slot = slot.epoch * 32 + slot.slot;
-        let l1_slot_timestamp = slot_model.get_timestamp(total_slot);
         debug!(
             "L1 slot timestamp: {} {}",
-            l1_slot_timestamp,
+            slot_model.get_timestamp(&slot),
             provider.timestamp_in_s(),
         );
 

@@ -21,7 +21,7 @@ use preconfirmation::{
     time_provider::{ITimeProvider, SystemTimeProvider},
     util::{log_error, remaining_until_next_slot},
 };
-use tracing::{info, instrument};
+use tracing::{debug, info, instrument};
 
 use crate::{error::ApplicationResult, util::WhitelistMonitor};
 
@@ -65,23 +65,21 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
     loop {
         let timestamp = provider.timestamp_in_s();
         let slot = slot_model.get_slot(timestamp);
-        let slot_number = slot_model.get_slot_number(slot);
-        let slot_start = slot_model.get_timestamp(slot_number);
-        let sub =
+        let slot_number = slot_model.get_slot_number(&slot);
+        let slot_start = slot_model.get_timestamp(&slot);
+        let subslot_in_slot =
             (timestamp - slot_start) / (slot_model.slot_duration.as_secs() / subslots_per_slot);
-        let subslot = slot.slot * subslots_per_slot + sub;
-        info!("Current slot {:?} {} {}", slot, sub, subslot,);
-        info!("slot {slot_number} {slot_start} {timestamp}");
-        info!("📩 Received subslot: {:?}", subslot);
+        let subslot = slot.slot * subslots_per_slot + subslot_in_slot;
+        info!("📩 Current slot {:?} {} {}", slot, subslot_in_slot, subslot,);
         if waiting_for_previous_preconfer.load(Ordering::Relaxed) {
             info!("Waiting for previous preconfer to finish.");
             continue;
         }
-        let slot_timestamp = slot_start + sub * config.l2_slot_duration.as_secs();
-        info!(
+        let slot_timestamp = slot_start + subslot_in_slot * config.l2_slot_duration.as_secs();
+        debug!(
             "slot number: L1={}, L2={}, L2 time={}",
-            slot.epoch * 32 + slot.slot,
-            slot.epoch * 64 + subslot,
+            slot_number,
+            slot_number * subslots_per_slot + subslot_in_slot,
             slot_timestamp,
         );
         if subslot == 0 {
@@ -89,7 +87,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             whitelist_monitor.change_epoch(slot.epoch);
         }
         if preconfirmation_slot_model.is_handover_start_slot(slot.slot)
-            && sub == 0
+            && subslot_in_slot == 0
             && whitelist_monitor.is_active_in(preconfer_address, slot.epoch + 1)
         {
             preconfirmation_slot_model.set_active_epoch(slot.epoch + 1);
@@ -99,7 +97,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             || whitelist_monitor.is_current_and_next(preconfer_address)
         {
             let shifted_slot = slot.slot + preconfirmation_slot_model.handover_slots();
-            if shifted_slot % config.anchor_id_lag == 0 && sub == 0 {
+            if shifted_slot % config.anchor_id_lag == 0 && subslot_in_slot == 0 {
                 if shifted_slot == 0 {
                     valid_anchor.update_to_latest().await?;
                 } else {
