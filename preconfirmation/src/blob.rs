@@ -3,11 +3,11 @@ use alloy_primitives::Bytes;
 
 use c_kzg::{BYTES_PER_BLOB, Blob, Error as KzgError, KzgSettings};
 
-const DATA_LENGTH_SIZE: usize = 4;
-const FIELD_ELEMENTS_PER_ITERATION: usize = 4;
-const DATA_SIZE_PER_ITERATION: usize = FIELD_ELEMENTS_PER_ITERATION * 31 + 3;
-const ITERATIONS: usize = 1024;
-pub const MAX_BLOB_DATA_SIZE: usize = DATA_SIZE_PER_ITERATION * ITERATIONS - DATA_LENGTH_SIZE;
+const METADATA_LENGTH: usize = 4;
+const FIELDS_PER_ITERATION: usize = 4;
+const DATA_SIZE_PER_ITERATION: usize = FIELDS_PER_ITERATION * 31 + 3;
+const MAX_ITERATIONS: usize = 1024;
+pub const MAX_BLOB_DATA_SIZE: usize = DATA_SIZE_PER_ITERATION * MAX_ITERATIONS - METADATA_LENGTH;
 const ENCODING_VERSION: u8 = 0;
 
 pub struct ByteWriter {
@@ -76,7 +76,7 @@ pub fn create_blob(data: &[u8]) -> Result<Blob, KzgError> {
     let mut reader = ByteReader::new();
     let mut writer = ByteWriter::new();
 
-    let iterations = std::cmp::min(ITERATIONS, data.len() / DATA_SIZE_PER_ITERATION + 1);
+    let iterations = std::cmp::min(MAX_ITERATIONS, data.len() / DATA_SIZE_PER_ITERATION + 1);
     (0..iterations).for_each(|idx| {
         if idx == 0 {
             let next_idx = write_version_and_data_size(data.len() as u32, &mut buffer[1..]);
