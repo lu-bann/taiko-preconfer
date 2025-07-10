@@ -30,11 +30,12 @@ impl SlotModel {
         }
     }
 
-    pub fn get_timestamp(&self, slot: u64) -> u64 {
-        self.genesis_timestamp + self.slot_duration.as_secs() * slot
+    pub fn get_timestamp(&self, slot: &Slot) -> u64 {
+        let slot_number = self.get_slot_number(slot);
+        self.genesis_timestamp + self.slot_duration.as_secs() * slot_number
     }
 
-    pub fn get_slot_number(&self, slot: Slot) -> u64 {
+    pub fn get_slot_number(&self, slot: &Slot) -> u64 {
         slot.epoch * self.slots_per_epoch() + slot.slot
     }
 
@@ -59,7 +60,8 @@ mod tests {
             TEST_EPOCH_DURATION,
         );
 
-        let ts = model.get_timestamp(0);
+        let slot = Slot::new(0, 0);
+        let ts = model.get_timestamp(&slot);
         assert_eq!(ts, TEST_GENESIS_TIMESTAMP);
     }
 
@@ -71,7 +73,8 @@ mod tests {
             TEST_EPOCH_DURATION,
         );
 
-        let ts = model.get_timestamp(3);
+        let slot = Slot::new(0, 3);
+        let ts = model.get_timestamp(&slot);
         assert_eq!(
             ts,
             TEST_GENESIS_TIMESTAMP + TEST_SLOT_DURATION.as_secs() * 3
@@ -101,7 +104,7 @@ mod tests {
         let epoch = 10;
         let slot = 3;
         let slot = Slot::new(epoch, slot);
-        let slot_number = model.get_slot_number(slot);
+        let slot_number = model.get_slot_number(&slot);
         assert_eq!(slot_number, 53);
     }
 
