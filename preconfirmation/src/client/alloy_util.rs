@@ -1,6 +1,6 @@
+use alloy::primitives::{Address, Bytes};
 use alloy_consensus::TxEnvelope;
 use alloy_json_rpc::RpcError;
-use alloy_primitives::{Address, Bytes};
 use alloy_rpc_client::RpcClient;
 use alloy_rpc_types_engine::JwtSecret;
 use alloy_transport::TransportErrorKind;

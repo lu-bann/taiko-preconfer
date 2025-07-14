@@ -1,16 +1,16 @@
 use std::thread::JoinHandle;
 
-use alloy_consensus::{BlobTransactionSidecar, Header, TxEnvelope};
-use alloy_eips::{BlockNumberOrTag, eip4844::env_settings::EnvKzgSettings};
-use alloy_network::{EthereumWallet, TransactionBuilder, TransactionBuilder4844};
-use alloy_primitives::{Address, Bytes, FixedBytes};
-use alloy_provider::{
+use alloy::network::{EthereumWallet, TransactionBuilder, TransactionBuilder4844};
+use alloy::primitives::{Address, Bytes, FixedBytes};
+use alloy::providers::{
     Identity, Provider, RootProvider,
     fillers::{
         BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller, WalletFiller,
     },
     utils::Eip1559Estimation,
 };
+use alloy_consensus::{BlobTransactionSidecar, Header, TxEnvelope};
+use alloy_eips::{BlockNumberOrTag, eip4844::env_settings::EnvKzgSettings};
 use alloy_rpc_types::TransactionRequest;
 use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolType;
@@ -68,14 +68,14 @@ pub enum TaikoL1ClientError {
     IO(#[from] std::io::Error),
 
     #[error("{0}")]
-    FromUInt128(#[from] alloy_primitives::ruint::FromUintError<u128>),
+    FromUInt128(#[from] alloy::primitives::ruint::FromUintError<u128>),
 
     #[error("{0}")]
-    PendingTransaction(#[from] alloy_provider::PendingTransactionError),
+    PendingTransaction(#[from] alloy::providers::PendingTransactionError),
 }
 
-impl From<alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>> for TaikoL1ClientError {
-    fn from(err: alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>) -> Self {
+impl From<alloy_json_rpc::RpcError<alloy::transports::TransportErrorKind>> for TaikoL1ClientError {
+    fn from(err: alloy_json_rpc::RpcError<alloy::transports::TransportErrorKind>) -> Self {
         Self::Rpc(crate::util::parse_transport_error(err))
     }
 }

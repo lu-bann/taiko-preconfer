@@ -3,8 +3,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use alloy::primitives::Bytes;
 use alloy_consensus::TxEnvelope;
-use alloy_primitives::Bytes;
 use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolCall;
 use hex::{FromHexError, decode, encode};
@@ -73,9 +73,9 @@ pub fn pad_left<const N: usize>(bytes: &[u8]) -> Bytes {
     Bytes::from(padded)
 }
 
-pub fn parse_transport_error(err: alloy_transport::TransportError) -> String {
+pub fn parse_transport_error(err: alloy::transports::TransportError) -> String {
     match err {
-        alloy_transport::TransportError::ErrorResp(alloy_json_rpc::ErrorPayload {
+        alloy::transports::TransportError::ErrorResp(alloy_json_rpc::ErrorPayload {
             code,
             message,
             data,

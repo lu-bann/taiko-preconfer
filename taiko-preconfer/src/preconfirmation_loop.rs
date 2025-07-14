@@ -6,7 +6,7 @@ use std::{
     time::Duration,
 };
 
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 use preconfirmation::{
     preconf::{
         BlockBuilder,

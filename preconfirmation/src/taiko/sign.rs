@@ -1,5 +1,5 @@
+use alloy::primitives::{Signature, U256};
 use alloy_consensus::{SignableTransaction, Signed, TypedTransaction};
-use alloy_primitives::{Signature, U256};
 use k256::{
     Scalar, Secp256k1,
     ecdsa::{Error as EcdsaError, SigningKey, hazmat::sign_prehashed},
@@ -57,9 +57,9 @@ pub fn get_signed(
 
 #[cfg(test)]
 mod tests {
+    use alloy::primitives::{Address, Bytes, FixedBytes, TxKind, U256, address};
     use alloy_consensus::{TxEip1559, TxLegacy};
     use alloy_eips::eip2930::AccessList;
-    use alloy_primitives::{Address, Bytes, FixedBytes, TxKind, U256, address};
     use alloy_sol_types::SolCall;
 
     use super::*;

@@ -6,7 +6,7 @@ pub enum BlockBuilderError {
     Compression(#[from] libdeflater::CompressionError),
 
     #[error("{0}")]
-    Sign(#[from] alloy_signer::Error),
+    Sign(#[from] alloy::signers::Error),
 
     #[error("{0}")]
     SystemTime(#[from] std::time::SystemTimeError),

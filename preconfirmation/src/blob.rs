@@ -1,5 +1,5 @@
+use alloy::primitives::Bytes;
 use alloy_consensus::BlobTransactionSidecar;
-use alloy_primitives::Bytes;
 
 use c_kzg::{BYTES_PER_BLOB, Blob, Error as KzgError, KzgSettings};
 
@@ -158,8 +158,8 @@ const MASK_4: u8 = 0b1111_0000;
 
 #[cfg(test)]
 mod tests {
+    use alloy::primitives::{FixedBytes, keccak256};
     use alloy_eips::eip4844::env_settings::EnvKzgSettings;
-    use alloy_primitives::{FixedBytes, keccak256};
 
     use super::*;
 

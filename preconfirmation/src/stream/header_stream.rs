@@ -1,8 +1,8 @@
 use std::time::Duration;
 
+use alloy::primitives::B256;
+use alloy::providers::Provider;
 use alloy_consensus::Header;
-use alloy_primitives::B256;
-use alloy_provider::Provider;
 use alloy_rpc_types_eth::Block;
 use async_stream::stream;
 use futures::Stream;

@@ -1,5 +1,5 @@
+use alloy::primitives::{Address, Bytes, FixedBytes, TxKind, U256, address};
 use alloy_consensus::{Header, TxEnvelope, TxLegacy, TypedTransaction, transaction::Recovered};
-use alloy_primitives::{Address, Bytes, FixedBytes, TxKind, U256, address};
 use alloy_rpc_types::Header as RpcHeader;
 use alloy_rpc_types_eth::{Block, BlockTransactions, Transaction, TransactionInfo};
 use k256::ecdsa::SigningKey;

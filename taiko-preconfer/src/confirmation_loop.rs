@@ -3,7 +3,7 @@ use std::sync::{
     atomic::{AtomicBool, AtomicU64, Ordering},
 };
 
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 use preconfirmation::{
     preconf::{
         confirmation_strategy::BlockConstrainedConfirmationStrategy,

@@ -1,4 +1,4 @@
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 use preconfirmation::{taiko::contracts::TaikoWhitelistInstance, util::log_error};
 use tracing::info;
 

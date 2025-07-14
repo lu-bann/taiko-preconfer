@@ -10,7 +10,7 @@ fn compress_bytes(bytes: &[u8]) -> Result<Vec<u8>, CompressionError> {
 }
 
 pub fn compress(txs: Vec<TxEnvelope>) -> Result<Vec<u8>, CompressionError> {
-    let encoded = alloy_rlp::encode(&txs);
+    let encoded = alloy::rlp::encode(&txs);
     compress_bytes(&encoded)
 }
 
