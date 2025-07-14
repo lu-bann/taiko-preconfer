@@ -109,20 +109,6 @@ impl ValidAnchor {
         self._update(anchor_id).await
     }
 
-    pub async fn is_valid_after(&self, offset: u64) -> bool {
-        self.current_anchor.read().await.0
-            == compute_valid_anchor_id(
-                self.block_number.load(Ordering::Relaxed) + offset,
-                self.max_offset,
-                self.desired_offset,
-                self.last_anchor_id.load(Ordering::Relaxed),
-            )
-    }
-
-    pub async fn is_valid(&self) -> bool {
-        self.is_valid_after(0).await
-    }
-
     pub fn update_block_number(&mut self, block_number: u64) {
         if block_number > self.block_number.load(Ordering::Relaxed) {
             self.block_number.store(block_number, Ordering::Relaxed);
