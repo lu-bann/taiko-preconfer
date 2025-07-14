@@ -70,9 +70,9 @@ dependencies = [
 
 [[package]]
 name = "alloy-consensus"
-version = "1.0.20"
+version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "73e7f99e3a50210eaee2abd57293a2e72b1a5b7bb251b44c4bf33d02ddd402ab"
+checksum = "b8f278d90bfe5edc8b178eaeff4680797566b7c7788b3c7aa095cc1fcf2b6de1"
 dependencies = [
  "alloy-eips",
  "alloy-primitives",

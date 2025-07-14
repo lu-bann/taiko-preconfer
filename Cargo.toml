@@ -7,7 +7,7 @@ version = "0.1.0"
 edition = "2024"
 
 [workspace.dependencies]
-alloy-consensus = "1.0.9"
+alloy-consensus = "1.0.21"
 alloy-contract = { version = "1.0.17", features = ["pubsub"] }
 alloy-eips = { version = "1.0.17", features = ["kzg"] }
 alloy-json-rpc = "1.0.17"
