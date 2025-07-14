@@ -1,4 +1,4 @@
-use alloy_consensus::TxEnvelope;
+use alloy::consensus::TxEnvelope;
 use libdeflater::{CompressionError, CompressionLvl, Compressor};
 
 fn compress_bytes(bytes: &[u8]) -> Result<Vec<u8>, CompressionError> {

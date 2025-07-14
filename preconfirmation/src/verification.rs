@@ -1,11 +1,11 @@
-use alloy::primitives::{Address, B256, Bytes, FixedBytes, Signature, SignatureError, keccak256};
-use alloy::providers::Provider;
-use alloy_eips::{
+use alloy::eips::{
     BlockNumberOrTag,
     eip4844::{env_settings::EnvKzgSettings, kzg_to_versioned_hash},
 };
-use alloy_rpc_types_eth::Block;
-use alloy_sol_types::SolValue;
+use alloy::primitives::{Address, B256, Bytes, FixedBytes, Signature, SignatureError, keccak256};
+use alloy::providers::Provider;
+use alloy::rpc::types::eth::Block;
+use alloy::sol_types::SolValue;
 use c_kzg::Blob;
 use thiserror::Error;
 use tracing::debug;
@@ -37,13 +37,13 @@ pub fn verify_signature(
 #[derive(Debug, Error)]
 pub enum TaikoInboxError {
     #[error("{0}")]
-    RpcError(#[from] alloy_json_rpc::RpcError<alloy::transports::TransportErrorKind>),
+    RpcError(#[from] alloy::rpc::json_rpc::RpcError<alloy::transports::TransportErrorKind>),
 
     #[error("{0}")]
     Compression(#[from] libdeflater::CompressionError),
 
     #[error("{0}")]
-    Contract(#[from] alloy_contract::Error),
+    Contract(#[from] alloy::contract::Error),
 
     #[error("{0}")]
     Kzg(#[from] c_kzg::Error),

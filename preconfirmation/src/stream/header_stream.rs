@@ -1,9 +1,9 @@
 use std::time::Duration;
 
+use alloy::consensus::Header;
 use alloy::primitives::B256;
 use alloy::providers::Provider;
-use alloy_consensus::Header;
-use alloy_rpc_types_eth::Block;
+use alloy::rpc::types::eth::Block;
 use async_stream::stream;
 use futures::Stream;
 use tokio_stream::StreamExt;
@@ -52,7 +52,7 @@ pub fn get_header_polling_stream<P: Provider>(
         let mut last_header_number = -1_i128;
         let mut last_hash = B256::ZERO;
         loop {
-            if let Ok(Some(block)) = provider.get_block_by_number(alloy_eips::BlockNumberOrTag::Latest).await {
+            if let Ok(Some(block)) = provider.get_block_by_number(alloy::eips::BlockNumberOrTag::Latest).await {
                 let header = block.header.inner;
                 if header.number as i128 != last_header_number || header.hash_slow() != last_hash {
                     last_header_number = header.number as i128;
@@ -73,7 +73,7 @@ pub fn get_block_polling_stream<P: Provider>(
         let mut last_header_number = -1_i128;
         let mut last_hash = B256::ZERO;
         loop {
-            if let Ok(Some(block)) = provider.get_block_by_number(alloy_eips::BlockNumberOrTag::Latest).full().await {
+            if let Ok(Some(block)) = provider.get_block_by_number(alloy::eips::BlockNumberOrTag::Latest).full().await {
                 if block.header.number as i128 != last_header_number || block.header.hash_slow() != last_hash {
                     last_header_number = block.header.number as i128;
                     last_hash = block.header.hash_slow();

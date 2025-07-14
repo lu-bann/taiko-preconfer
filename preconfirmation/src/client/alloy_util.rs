@@ -1,9 +1,9 @@
+use alloy::consensus::TxEnvelope;
 use alloy::primitives::{Address, Bytes};
-use alloy_consensus::TxEnvelope;
-use alloy_json_rpc::RpcError;
-use alloy_rpc_client::RpcClient;
-use alloy_rpc_types_engine::JwtSecret;
-use alloy_transport::TransportErrorKind;
+use alloy::rpc::client::RpcClient;
+use alloy::rpc::json_rpc::RpcError;
+use alloy::rpc::types::engine::JwtSecret;
+use alloy::transports::TransportErrorKind;
 use alloy_transport_http::{
     AuthLayer, Http, HyperClient,
     hyper_util::{client::legacy::Client, rt::TokioExecutor},

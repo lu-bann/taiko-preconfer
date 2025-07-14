@@ -6,9 +6,9 @@ use std::{
     time::SystemTime,
 };
 
+use alloy::consensus::{TxEip1559, TypedTransaction};
 use alloy::primitives::{Address, ChainId, FixedBytes, TxKind, U256};
-use alloy_consensus::{TxEip1559, TypedTransaction};
-use alloy_sol_types::SolCall;
+use alloy::sol_types::SolCall;
 use tokio::sync::RwLock;
 use tracing::debug;
 
@@ -129,8 +129,8 @@ impl ValidAnchor {
 pub(crate) mod tests {
     use super::*;
 
+    use alloy::consensus::Transaction;
     use alloy::primitives::{Bytes, FixedBytes, address};
-    use alloy_consensus::Transaction;
 
     use crate::{taiko::contracts::BaseFeeConfig, util::hex_decode};
 

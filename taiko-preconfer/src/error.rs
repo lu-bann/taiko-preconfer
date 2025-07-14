@@ -24,7 +24,7 @@ pub enum ApplicationError {
     DotEnv(#[from] dotenv::Error),
 
     #[error("{0}")]
-    Rpc(#[from] alloy_json_rpc::RpcError<alloy::transports::TransportErrorKind>),
+    Rpc(#[from] alloy::rpc::json_rpc::RpcError<alloy::transports::TransportErrorKind>),
 
     #[error("{0}")]
     UrlParse(#[from] url::ParseError),
@@ -36,13 +36,13 @@ pub enum ApplicationError {
     Signer(#[from] alloy::signers::local::LocalSignerError),
 
     #[error("{0}")]
-    SolType(#[from] alloy_sol_types::Error),
+    SolType(#[from] alloy::sol_types::Error),
 
     #[error("{0}")]
     Reqwest(#[from] reqwest::Error),
 
     #[error("{0}")]
-    Contract(#[from] alloy_contract::Error),
+    Contract(#[from] alloy::contract::Error),
 }
 
 pub type ApplicationResult<T> = Result<T, ApplicationError>;

@@ -1,7 +1,7 @@
+use alloy::consensus::{Header, TxEnvelope, TxLegacy, TypedTransaction, transaction::Recovered};
 use alloy::primitives::{Address, Bytes, FixedBytes, TxKind, U256, address};
-use alloy_consensus::{Header, TxEnvelope, TxLegacy, TypedTransaction, transaction::Recovered};
-use alloy_rpc_types::Header as RpcHeader;
-use alloy_rpc_types_eth::{Block, BlockTransactions, Transaction, TransactionInfo};
+use alloy::rpc::types::Header as RpcHeader;
+use alloy::rpc::types::eth::{Block, BlockTransactions, Transaction, TransactionInfo};
 use k256::ecdsa::SigningKey;
 
 use crate::taiko::sign::{get_signing_key, sign_anchor_tx};

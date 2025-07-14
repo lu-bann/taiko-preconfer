@@ -3,10 +3,10 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+use alloy::consensus::TxEnvelope;
 use alloy::primitives::Bytes;
-use alloy_consensus::TxEnvelope;
-use alloy_rpc_types_eth::Block;
-use alloy_sol_types::SolCall;
+use alloy::rpc::types::eth::Block;
+use alloy::sol_types::SolCall;
 use hex::{FromHexError, decode, encode};
 use tracing::error;
 
@@ -47,7 +47,7 @@ pub fn get_tx_envelopes_from_block(block: Block) -> Vec<TxEnvelope> {
         .collect()
 }
 
-pub fn get_anchor_block_id_from_bytes(bytes: &Bytes) -> Result<u64, alloy_sol_types::Error> {
+pub fn get_anchor_block_id_from_bytes(bytes: &Bytes) -> Result<u64, alloy::sol_types::Error> {
     let anchor_v3_call = TaikoAnchor::anchorV3Call::abi_decode(bytes)?;
     Ok(anchor_v3_call._anchorBlockId)
 }
@@ -75,7 +75,7 @@ pub fn pad_left<const N: usize>(bytes: &[u8]) -> Bytes {
 
 pub fn parse_transport_error(err: alloy::transports::TransportError) -> String {
     match err {
-        alloy::transports::TransportError::ErrorResp(alloy_json_rpc::ErrorPayload {
+        alloy::transports::TransportError::ErrorResp(alloy::rpc::json_rpc::ErrorPayload {
             code,
             message,
             data,

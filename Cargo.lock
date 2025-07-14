@@ -34,15 +34,16 @@ checksum = "683d7910e743518b0e34f1186f92494becacb047c7b6bf616c96772180fef923"
 
 [[package]]
 name = "alloy"
-version = "1.0.20"
+version = "1.0.21"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ae58d888221eecf621595e2096836ce7cfc37be06bfa39d7f64aa6a3ea4c9e5b"
+checksum = "ece086222e4ba8345d36c97de0ec6aa13a89576535a554151872e840a1d138b4"
 dependencies = [
  "alloy-consensus",
  "alloy-contract",
  "alloy-core",
  "alloy-eips",
  "alloy-genesis",
+ "alloy-json-rpc",
  "alloy-network",
  "alloy-provider",
  "alloy-pubsub",
@@ -340,6 +341,7 @@ dependencies = [
  "alloy-rpc-client",
  "alloy-rpc-types-anvil",
  "alloy-rpc-types-debug",
+ "alloy-rpc-types-engine",
  "alloy-rpc-types-eth",
  "alloy-rpc-types-trace",
  "alloy-rpc-types-txpool",
@@ -2788,17 +2790,7 @@ name = "preconfirmation"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "alloy-consensus",
- "alloy-contract",
- "alloy-eips",
- "alloy-json-rpc",
  "alloy-rlp",
- "alloy-rpc-client",
- "alloy-rpc-types",
- "alloy-rpc-types-engine",
- "alloy-rpc-types-eth",
- "alloy-sol-types",
- "alloy-transport",
  "alloy-transport-http",
  "async-stream",
  "c-kzg",
@@ -3771,12 +3763,6 @@ name = "taiko-preconfer"
 version = "0.1.0"
 dependencies = [
  "alloy",
- "alloy-consensus",
- "alloy-contract",
- "alloy-eips",
- "alloy-json-rpc",
- "alloy-rpc-types-eth",
- "alloy-sol-types",
  "dotenv",
  "futures",
  "preconfirmation",

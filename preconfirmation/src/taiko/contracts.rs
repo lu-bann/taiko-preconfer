@@ -2,7 +2,7 @@ use alloy::providers::{
     Identity, RootProvider,
     fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
 };
-use alloy_sol_types::sol;
+use alloy::sol;
 
 sol!(
     #[derive(Debug)]

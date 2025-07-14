@@ -6,9 +6,9 @@ use std::{
     time::Duration,
 };
 
+use alloy::consensus::Header;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
-use alloy_consensus::Header;
-use alloy_rpc_types_eth::Block;
+use alloy::rpc::types::eth::Block;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{
     client::reqwest::get_block_by_id,
