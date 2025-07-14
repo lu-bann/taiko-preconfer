@@ -76,13 +76,13 @@ pub fn create_blob(data: &[u8]) -> Result<Blob, KzgError> {
     let mut reader = ByteReader::new();
     let mut writer = ByteWriter::new();
 
+    let written_bytes = write_version_and_data_size(data.len() as u32, &mut buffer[1..]);
+    let remaining_bytes = std::cmp::min(31 - written_bytes, data.len());
+    reader.read_bytes(data, &mut buffer[1 + written_bytes..], remaining_bytes);
+
     let iterations = std::cmp::min(MAX_ITERATIONS, data.len() / DATA_SIZE_PER_ITERATION + 1);
     (0..iterations).for_each(|idx| {
-        if idx == 0 {
-            let next_idx = write_version_and_data_size(data.len() as u32, &mut buffer[1..]);
-            let n = std::cmp::min(31 - next_idx, data.len());
-            reader.read_bytes(data, &mut buffer[1 + next_idx..], n);
-        } else {
+        if idx != 0 {
             reader.read_bytes(data, &mut buffer[1..], 31);
         }
 
