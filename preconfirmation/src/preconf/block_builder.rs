@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tokio::{join, sync::RwLock};
 use tracing::{debug, info};
 
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 
 use crate::preconf::BlockBuilderResult;
 use crate::taiko::anchor::ValidAnchor;
@@ -102,10 +102,10 @@ impl<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider> BlockBuilder<L2Clien
 
 #[cfg(test)]
 mod tests {
+    use alloy::primitives::{U256, address};
     use alloy_consensus::{TxEip1559, TxEnvelope};
-    use alloy_primitives::{U256, address};
 
-    use alloy_signer::Signature;
+    use alloy::signers::Signature;
     use std::time::{Duration, UNIX_EPOCH};
 
     use crate::{

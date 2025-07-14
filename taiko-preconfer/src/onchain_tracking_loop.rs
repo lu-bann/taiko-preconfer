@@ -6,8 +6,8 @@ use std::{
     time::Duration,
 };
 
+use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy_consensus::Header;
-use alloy_provider::{Provider, ProviderBuilder, WsConnect};
 use alloy_rpc_types_eth::Block;
 use futures::{Stream, StreamExt, future::BoxFuture, pin_mut};
 use preconfirmation::{

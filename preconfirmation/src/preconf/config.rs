@@ -5,7 +5,7 @@ use std::{
 };
 use thiserror::Error;
 
-use alloy_primitives::Address;
+use alloy::primitives::Address;
 
 use crate::secret::Secret;
 
@@ -56,7 +56,7 @@ pub enum ConfigError {
     ParseBool(#[from] std::str::ParseBoolError),
 
     #[error("{0}")]
-    FromHex(#[from] alloy_primitives::hex::FromHexError),
+    FromHex(#[from] alloy::primitives::hex::FromHexError),
 }
 
 impl Config {

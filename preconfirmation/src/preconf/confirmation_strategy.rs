@@ -20,7 +20,7 @@ pub enum ConfirmationError {
     Compression(#[from] libdeflater::CompressionError),
 
     #[error("{0}")]
-    Signer(#[from] alloy_signer::Error),
+    Signer(#[from] alloy::signers::Error),
 
     #[error("{0}")]
     SolTypes(#[from] alloy_sol_types::Error),

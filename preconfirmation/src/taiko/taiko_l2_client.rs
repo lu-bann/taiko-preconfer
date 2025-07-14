@@ -1,13 +1,13 @@
+use alloy::primitives::{Address, Bytes, ChainId, FixedBytes, ruint::FromUintError};
+use alloy::providers::{Provider, utils::Eip1559Estimation};
+use alloy::transports::TransportErrorKind;
 use alloy_consensus::{Header, TxEnvelope};
 use alloy_contract::Error as ContractError;
 use alloy_eips::BlockNumberOrTag;
 use alloy_json_rpc::RpcError;
-use alloy_primitives::{Address, Bytes, ChainId, FixedBytes, ruint::FromUintError};
-use alloy_provider::{Provider, utils::Eip1559Estimation};
 use alloy_rlp::RlpEncodable;
 use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
 use alloy_rpc_types_engine::{Claims, JwtSecret};
-use alloy_transport::TransportErrorKind;
 use k256::ecdsa::{Error as EcdsaError, SigningKey};
 use libdeflater::CompressionError;
 use serde::{Deserialize, Serialize};

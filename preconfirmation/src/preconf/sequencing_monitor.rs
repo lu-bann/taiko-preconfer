@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
+use alloy::primitives::FixedBytes;
 use alloy_consensus::Header;
-use alloy_primitives::FixedBytes;
 use serde::Deserialize;
 use tokio::sync::RwLock;
 use tracing::debug;

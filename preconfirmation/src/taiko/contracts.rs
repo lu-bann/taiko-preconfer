@@ -1,4 +1,4 @@
-use alloy_provider::{
+use alloy::providers::{
     Identity, RootProvider,
     fillers::{BlobGasFiller, ChainIdFiller, FillProvider, GasFiller, JoinFill, NonceFiller},
 };

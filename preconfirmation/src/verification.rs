@@ -1,9 +1,9 @@
+use alloy::primitives::{Address, B256, Bytes, FixedBytes, Signature, SignatureError, keccak256};
+use alloy::providers::Provider;
 use alloy_eips::{
     BlockNumberOrTag,
     eip4844::{env_settings::EnvKzgSettings, kzg_to_versioned_hash},
 };
-use alloy_primitives::{Address, B256, Bytes, FixedBytes, Signature, SignatureError, keccak256};
-use alloy_provider::Provider;
 use alloy_rpc_types_eth::Block;
 use alloy_sol_types::SolValue;
 use c_kzg::Blob;
@@ -37,7 +37,7 @@ pub fn verify_signature(
 #[derive(Debug, Error)]
 pub enum TaikoInboxError {
     #[error("{0}")]
-    RpcError(#[from] alloy_json_rpc::RpcError<alloy_transport::TransportErrorKind>),
+    RpcError(#[from] alloy_json_rpc::RpcError<alloy::transports::TransportErrorKind>),
 
     #[error("{0}")]
     Compression(#[from] libdeflater::CompressionError),
@@ -249,9 +249,9 @@ fn get_blob_hashes(blobs: Vec<Blob>) -> Result<Vec<FixedBytes<32>>, TaikoInboxEr
 
 #[cfg(test)]
 mod tests {
-    use alloy_primitives::{U256, eip191_hash_message};
-    use alloy_signer::SignerSync;
-    use alloy_signer_local::PrivateKeySigner;
+    use alloy::primitives::{U256, eip191_hash_message};
+    use alloy::signers::SignerSync;
+    use alloy::signers::local::PrivateKeySigner;
 
     use super::*;
 
