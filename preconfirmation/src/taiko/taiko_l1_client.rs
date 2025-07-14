@@ -1,5 +1,7 @@
 use std::thread::JoinHandle;
 
+use alloy::consensus::{BlobTransactionSidecar, Header, TxEnvelope};
+use alloy::eips::{BlockNumberOrTag, eip4844::env_settings::EnvKzgSettings};
 use alloy::network::{EthereumWallet, TransactionBuilder, TransactionBuilder4844};
 use alloy::primitives::{Address, Bytes, FixedBytes};
 use alloy::providers::{
@@ -9,11 +11,9 @@ use alloy::providers::{
     },
     utils::Eip1559Estimation,
 };
-use alloy_consensus::{BlobTransactionSidecar, Header, TxEnvelope};
-use alloy_eips::{BlockNumberOrTag, eip4844::env_settings::EnvKzgSettings};
-use alloy_rpc_types::TransactionRequest;
-use alloy_rpc_types_eth::Block;
-use alloy_sol_types::SolType;
+use alloy::rpc::types::TransactionRequest;
+use alloy::rpc::types::eth::Block;
+use alloy::sol_types::SolType;
 use libdeflater::CompressionError;
 use std::{
     sync::Arc,
@@ -59,7 +59,7 @@ pub enum TaikoL1ClientError {
     TaikoInbox(#[from] TaikoInboxError),
 
     #[error("{0}")]
-    Contract(#[from] alloy_contract::Error),
+    Contract(#[from] alloy::contract::Error),
 
     #[error("{0}")]
     Reqwest(#[from] reqwest::Error),
@@ -74,8 +74,10 @@ pub enum TaikoL1ClientError {
     PendingTransaction(#[from] alloy::providers::PendingTransactionError),
 }
 
-impl From<alloy_json_rpc::RpcError<alloy::transports::TransportErrorKind>> for TaikoL1ClientError {
-    fn from(err: alloy_json_rpc::RpcError<alloy::transports::TransportErrorKind>) -> Self {
+impl From<alloy::transports::RpcError<alloy::transports::TransportErrorKind>>
+    for TaikoL1ClientError
+{
+    fn from(err: alloy::transports::RpcError<alloy::transports::TransportErrorKind>) -> Self {
         Self::Rpc(crate::util::parse_transport_error(err))
     }
 }
@@ -162,7 +164,7 @@ impl ITaikoL1Client for TaikoL1Client {
             .provider
             .get_block_by_number(BlockNumberOrTag::Number(id))
             .await?
-            .ok_or(alloy_json_rpc::RpcError::NullResp)?
+            .ok_or(alloy::rpc::json_rpc::RpcError::NullResp)?
             .header
             .inner)
     }
@@ -172,7 +174,7 @@ impl ITaikoL1Client for TaikoL1Client {
             .provider
             .get_block_by_number(BlockNumberOrTag::Latest)
             .await?
-            .ok_or(alloy_json_rpc::RpcError::NullResp)?
+            .ok_or(alloy::rpc::json_rpc::RpcError::NullResp)?
             .header
             .inner)
     }

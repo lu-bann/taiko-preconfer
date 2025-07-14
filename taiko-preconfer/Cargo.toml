@@ -5,12 +5,6 @@ edition = { workspace = true }
 
 [dependencies]
 alloy = { workspace = true }
-alloy-consensus = { workspace = true }
-alloy-contract = { workspace = true }
-alloy-eips = { workspace = true }
-alloy-json-rpc = { workspace = true }
-alloy-rpc-types-eth = { workspace = true }
-alloy-sol-types = { workspace = true }
 dotenv = { workspace = true }
 futures = { workspace = true }
 preconfirmation = { workspace = true }

@@ -1,7 +1,7 @@
 use std::{sync::Arc, time::Duration};
 
-use alloy_consensus::Header;
-use alloy_rpc_types_eth::Block;
+use alloy::consensus::Header;
+use alloy::rpc::types::eth::Block;
 use async_stream::stream;
 use futures::{Stream, future::BoxFuture, pin_mut};
 use tokio::sync::RwLock;

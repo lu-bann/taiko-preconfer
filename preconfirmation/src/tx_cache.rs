@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use alloy_rpc_types_eth::Block;
+use alloy::rpc::types::eth::Block;
 use tokio::sync::RwLock;
 use tracing::warn;
 

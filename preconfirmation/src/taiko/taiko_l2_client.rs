@@ -1,13 +1,12 @@
+use alloy::consensus::{Header, TxEnvelope};
+use alloy::eips::BlockNumberOrTag;
 use alloy::primitives::{Address, Bytes, ChainId, FixedBytes, ruint::FromUintError};
 use alloy::providers::{Provider, utils::Eip1559Estimation};
+use alloy::rpc::json_rpc::RpcError;
+use alloy::rpc::types::engine::{Claims, JwtSecret};
+use alloy::rpc::types::{Header as RpcHeader, TransactionRequest};
 use alloy::transports::TransportErrorKind;
-use alloy_consensus::{Header, TxEnvelope};
-use alloy_contract::Error as ContractError;
-use alloy_eips::BlockNumberOrTag;
-use alloy_json_rpc::RpcError;
 use alloy_rlp::RlpEncodable;
-use alloy_rpc_types::{Header as RpcHeader, TransactionRequest};
-use alloy_rpc_types_engine::{Claims, JwtSecret};
 use k256::ecdsa::{Error as EcdsaError, SigningKey};
 use libdeflater::CompressionError;
 use serde::{Deserialize, Serialize};
@@ -44,7 +43,7 @@ pub enum TaikoL2ClientError {
     Ecdsa(#[from] EcdsaError),
 
     #[error("{0}")]
-    Contract(#[from] ContractError),
+    Contract(#[from] alloy::contract::Error),
 
     #[error("{0}")]
     FromUInt128(#[from] FromUintError<u128>),
@@ -191,7 +190,7 @@ impl ITaikoL2Client for TaikoL2Client {
             .provider
             .get_block_by_number(BlockNumberOrTag::Latest)
             .await?
-            .ok_or(alloy_json_rpc::RpcError::NullResp)?
+            .ok_or(alloy::rpc::json_rpc::RpcError::NullResp)?
             .header
             .inner)
     }

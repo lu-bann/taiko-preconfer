@@ -7,13 +7,13 @@ use std::{
     time::UNIX_EPOCH,
 };
 
+use alloy::consensus::Transaction;
+use alloy::eips::eip4844::env_settings::EnvKzgSettings;
 use alloy::network::EthereumWallet;
 use alloy::primitives::Address;
 use alloy::providers::{Provider, ProviderBuilder, WsConnect};
 use alloy::signers::k256::ecdsa::SigningKey;
 use alloy::signers::local::{LocalSigner, PrivateKeySigner};
-use alloy_consensus::Transaction;
-use alloy_eips::eip4844::env_settings::EnvKzgSettings;
 use preconfirmation::{
     client::reqwest::get_block_by_id,
     preconf::{

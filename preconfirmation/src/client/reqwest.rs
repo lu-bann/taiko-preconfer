@@ -1,5 +1,5 @@
-use alloy_consensus::Header;
-use alloy_rpc_types_eth::Block;
+use alloy::consensus::Header;
+use alloy::rpc::types::eth::Block;
 use serde::{Deserialize, Serialize};
 
 use crate::util::u64_to_hex;

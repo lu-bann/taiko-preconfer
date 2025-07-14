@@ -1,7 +1,7 @@
 use std::num::TryFromIntError;
 
-use alloy_consensus::Transaction;
-use alloy_rpc_types_eth::Block;
+use alloy::consensus::Transaction;
+use alloy::rpc::types::eth::Block;
 use thiserror::Error;
 use tracing::debug;
 
@@ -23,7 +23,7 @@ pub enum ConfirmationError {
     Signer(#[from] alloy::signers::Error),
 
     #[error("{0}")]
-    SolTypes(#[from] alloy_sol_types::Error),
+    SolTypes(#[from] alloy::sol_types::Error),
 
     #[error("{0}")]
     TryU8FromU64(#[from] TryFromIntError),
