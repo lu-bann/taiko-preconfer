@@ -108,6 +108,7 @@ where
                         if current_block_number < current_max_header_number {
                             let mut latest_block_number = current_block_number;
                             // update blocks
+                            #[allow(clippy::collapsible_if)]
                             if let Some(latest_block) = log_error(get_block(None).await, "Failed to get latest block") {
                                 if latest_block.header.number > current_block_number {
                                     latest_block_number = latest_block.header.number;
