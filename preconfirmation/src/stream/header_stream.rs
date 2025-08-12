@@ -73,6 +73,7 @@ pub fn get_block_polling_stream<P: Provider>(
         let mut last_header_number = -1_i128;
         let mut last_hash = B256::ZERO;
         loop {
+            #[allow(clippy::collapsible_if)]
             if let Ok(Some(block)) = provider.get_block_by_number(alloy::eips::BlockNumberOrTag::Latest).full().await {
                 if block.header.number as i128 != last_header_number || block.header.hash_slow() != last_hash {
                     last_header_number = block.header.number as i128;
