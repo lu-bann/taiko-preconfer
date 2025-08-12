@@ -1,0 +1,5 @@
+services:
+  preconfer:
+    build:
+      context: .
+      dockerfile: Dockerfile
