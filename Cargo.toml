@@ -30,6 +30,6 @@ tokio-stream = { version = "0.1.17", features = ["time"] }
 tower = "0.5.2"
 tracing = "0.1.41"
 tracing-subscriber = { version = "0.3.19", features = ["env-filter"] }
-url = "2.5.4"
+url = "2.5.7"
 
 preconfirmation = { path = "./preconfirmation" }
