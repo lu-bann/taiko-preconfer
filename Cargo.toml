@@ -12,7 +12,7 @@ alloy-transport-http = { version = "1.0.23", features = ["hyper", "jwt-auth"] }
 alloy = { version = "1.0.31", features = ["contract", "full", "json-rpc", "rpc-types-engine", "signer-local"] }
 
 async-stream = "0.3.6"
-c-kzg = "2.1.1"
+c-kzg = "2.1.4"
 dotenv = "0.15.0"
 futures = "0.3.31"
 hex = "0.4.3"
