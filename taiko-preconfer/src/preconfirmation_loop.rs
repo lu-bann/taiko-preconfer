@@ -97,7 +97,7 @@ pub async fn run<L2Client: ITaikoL2Client, TimeProvider: ITimeProvider>(
             || whitelist_monitor.is_current_and_next(preconfer_address)
         {
             let shifted_slot = slot.slot + preconfirmation_slot_model.handover_slots();
-            if shifted_slot % config.anchor_id_lag == 0 && subslot_in_slot == 0 {
+            if shifted_slot.is_multiple_of(config.anchor_id_lag) && subslot_in_slot == 0 {
                 if shifted_slot == 0 {
                     valid_anchor.update_to_latest().await?;
                 } else {
