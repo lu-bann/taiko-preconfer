@@ -9,7 +9,7 @@ edition = "2024"
 [workspace.dependencies]
 alloy-rlp = "0.3.12"
 alloy-transport-http = { version = "1.0.23", features = ["hyper", "jwt-auth"] }
-alloy = { version = "1.0.36", features = ["contract", "full", "json-rpc", "rpc-types-engine", "signer-local"] }
+alloy = { version = "1.0.37", features = ["contract", "full", "json-rpc", "rpc-types-engine", "signer-local"] }
 
 async-stream = "0.3.6"
 c-kzg = "2.1.4"
