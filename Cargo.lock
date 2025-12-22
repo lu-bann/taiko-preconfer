@@ -499,7 +499,7 @@ dependencies = [
  "alloy-rlp",
  "alloy-serde",
  "derive_more",
- "jsonwebtoken",
+ "jsonwebtoken 9.3.1",
  "rand 0.8.5",
  "serde",
  "strum",
@@ -703,7 +703,7 @@ dependencies = [
  "hyper",
  "hyper-tls",
  "hyper-util",
- "jsonwebtoken",
+ "jsonwebtoken 9.3.1",
  "reqwest",
  "serde_json",
  "tower",
@@ -2415,6 +2415,22 @@ dependencies = [
 ]
 
 [[package]]
+name = "jsonwebtoken"
+version = "10.2.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c76e1c7d7df3e34443b3621b459b066a7b79644f059fc8b2db7070c825fd417e"
+dependencies = [
+ "base64",
+ "getrandom 0.2.16",
+ "js-sys",
+ "pem",
+ "serde",
+ "serde_json",
+ "signature",
+ "simple_asn1",
+]
+
+[[package]]
 name = "k256"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2930,7 +2946,7 @@ dependencies = [
  "futures",
  "hex",
  "http-body-util",
- "jsonwebtoken",
+ "jsonwebtoken 10.2.0",
  "k256",
  "libdeflater",
  "mockall",
